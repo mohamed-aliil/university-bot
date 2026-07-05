@@ -1,0 +1,17 @@
+2026-07-05 18:54:54,912 - __main__ - INFO - Bot started polling...
+2026-07-05 18:54:54,917 - __main__ - INFO - Database initialized successfully.
+2026-07-05 18:54:54,917 - aiogram.dispatcher - INFO - Start polling
+2026-07-05 18:54:55,961 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-05 18:54:56,653 - aiogram.event - INFO - Update id=3517274 is handled. Duration 496 ms by bot id=8903072909
+2026-07-05 18:54:57,236 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-05 18:54:57,236 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-05 18:54:57,236 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-05 18:55:23,529 - __main__ - INFO - Bot started polling...
+2026-07-05 18:55:23,534 - __main__ - INFO - Database initialized successfully.
+2026-07-05 18:55:23,534 - aiogram.dispatcher - INFO - Start polling
+2026-07-05 18:55:24,236 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-05 18:55:33,910 - aiogram.event - INFO - Update id=3517275 is handled. Duration 926 ms by bot id=8903072909
+2026-07-05 18:55:35,906 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-05 18:55:35,908 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-05 18:55:35,909 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-05 18:55:35,910 - aiogram.dispatcher - INFO - Polling stopped

@@ -1,0 +1,221 @@
+from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from config import settings
+
+
+def main_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="✉️ تواصل معنا")]],
+        resize_keyboard=True,
+    )
+
+
+def moderator_keyboard(unread_count: int = 0) -> ReplyKeyboardMarkup:
+    msgs_btn = f"📩 الطلبات المرسلة ({unread_count})"
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=msgs_btn)],
+            [KeyboardButton(text="🤖 الردود السريعة")],
+            [KeyboardButton(text="🔄 تحديث")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def admin_kb(user_id: int, unread_count: int = 0) -> ReplyKeyboardMarkup:
+    if user_id in settings.admin_ids:
+        return super_admin_keyboard(unread_count=unread_count)
+    return main_keyboard()
+
+
+def super_admin_keyboard(unread_count: int = 0, show_admins: bool = True) -> ReplyKeyboardMarkup:
+    msgs_btn = f"📩 الطلبات المرسلة ({unread_count})"
+    kb = [
+        [KeyboardButton(text="🔧 لوحة التحكم")],
+    ]
+    if show_admins:
+        kb.append([KeyboardButton(text=msgs_btn), KeyboardButton(text="👥 المشرفين")])
+    else:
+        kb.append([KeyboardButton(text=msgs_btn)])
+    kb.append([KeyboardButton(text="🤖 الردود السريعة"), KeyboardButton(text="📋 المستخدمين")])
+    kb.append([KeyboardButton(text="🔄 تحديث")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> ReplyKeyboardMarkup:
+    kb = [
+        [KeyboardButton(text="📩 إرسال رسالة")],
+        [KeyboardButton(text="📋 السجلات")],
+    ]
+    if is_super:
+        toggle = "⏹ إيقاف البوت" if bot_active else "▶️ تشغيل البوت"
+        kb.append([KeyboardButton(text=toggle)])
+        kb.append([KeyboardButton(text="🔄 تحديث البوت")])
+    kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def admins_management_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة مشرف"), KeyboardButton(text="➖ إزالة مشرف")],
+            [KeyboardButton(text="🔑 تعديل الصلاحيات")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def users_management_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📊 الإحصائيات")],
+            [KeyboardButton(text="🔒 حظر مستخدم"), KeyboardButton(text="🔓 إلغاء حظر")],
+            [KeyboardButton(text="🔍 بحث عن مستخدم"), KeyboardButton(text="🔄 إلغاء حظر الجميع")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def replies_management_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة رد"), KeyboardButton(text="➖ حذف رد")],
+            [KeyboardButton(text="📋 عرض الردود")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💬 رد", callback_data=f"reply:{user_id}:{user_full_name}")
+    builder.button(text="🚫 حظر", callback_data=f"ban:{user_id}")
+    builder.button(text="⏭ عدم الرد", callback_data=f"ignore:{user_id}")
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def cancel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="❌ إلغاء", callback_data="cancel_reply")
+    return builder.as_markup()
+
+
+def admin_panel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="👥 إدارة المشرفين", callback_data="panel:admins")
+    builder.button(text="🤖 الردود السريعة", callback_data="panel:replies")
+    builder.button(text="🚫 الحظر والإلغاء", callback_data="panel:bans")
+    builder.button(text="📊 إحصائيات البوت", callback_data="panel:stats")
+    builder.button(text="📩 إرسال رسالة", callback_data="panel:sendmsg")
+    builder.button(text="🔄 تحديث البوت", callback_data="panel:restart")
+    builder.button(text="🔄 تحديث", callback_data="panel:refresh")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def admins_panel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ إضافة مشرف", callback_data="addadmin:start")
+    builder.button(text="➖ إزالة مشرف", callback_data="removeadmin:start")
+    builder.button(text="🔙 رجوع", callback_data="panel:back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def replies_panel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="➕ إضافة رد", callback_data="addreply:start")
+    builder.button(text="➖ حذف رد", callback_data="removereply:start")
+    builder.button(text="🔙 رجوع", callback_data="panel:back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def bans_panel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔄 إلغاء حظر الجميع", callback_data="unbanall:start")
+    builder.button(text="🔙 رجوع", callback_data="panel:back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def permission_keyboard(user_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="💬 الرد على المستخدمين", callback_data=f"perm:{user_id}:can_reply")
+    builder.button(text="🚫 حظر المستخدمين", callback_data=f"perm:{user_id}:can_ban")
+    builder.button(text="⚙️ إدارة الردود السريعة", callback_data=f"perm:{user_id}:can_manage")
+    builder.button(text="✅ تأكيد", callback_data=f"perm:{user_id}:done")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def users_panel_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🔒 حظر مستخدم", callback_data="ban_user:start")
+    builder.button(text="🔓 إلغاء حظر مستخدم", callback_data="unban_user:start")
+    builder.button(text="🔄 إلغاء حظر الجميع", callback_data="unbanall:start")
+    builder.button(text="🔙 رجوع", callback_data="panel:back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def rank_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🚀 سوبر (التحكم الكامل)", callback_data="rank:super_admin")
+    builder.button(text="👑 مشرف (كل شي عدا التحكم)", callback_data="rank:admin")
+    builder.button(text="🔰 مراقب (رد + ردود سريعة)", callback_data="rank:moderator")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def confirm_send_keyboard(unique_id: int) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ إرسال", callback_data=f"confirm_send:yes:{unique_id}")
+    builder.button(text="❌ إلغاء", callback_data=f"confirm_send:no:{unique_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
+
+def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_idx: int = 0, total: int = 1) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    if current_idx > 0:
+        builder.button(text="⬅️ السابق", callback_data="review_prev")
+    builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{user_name}")
+    if current_idx < total - 1:
+        builder.button(text="➡️ التالي", callback_data="review_next")
+    builder.button(text="✅ إنهاء", callback_data="review_done")
+    builder.adjust(3 if (current_idx > 0 or current_idx < total - 1) else 2)
+    return builder.as_markup()
+
+
+async def quick_reply_inline_keyboard(user_id: int, user_name: str) -> InlineKeyboardMarkup:
+    from database.crud import get_all_autoreplies
+    replies = await get_all_autoreplies()
+    builder = InlineKeyboardBuilder()
+    for ar in replies[:8]:
+        label = ar.trigger if len(ar.trigger) <= 25 else ar.trigger[:22] + "..."
+        builder.button(text=label, callback_data=f"quick_reply:{ar.id}:{user_id}:{user_name}")
+    builder.button(text="✏️ رد مخصص", callback_data=f"custom_reply:{user_id}:{user_name}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+async def quick_reply_keyboard() -> ReplyKeyboardMarkup:
+    from database.crud import get_all_autoreplies
+    replies = await get_all_autoreplies()
+    kb = []
+    row = []
+    for i, ar in enumerate(replies[:10]):
+        label = ar.trigger if len(ar.trigger) <= 20 else ar.trigger[:18] + ".."
+        row.append(KeyboardButton(text=label))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([KeyboardButton(text="✏️ رد مخصص"), KeyboardButton(text="❌ إلغاء")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)

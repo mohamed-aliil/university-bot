@@ -1,0 +1,68 @@
+from aiogram import Router, F
+from aiogram.types import Message
+from aiogram.filters import CommandStart
+from keyboards.reply import main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard
+from database.crud import get_or_create_user, is_admin_user, get_admin_permissions, get_stats
+from config import settings
+
+router = Router()
+
+
+async def _admin_kb(user_id: int = 0):
+    stats = await get_stats()
+    if user_id in settings.admin_ids:
+        return super_admin_keyboard(unread_count=stats["unread"])
+    if user_id:
+        perms = await get_admin_permissions(user_id)
+        if perms:
+            rank = perms.get("rank", "moderator")
+            if rank == "super_admin":
+                return super_admin_keyboard(unread_count=stats["unread"])
+            if rank == "admin":
+                return super_admin_keyboard(unread_count=stats["unread"], show_admins=False)
+            return moderator_keyboard(unread_count=stats["unread"])
+    return main_keyboard()
+
+
+@router.message(CommandStart())
+async def start_handler(message: Message) -> None:
+    user = message.from_user
+    await get_or_create_user(
+        user_id=user.id,
+        full_name=user.full_name or "بدون اسم",
+        username=user.username,
+    )
+
+    is_super = user.id in settings.admin_ids
+
+    if is_super:
+        welcome_text = (
+            f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
+            "🔧 لوحة التحكم الخاصة بك:"
+        )
+        await message.answer(welcome_text, reply_markup=await _admin_kb(user.id))
+        return
+
+    is_admin_db = await is_admin_user(user.id)
+    if is_admin_db:
+        await message.answer(
+            f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
+            "أنت مشرف في البوت.\n"
+            "استخدم الأزرار أدناه للتحكم.",
+            reply_markup=await _admin_kb(user.id),
+        )
+        return
+
+    await message.answer(
+        f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
+        "بوت التواصل الرسمي مع إدارة قناة الأخبار الجامعية.\n\n"
+        "يمكنك التواصل معنا بسهولة عن طريق إرسال:\n"
+        "• أخبار وانجازات\n"
+        "• استفسارات\n"
+        "• اقتراحات\n"
+        "• شكاوي وملاحظات\n"
+        "• أي شيء تود مشاركتنا إياه\n\n"
+        "جميع الرسائل تصل مباشرة إلى المشرفين.\n"
+        "نحن هنا من أجلك 🎓✨",
+        reply_markup=main_keyboard(),
+    )

@@ -1,0 +1,13 @@
+[Unit]
+Description=BotKey Telegram Bot
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/mohamed/.local/bin/botkey.sh
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
