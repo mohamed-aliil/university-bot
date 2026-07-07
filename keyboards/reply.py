@@ -92,17 +92,28 @@ def customize_news_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def settings_keyboard(bot_active: bool = True, materials_active: bool = False) -> ReplyKeyboardMarkup:
-    mat_btn = "⏹ إيقاف المواد" if materials_active else "▶️ تشغيل المواد"
+def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text="⏹ إيقاف البوت"), KeyboardButton(text="▶️ تشغيل البوت")],
-        [KeyboardButton(text=mat_btn)],
+        [KeyboardButton(text="📚 إعدادات المواد")],
         [KeyboardButton(text="📋 السجلات")],
         [KeyboardButton(text="📡 تخصيص الأخبار")],
         [KeyboardButton(text="🔄 تحديث البوت")],
         [KeyboardButton(text="🔙 رجوع")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def materials_settings_keyboard() -> ReplyKeyboardMarkup:
+    from database.crud import is_materials_active
+    btn = "⏹ إيقاف المواد" if is_materials_active() else "▶️ تشغيل المواد"
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text=btn)],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def stop_choice_keyboard() -> ReplyKeyboardMarkup:

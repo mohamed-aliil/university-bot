@@ -1029,10 +1029,9 @@ async def show_news_templates(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "⚙️ الإعدادات")
 async def settings_button(message: Message) -> None:
-    from database.crud import is_bot_active, is_materials_active
+    from database.crud import is_bot_active
     bot_active = is_bot_active()
-    materials_active = is_materials_active()
-    await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active=bot_active, materials_active=materials_active))
+    await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active=bot_active))
 
 
 @router.message(AdminFilter(), F.text == "🔄 تحديث")

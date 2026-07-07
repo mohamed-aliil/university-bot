@@ -48,12 +48,20 @@ def folder_kb(folders: list, items: list, back_cb: str = None, prefix: str = "mf
     return InlineKeyboardMarkup(inline_keyboard=kb)
 
 
+@router.message(AdminFilter(), F.text == "📚 إعدادات المواد")
+async def materials_settings(message: Message) -> None:
+    from keyboards.reply import materials_settings_keyboard
+    await message.answer("📚 إعدادات المواد:", reply_markup=materials_settings_keyboard())
+
+
 @router.message(AdminFilter(), F.text.in_(["▶️ تشغيل المواد", "⏹ إيقاف المواد"]))
 async def toggle_materials(message: Message) -> None:
-    from database.crud import set_materials_active
+    from database.crud import set_materials_active, is_materials_active
+    from keyboards.reply import materials_settings_keyboard
     new_state = "▶️ تشغيل المواد" not in message.text
     set_materials_active(new_state)
-    await message.answer("✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد")
+    status = "✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد"
+    await message.answer(status, reply_markup=materials_settings_keyboard())
 
 
 async def render_folder(message: Message, folder_id: int = None) -> None:
