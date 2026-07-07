@@ -263,7 +263,10 @@ async def ignore_user_handler(callback: CallbackQuery) -> None:
         target_id=user_id,
         target_name=user_name,
     )
-    await callback.message.answer(f"⏭ تم تجاهل رسالة المستخدم {user_name}.")
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.answer()
 
 
