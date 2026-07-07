@@ -42,17 +42,18 @@ def super_admin_keyboard(unread_count: int = 0, show_admins: bool = True) -> Rep
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
-def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> ReplyKeyboardMarkup:
-    kb = [
-        [KeyboardButton(text="📩 إرسال رسالة")],
-        [KeyboardButton(text="📋 السجلات")],
-    ]
+def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
     if is_super:
-        toggle = "⏹ إيقاف البوت" if bot_active else "▶️ تشغيل البوت"
-        kb.append([KeyboardButton(text=toggle)])
-        kb.append([KeyboardButton(text="🔄 تحديث البوت")])
-    kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+        toggle = "▶️ تشغيل البوت" if not bot_active else "⏹ إيقاف البوت"
+        builder.button(text=toggle, callback_data="panel:toggle_bot")
+    builder.button(text="📩 إرسال رسالة", callback_data="panel:sendmsg")
+    if is_super:
+        builder.button(text="🔄 تحديث البوت", callback_data="panel:restart")
+    builder.button(text="🔄 تحديث", callback_data="panel:refresh")
+    builder.button(text="🔙 رجوع", callback_data="panel:back")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 def admins_management_keyboard() -> ReplyKeyboardMarkup:
