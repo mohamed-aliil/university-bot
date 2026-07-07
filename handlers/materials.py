@@ -25,27 +25,65 @@ class MState(StatesGroup):
     deleting = State()
 
 
-def reply_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ إضافة مجلد"), KeyboardButton(text="📄 إضافة محتوى")],
-            [KeyboardButton(text="➖ حذف")],
-            [KeyboardButton(text="🔙 رجوع")],
-        ],
-        resize_keyboard=True,
-    )
-
-
-def folder_kb(folders: list, items: list, back_cb: str = None, prefix: str = "mf") -> InlineKeyboardMarkup:
+def build_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
     kb = []
+    row = []
     for f in folders:
-        kb.append([InlineKeyboardButton(text=f"📁 {f.name}", callback_data=f"{prefix}:{f.id}")])
+        row.append(KeyboardButton(text=f"📁 {f.name}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    row = []
     for i in items:
-        label = i.title or "📄 عرض"
-        kb.append([InlineKeyboardButton(text=f"📩 {label}", callback_data=f"mi:{i.id}")])
-    if back_cb:
-        kb.append([InlineKeyboardButton(text="🔙 رجوع", callback_data=back_cb)])
-    return InlineKeyboardMarkup(inline_keyboard=kb)
+        label = i.title or "محتوى"
+        row.append(KeyboardButton(text=f"📄 {label}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([KeyboardButton(text="➕ إضافة مجلد"), KeyboardButton(text="📄 إضافة محتوى")])
+    kb.append([KeyboardButton(text="➖ حذف"), KeyboardButton(text="🔙 رجوع")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def student_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
+    kb = []
+    row = []
+    for f in folders:
+        row.append(KeyboardButton(text=f"📁 {f.name}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    row = []
+    for i in items:
+        label = i.title or "محتوى"
+        row.append(KeyboardButton(text=f"📄 {label}"))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([KeyboardButton(text="🔙 رجوع")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+async def render_admin(message: Message, folder_id: int = None) -> None:
+    folders = await get_folders(folder_id)
+    items = await get_content_items(folder_id) if folder_id else []
+    if folder_id:
+        f = await get_folder(folder_id)
+        name = f.name if f else "?"
+        msg = f"📂 {name}\n"
+        if items:
+            msg += "📄 المحتوى:\n" + "\n".join(f"  {i.title or 'بدون عنوان'}" for i in items)
+        await message.answer(msg, reply_markup=build_kb(folders, items))
+    else:
+        await message.answer("📚 المواد:", reply_markup=build_kb(folders, items))
 
 
 @router.message(AdminFilter(), F.text == "📚 إعدادات المواد")
@@ -56,97 +94,18 @@ async def materials_settings(message: Message) -> None:
 
 @router.message(AdminFilter(), F.text.in_(["▶️ تشغيل المواد", "⏹ إيقاف المواد"]))
 async def toggle_materials(message: Message) -> None:
-    from database.crud import set_materials_active, is_materials_active
+    from database.crud import set_materials_active
     from keyboards.reply import materials_settings_keyboard
     new_state = "▶️ تشغيل المواد" not in message.text
     set_materials_active(new_state)
-    status = "✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد"
-    await message.answer(status, reply_markup=materials_settings_keyboard())
-
-
-async def render_folder(message: Message, folder_id: int = None) -> None:
-    folders = await get_folders(folder_id)
-    items = await get_content_items(folder_id) if folder_id else []
-    if not folders and not items:
-        if folder_id:
-            f = await get_folder(folder_id)
-            name = f.name if f else "?"
-            await message.answer(f"📂 {name}\nالمجلد فارغ.", reply_markup=folder_kb([], [], f"mup:{f.parent_id or 0}"))
-        else:
-            await message.answer("📚 لا توجد مجلدات بعد.", reply_markup=folder_kb([], []))
-        return
-    if folder_id:
-        f = await get_folder(folder_id)
-        name = f.name if f else "?"
-        await message.answer(f"📂 {name}", reply_markup=folder_kb(folders, items, f"mup:{f.parent_id or 0}"))
-    else:
-        await message.answer("📚 المواد:", reply_markup=folder_kb(folders, items))
+    await message.answer("✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد", reply_markup=materials_settings_keyboard())
 
 
 @router.message(AdminFilter(), F.text == "📚 إدارة المواد")
 async def materials_entry(message: Message, state: FSMContext) -> None:
     await state.set_state(MState.browsing)
     await state.update_data(folder_id=None)
-    folders = await get_folders()
-    items = []
-    if not folders:
-        await message.answer("📚 لا توجد مجلدات بعد.", reply_markup=folder_kb([], []))
-    else:
-        await message.answer("📚 المواد:", reply_markup=folder_kb(folders, items))
-    await message.answer("🔽 استخدم الأزرار:", reply_markup=reply_kb())
-
-
-@router.callback_query(MState.browsing, F.data.startswith("mf:"))
-async def open_folder(cq: CallbackQuery, state: FSMContext) -> None:
-    fid = int(cq.data.split(":")[1])
-    await state.update_data(folder_id=fid)
-    folders = await get_folders(fid)
-    items = await get_content_items(fid)
-    f = await get_folder(fid)
-    name = f.name if f else "?"
-    await cq.message.edit_text(f"📂 {name}", reply_markup=folder_kb(folders, items, f"mup:{f.parent_id or 0}"))
-    await cq.message.answer(reply_markup=reply_kb())
-    await cq.answer()
-
-
-@router.callback_query(MState.browsing, F.data.startswith("mup:"))
-async def folder_up(cq: CallbackQuery, state: FSMContext) -> None:
-    parent_id = int(cq.data.split(":")[1])
-    await state.update_data(folder_id=parent_id if parent_id else None)
-    if parent_id:
-        folders = await get_folders(parent_id)
-        items = await get_content_items(parent_id)
-        f = await get_folder(parent_id)
-        name = f.name if f else "?"
-        await cq.message.edit_text(f"📂 {name}", reply_markup=folder_kb(folders, items, f"mup:{f.parent_id or 0}"))
-    else:
-        folders = await get_folders()
-        items = []
-        await cq.message.edit_text("📚 المواد:", reply_markup=folder_kb(folders, items))
-    await cq.message.answer(reply_markup=reply_kb())
-    await cq.answer()
-
-
-@router.callback_query(F.data.startswith("mi:"))
-async def show_item(cq: CallbackQuery) -> None:
-    from database.database import async_session
-    from database.models import ContentItem
-    from sqlalchemy import select
-    iid = int(cq.data.split(":")[1])
-    async with async_session() as s:
-        r = await s.execute(select(ContentItem).where(ContentItem.id == iid))
-        item = r.scalar_one_or_none()
-    if not item:
-        await cq.answer("❌ غير موجود", show_alert=True)
-        return
-    await cq.answer()
-    if item.channel_username and item.channel_message_id:
-        try:
-            await cq.bot.forward_message(chat_id=cq.from_user.id, from_chat_id=item.channel_username, message_id=item.channel_message_id)
-        except Exception as e:
-            await cq.message.answer(f"❌ تعذر التوجيه: {e}")
-    else:
-        await cq.message.answer(f"🔗 {item.link}")
+    await render_admin(message)
 
 
 @router.message(AdminFilter(), F.text == "➕ إضافة مجلد")
@@ -164,22 +123,20 @@ async def add_folder_done(message: Message, state: FSMContext) -> None:
         await message.answer("❌ الاسم فارغ.")
         return
     data = await state.get_data()
-    pid = data.get("parent_id")
-    await add_folder(name, pid)
+    await add_folder(name, data.get("parent_id"))
     await message.answer(f"✅ تم إضافة المجلد: {name}")
     await state.set_state(MState.browsing)
-    await render_folder(message, pid)
-    await message.answer(reply_markup=reply_kb())
+    await render_admin(message, data.get("parent_id"))
 
 
 @router.message(AdminFilter(), F.text == "📄 إضافة محتوى")
 async def add_item_prompt(message: Message, state: FSMContext) -> None:
     fid = (await state.get_data()).get("folder_id")
     if not fid:
-        await message.answer("❌ ادخل مجلد أولاً (اختر مجلد من القائمة أعلاه).")
+        await message.answer("❌ ادخل مجلد أولاً.")
         return
     await state.set_state(MState.add_item_link)
-    await message.answer("🔗 أرسل رابط منشور تيليغرام (https://t.me/...):")
+    await message.answer("🔗 أرسل رابط منشور تيليغرام:")
 
 
 @router.message(MState.add_item_link, AdminFilter())
@@ -201,42 +158,36 @@ async def add_item_done(message: Message, state: FSMContext) -> None:
     title = None if message.text.strip() == "/skip" else message.text.strip()
     data = await state.get_data()
     await add_content_item(
-        folder_id=data["folder_id"],
-        link=data["link"],
-        title=title,
-        channel_username=str(data["channel_username"]),
+        folder_id=data["folder_id"], link=data["link"],
+        title=title, channel_username=str(data["channel_username"]),
         channel_message_id=data["channel_message_id"],
     )
     await message.answer("✅ تم إضافة المحتوى.")
     await state.set_state(MState.browsing)
-    await render_folder(message, data["folder_id"])
-    await message.answer(reply_markup=reply_kb())
+    await render_admin(message, data["folder_id"])
 
 
 @router.message(AdminFilter(), F.text == "➖ حذف")
 async def delete_start(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    fid = data.get("folder_id")
+    fid = (await state.get_data()).get("folder_id")
     folders = await get_folders(fid)
     items = await get_content_items(fid) if fid else []
     if not folders and not items:
-        await message.answer("❌ لا يوجد شيء لحذفه هنا.")
+        await message.answer("❌ لا يوجد شيء لحذفه.")
         return
     await state.set_state(MState.deleting)
     for f in folders:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗑 حذف", callback_data=f"df:{f.id}")]])
-        await message.answer(f"📁 {f.name}", reply_markup=kb)
+        k = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗑 حذف", callback_data=f"df:{f.id}")]])
+        await message.answer(f"📁 {f.name}", reply_markup=k)
     for i in items:
-        kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗑 حذف", callback_data=f"di:{i.id}")]])
-        label = i.title or "محتوى"
-        await message.answer(f"📄 {label}", reply_markup=kb)
-    await message.answer("🔻 اختر ما تريد حذفه:", reply_markup=reply_kb())
+        k = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="🗑 حذف", callback_data=f"di:{i.id}")]])
+        await message.answer(f"📄 {i.title or 'محتوى'}", reply_markup=k)
+    await message.answer("🔻 اختر ما تريد حذفه:")
 
 
 @router.callback_query(MState.deleting, F.data.startswith("df:"))
 async def delete_folder(cq: CallbackQuery, state: FSMContext) -> None:
-    fid = int(cq.data.split(":")[1])
-    ok = await remove_folder(fid)
+    ok = await remove_folder(int(cq.data.split(":")[1]))
     await cq.answer()
     await cq.message.edit_text("✅ تم حذف المجلد." if ok else "❌ غير موجود.")
     if ok:
@@ -245,53 +196,58 @@ async def delete_folder(cq: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(MState.deleting, F.data.startswith("di:"))
 async def delete_item(cq: CallbackQuery, state: FSMContext) -> None:
-    iid = int(cq.data.split(":")[1])
-    ok = await remove_content_item(iid)
+    ok = await remove_content_item(int(cq.data.split(":")[1]))
     await cq.answer()
     await cq.message.edit_text("✅ تم حذف المحتوى." if ok else "❌ غير موجود.")
     if ok:
         await state.set_state(MState.browsing)
 
 
-@router.message(F.text == "📚 المواد")
-async def student_browse(message: Message) -> None:
-    if not is_materials_active():
-        await message.answer("❌ ميزة المواد متوقفة.")
+async def forward_item(user_id: int, item_id: int, bot) -> None:
+    from database.database import async_session
+    from database.models import ContentItem
+    from sqlalchemy import select
+    async with async_session() as s:
+        r = await s.execute(select(ContentItem).where(ContentItem.id == item_id))
+        item = r.scalar_one_or_none()
+    if not item:
         return
-    folders = await get_folders()
-    if not folders:
-        await message.answer("❌ لا توجد مواد بعد.")
+    if item.channel_username and item.channel_message_id:
+        try:
+            await bot.forward_message(chat_id=user_id, from_chat_id=item.channel_username, message_id=item.channel_message_id)
+        except Exception as e:
+            pass
+
+
+# ─── Admin folder navigation via reply keyboard ───
+
+@router.message(MState.browsing, AdminFilter(), F.text.startswith("📁 "))
+async def admin_open_folder(message: Message, state: FSMContext) -> None:
+    name = message.text[2:].strip()
+    pid = (await state.get_data()).get("folder_id")
+    folders = await get_folders(pid)
+    match = [f for f in folders if f.name == name]
+    if not match:
         return
-    await message.answer("📚 المواد:", reply_markup=folder_kb(folders, [], prefix="sf"))
+    fid = match[0].id
+    await state.update_data(folder_id=fid)
+    await render_admin(message, fid)
 
 
-@router.callback_query(F.data.startswith("sf:"))
-async def student_open(cq: CallbackQuery) -> None:
-    fid = int(cq.data.split(":")[1])
-    folders = await get_folders(fid)
-    items = await get_content_items(fid)
-    f = await get_folder(fid)
-    name = f.name if f else "?"
-    back = f"sup:{f.parent_id or 0}"
-    await cq.message.edit_text(f"📂 {name}", reply_markup=folder_kb(folders, items, back, "sf"))
-    await cq.answer()
+@router.message(MState.browsing, AdminFilter(), F.text.startswith("📄 "))
+async def admin_show_item(message: Message, state: FSMContext) -> None:
+    label = message.text[2:].strip()
+    pid = (await state.get_data()).get("folder_id")
+    if not pid:
+        return
+    items = await get_content_items(pid)
+    match = [i for i in items if (i.title or "محتوى") == label]
+    if not match:
+        return
+    await forward_item(message.from_user.id, match[0].id, message.bot)
 
 
-@router.callback_query(F.data.startswith("sup:"))
-async def student_up(cq: CallbackQuery) -> None:
-    parent_id = int(cq.data.split(":")[1])
-    if parent_id:
-        folders = await get_folders(parent_id)
-        items = await get_content_items(parent_id)
-        f = await get_folder(parent_id)
-        name = f.name if f else "?"
-        back = f"sup:{f.parent_id or 0}"
-        await cq.message.edit_text(f"📂 {name}", reply_markup=folder_kb(folders, items, back, "sf"))
-    else:
-        folders = await get_folders()
-        await cq.message.edit_text("📚 المواد:", reply_markup=folder_kb(folders, [], prefix="sf"))
-    await cq.answer()
-
+# ─── Back ───
 
 async def handle_back(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -300,17 +256,82 @@ async def handle_back(message: Message, state: FSMContext) -> None:
         f = await get_folder(fid)
         pid = f.parent_id if f else None
         await state.update_data(folder_id=pid)
-        if pid:
-            folders = await get_folders(pid)
-            items = await get_content_items(pid)
-            pf = await get_folder(pid)
-            name = pf.name if pf else "?"
-            await message.answer(f"📂 {name}", reply_markup=folder_kb(folders, items, f"mup:{pf.parent_id or 0}"))
-        else:
-            folders = await get_folders()
-            await message.answer("📚 المواد:", reply_markup=folder_kb(folders, []))
-        await message.answer(reply_markup=reply_kb())
+        await render_admin(message, pid)
     else:
         from handlers.admin import admin_main_keyboard as main_kb
         await state.clear()
         await message.answer("🔝 القائمة الرئيسية", reply_markup=await main_kb(message.from_user.id))
+
+
+# ─── Student browsing (with FSM) ───
+
+class SState(StatesGroup):
+    browsing = State()
+
+
+@router.message(F.text == "📚 المواد")
+async def student_browse(message: Message, state: FSMContext = None) -> None:
+    if state is None:
+        from aiogram.fsm.context import FSMContextProxy
+        # shouldn't happen, but just in case
+        return
+    if not is_materials_active():
+        await message.answer("❌ ميزة المواد متوقفة.")
+        return
+    folders = await get_folders()
+    if not folders:
+        await message.answer("❌ لا توجد مواد بعد.")
+        return
+    await state.set_state(SState.browsing)
+    await state.update_data(folder_id=None)
+    await message.answer("📚 المواد:", reply_markup=student_kb(folders, []))
+
+
+@router.message(SState.browsing, F.text.startswith("📁 "))
+async def student_open_folder(message: Message, state: FSMContext) -> None:
+    name = message.text[2:].strip()
+    pid = (await state.get_data()).get("folder_id")
+    folders = await get_folders(pid)
+    match = [f for f in folders if f.name == name]
+    if not match:
+        return
+    fid = match[0].id
+    await state.update_data(folder_id=fid)
+    subs = await get_folders(fid)
+    items = await get_content_items(fid)
+    await message.answer(f"📂 {match[0].name}", reply_markup=student_kb(subs, items))
+
+
+@router.message(SState.browsing, F.text.startswith("📄 "))
+async def student_show_item(message: Message, state: FSMContext) -> None:
+    label = message.text[2:].strip()
+    pid = (await state.get_data()).get("folder_id")
+    if pid is None:
+        return
+    items = await get_content_items(pid)
+    match = [i for i in items if (i.title or "محتوى") == label]
+    if not match:
+        return
+    await forward_item(message.from_user.id, match[0].id, message.bot)
+
+
+@router.message(SState.browsing, F.text == "🔙 رجوع")
+async def student_back(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    fid = data.get("folder_id")
+    if fid:
+        f = await get_folder(fid)
+        pid = f.parent_id if f else None
+        await state.update_data(folder_id=pid)
+        if pid:
+            subs = await get_folders(pid)
+            items = await get_content_items(pid)
+            pf = await get_folder(pid)
+            await message.answer(f"📂 {pf.name}", reply_markup=student_kb(subs, items))
+        else:
+            folders = await get_folders()
+            await message.answer("📚 المواد:", reply_markup=student_kb(folders, []))
+    else:
+        await state.clear()
+        from keyboards.reply import main_keyboard
+        await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
