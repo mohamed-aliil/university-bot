@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def on_startup(bot: Bot) -> None:
     await init_db()
+    await bot.delete_webhook(drop_pending_updates=True)
     set_bot_active(True)
     for aid in settings.admin_ids:
         user = await get_user(aid)
