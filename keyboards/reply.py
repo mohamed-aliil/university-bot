@@ -73,6 +73,7 @@ async def news_keyboard() -> ReplyKeyboardMarkup:
             row = []
     if row:
         kb.append(row)
+    kb.append([KeyboardButton(text="📝 خبر مباشر")])
     kb.append([KeyboardButton(text="🔙 رجوع")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 

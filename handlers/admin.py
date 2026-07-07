@@ -94,6 +94,10 @@ class RemoveNewsTemplateState(StatesGroup):
     waiting_name = State()
 
 
+class QuickNewsState(StatesGroup):
+    waiting_content = State()
+
+
 # ─── لوحة التحكم الرئيسية ───
 
 @router.message(SuperAdminFilter(), F.text == "/panel")
@@ -859,6 +863,32 @@ async def news_button(message: Message) -> None:
     await message.answer("📰 اختر قالب الخبر:", reply_markup=await news_keyboard())
 
 
+@router.message(AdminFilter(), F.text == "📝 خبر مباشر")
+async def quick_news_start(message: Message, state: FSMContext) -> None:
+    await message.answer("✏️ أرسل محتوى الخبر مباشرة:", reply_markup=cancel_keyboard())
+    await state.set_state(QuickNewsState.waiting_content)
+
+
+@router.message(QuickNewsState.waiting_content, AdminFilter())
+async def quick_news_send(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if not text:
+        await message.answer("❌ المحتوى لا يمكن أن يكون فارغًا.")
+        return
+    if not settings.NEWS_CHANNEL_ID:
+        await message.answer("❌ لم يتم تعيين قناة الأخبار.")
+        await state.clear()
+        return
+    try:
+        from bot import bot
+        await bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
+        await message.answer("✅ تم نشر الخبر في القناة.", reply_markup=await news_keyboard())
+    except Exception as e:
+        logging.exception("quick_news_send")
+        await message.answer(f"❌ فشل النشر: {e}")
+    await state.clear()
+
+
 class NewsTemplateFilter(AdminFilter):
     async def __call__(self, obj: Message | CallbackQuery, state: FSMContext = None) -> bool:
         if not await super().__call__(obj):
@@ -867,7 +897,7 @@ class NewsTemplateFilter(AdminFilter):
             return False
         if state is not None:
             current = await state.get_state()
-            if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state):
+            if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state, QuickNewsState.waiting_content.state):
                 return False
         return obj.text in await load_templates()
 
