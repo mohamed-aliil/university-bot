@@ -315,3 +315,36 @@ async def get_reply_logs(admin_id: int | None = None, limit: int = 30) -> list[R
             query = query.where(ReplyLog.admin_id == admin_id)
         result = await session.execute(query.limit(limit))
         return list(result.scalars().all())
+
+
+async def reset_all_data() -> dict:
+    from config import settings
+    async with async_session() as session:
+        counts = {}
+        result = await session.execute(select(func.count(Message.id)))
+        counts["messages"] = result.scalar() or 0
+        await session.execute(delete(Message))
+
+        result = await session.execute(select(func.count(Attachment.id)))
+        counts["attachments"] = result.scalar() or 0
+        await session.execute(delete(Attachment))
+
+        result = await session.execute(select(func.count(AutoReply.id)))
+        counts["replies"] = result.scalar() or 0
+        await session.execute(delete(AutoReply))
+
+        result = await session.execute(select(func.count(ReplyLog.id)))
+        counts["logs"] = result.scalar() or 0
+        await session.execute(delete(ReplyLog))
+
+        result = await session.execute(select(func.count(User.id)))
+        total_users = result.scalar() or 0
+        await session.execute(
+            delete(User).where(User.user_id.notin_(settings.admin_ids)),
+        )
+        kept = len([aid for aid in settings.admin_ids])
+        counts["users_deleted"] = total_users - kept
+        counts["users_kept"] = kept
+
+        await session.commit()
+        return counts

@@ -1345,6 +1345,23 @@ async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.message(SuperAdminFilter(), F.text == "/resetdata")
+async def reset_data_command(message: Message) -> None:
+    from database.crud import reset_all_data
+    await message.answer("♻️ جاري حذف جميع البيانات...")
+    counts = await reset_all_data()
+    await message.answer(
+        "✅ تم حذف جميع البيانات بنجاح!\n\n"
+        f"• الرسائل: {counts['messages']}\n"
+        f"• المرفقات: {counts['attachments']}\n"
+        f"• الردود السريعة: {counts['replies']}\n"
+        f"• السجلات: {counts['logs']}\n"
+        f"• المستخدمين المحذوفين: {counts['users_deleted']}\n"
+        f"• المشرفين الأساسيين المحتفظ بهم: {counts['users_kept']}",
+        reply_markup=await admin_main_keyboard(message.from_user.id),
+    )
+
+
 @router.callback_query(AdminFilter(), F.data == "review_done")
 async def review_done_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
