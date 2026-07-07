@@ -765,10 +765,8 @@ async def unban_all_handler(message: Message) -> None:
 @router.message(PermissionFilter("can_manage"), F.text == "🔧 لوحة التحكم")
 async def panel_button(message: Message) -> None:
     from database.crud import is_bot_active
-    bot_active = is_bot_active()
-    is_super = message.from_user.id in settings.admin_ids
-    status = "✅ البوت شغال" if bot_active else "⛔ البوت متوقف"
-    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(bot_active, is_super))
+    status = "✅ البوت شغال" if is_bot_active() else "⛔ البوت متوقف"
+    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")

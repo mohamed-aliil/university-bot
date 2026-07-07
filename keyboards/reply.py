@@ -110,17 +110,11 @@ def stop_choice_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> ReplyKeyboardMarkup:
-    kb = [
-        [KeyboardButton(text="📩 إرسال رسالة")],
-        [KeyboardButton(text="📋 السجلات")],
-    ]
-    if is_super:
-        toggle = "▶️ تشغيل البوت" if not bot_active else "⏹ إيقاف البوت"
-        kb.append([KeyboardButton(text=toggle)])
-        kb.append([KeyboardButton(text="🔄 تحديث البوت")])
-    kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+def control_panel_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 رجوع")]],
+        resize_keyboard=True,
+    )
 
 
 def admins_management_keyboard() -> ReplyKeyboardMarkup:
