@@ -13,7 +13,7 @@ from database.crud import (
 )
 from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
 from handlers.messages import ReplyState
-from services.news import load_templates, save_templates
+from services.news import load_templates, add_template, remove_template
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -863,11 +863,14 @@ async def news_button(message: Message) -> None:
     if not settings.NEWS_CHANNEL_ID:
         await message.answer("❌ لم يتم تعيين قناة الأخبار.\nتواصل مع السوبر administrator لإعدادها.")
         return
-    await message.answer("📰 اختر قالب الخبر:", reply_markup=news_keyboard())
+    await message.answer("📰 اختر قالب الخبر:", reply_markup=await news_keyboard())
 
 
-@router.message(AdminFilter(), F.text.func(lambda text: text in load_templates()))
+@router.message(AdminFilter())
 async def news_template_chosen(message: Message, state: FSMContext) -> None:
+    templates = await load_templates()
+    if message.text not in templates:
+        return
     await state.set_state(NewsState.waiting_content)
     await state.update_data(news_template=message.text)
     await message.answer(
@@ -880,7 +883,6 @@ async def news_template_chosen(message: Message, state: FSMContext) -> None:
 async def news_content_sent(message: Message, state: FSMContext) -> None:
     from aiogram.enums import ParseMode
     from config import settings
-    from services.news import load_templates
     data = await state.get_data()
     template = data.get("news_template", "")
     channel = settings.NEWS_CHANNEL_ID
@@ -909,14 +911,14 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
             )
         else:
             await message.bot.send_message(chat_id=channel_id, text=full_text)
-        await message.answer("✅ تم نشر الخبر في القناة!", reply_markup=news_keyboard())
+        await message.answer("✅ تم نشر الخبر في القناة!", reply_markup=await news_keyboard())
     except Exception as e:
         logger.error(f"Failed to send news to channel: {e}")
         await message.answer(
             "❌ فشل النشر. تأكد من:\n"
             "• صحة معرف القناة\n"
             "• أن البوت مشرف في القناة",
-            reply_markup=news_keyboard(),
+            reply_markup=await news_keyboard(),
         )
     await state.clear()
 
@@ -925,7 +927,7 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "📡 تخصيص الأخبار")
 async def customize_news_button(message: Message) -> None:
-    templates = load_templates()
+    templates = await load_templates()
     text = "📡 قوالب الأخبار الحالية:\n\n"
     for i, t in enumerate(templates, 1):
         text += f"{i}. {t}\n"
@@ -941,13 +943,11 @@ async def add_news_template_start(message: Message, state: FSMContext) -> None:
 @router.message(AddNewsTemplateState.waiting_name, SuperAdminFilter())
 async def add_news_template_save(message: Message, state: FSMContext) -> None:
     name = message.text.strip()
-    templates = load_templates()
-    if name in templates:
-        await message.answer("❌ هذا القالب موجود بالفعل.")
-    else:
-        templates.append(name)
-        save_templates(templates)
+    ok = await add_template(name)
+    if ok:
         await message.answer(f"✅ تم إضافة القالب: {name}", reply_markup=customize_news_keyboard())
+    else:
+        await message.answer("❌ هذا القالب موجود بالفعل.")
     await state.clear()
 
 
@@ -960,19 +960,17 @@ async def remove_news_template_start(message: Message, state: FSMContext) -> Non
 @router.message(RemoveNewsTemplateState.waiting_name, SuperAdminFilter())
 async def remove_news_template_save(message: Message, state: FSMContext) -> None:
     name = message.text.strip()
-    templates = load_templates()
-    if name not in templates:
-        await message.answer("❌ هذا القالب غير موجود.")
-    else:
-        templates.remove(name)
-        save_templates(templates)
+    ok = await remove_template(name)
+    if ok:
         await message.answer(f"✅ تم حذف القالب: {name}", reply_markup=customize_news_keyboard())
+    else:
+        await message.answer("❌ هذا القالب غير موجود.")
     await state.clear()
 
 
 @router.message(SuperAdminFilter(), F.text == "📋 عرض القوالب")
 async def show_news_templates(message: Message) -> None:
-    templates = load_templates()
+    templates = await load_templates()
     text = "📋 قوالب الأخبار:\n\n"
     for i, t in enumerate(templates, 1):
         text += f"{i}. {t}\n"

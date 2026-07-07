@@ -60,9 +60,9 @@ def communication_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def news_keyboard() -> ReplyKeyboardMarkup:
+async def news_keyboard() -> ReplyKeyboardMarkup:
     from services.news import load_templates
-    templates = load_templates()
+    templates = await load_templates()
     kb = []
     row = []
     for t in templates:
