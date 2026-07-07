@@ -7,6 +7,7 @@ from aiogram.fsm.state import State, StatesGroup
 from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
     add_content_item, remove_content_item, get_content_items,
+    add_content_link, get_content_links,
     is_materials_active,
 )
 from filters import AdminFilter
@@ -22,6 +23,7 @@ class MState(StatesGroup):
     add_folder = State()
     add_item_link = State()
     add_item_title = State()
+    add_item_link_extra = State()
     deleting = State()
 
 
@@ -96,7 +98,7 @@ async def materials_settings(message: Message) -> None:
 async def toggle_materials(message: Message) -> None:
     from database.crud import set_materials_active
     from keyboards.reply import materials_settings_keyboard
-    new_state = "▶️ تشغيل المواد" not in message.text
+    new_state = "▶️ تشغيل المواد" in message.text
     set_materials_active(new_state)
     await message.answer("✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد", reply_markup=materials_settings_keyboard())
 
@@ -136,7 +138,7 @@ async def add_item_prompt(message: Message, state: FSMContext) -> None:
         await message.answer("❌ ادخل مجلد أولاً.")
         return
     await state.set_state(MState.add_item_link)
-    await message.answer("🔗 أرسل رابط منشور تيليغرام:")
+    await message.answer("🔗 أرسل رابط منشور تيليغرام (أول رابط):")
 
 
 @router.message(MState.add_item_link, AdminFilter())
@@ -150,21 +152,38 @@ async def add_item_link(message: Message, state: FSMContext) -> None:
     chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
     await state.update_data(link=link, channel_username=chat_id, channel_message_id=msg)
     await state.set_state(MState.add_item_title)
-    await message.answer("✏️ أرسل عنوانًا (أو /skip):")
+    await message.answer("✏️ أرسل عنوانًا (أو أرسل /skip لعدم وضع عنوان):")
 
 
 @router.message(MState.add_item_title, AdminFilter())
-async def add_item_done(message: Message, state: FSMContext) -> None:
+async def add_item_title(message: Message, state: FSMContext) -> None:
     title = None if message.text.strip() == "/skip" else message.text.strip()
     data = await state.get_data()
-    await add_content_item(
-        folder_id=data["folder_id"], link=data["link"],
-        title=title, channel_username=str(data["channel_username"]),
-        channel_message_id=data["channel_message_id"],
-    )
-    await message.answer("✅ تم إضافة المحتوى.")
-    await state.set_state(MState.browsing)
-    await render_admin(message, data["folder_id"])
+    ci = await add_content_item(folder_id=data["folder_id"], title=title)
+    await add_content_link(ci.id, data["link"], str(data["channel_username"]), data["channel_message_id"])
+    await state.update_data(content_item_id=ci.id, title=title)
+    await state.set_state(MState.add_item_link_extra)
+    await message.answer("✅ تم حفظ الرابط. أرسل رابط آخر أو /skip للإنهاء:")
+
+
+@router.message(MState.add_item_link_extra, AdminFilter())
+async def add_item_extra_link(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if text == "/skip":
+        data = await state.get_data()
+        await message.answer("✅ تم إضافة المحتوى بجميع روابطه.")
+        await state.set_state(MState.browsing)
+        await render_admin(message, data["folder_id"])
+        return
+    match = LINK_REGEX.search(text)
+    if not match:
+        await message.answer("❌ رابط غير صالح. أرسل رابط صحيح أو /skip.")
+        return
+    ch, msg = match.group(1), int(match.group(2))
+    chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+    data = await state.get_data()
+    await add_content_link(data["content_item_id"], text, str(chat_id), msg)
+    await message.answer("✅ تم حفظ الرابط. أرسل رابط آخر أو /skip للإنهاء:")
 
 
 @router.message(AdminFilter(), F.text == "➖ حذف")
@@ -206,17 +225,27 @@ async def delete_item(cq: CallbackQuery, state: FSMContext) -> None:
 async def forward_item(user_id: int, item_id: int, bot) -> None:
     from database.database import async_session
     from database.models import ContentItem
+    from database.crud import get_content_links
     from sqlalchemy import select
     async with async_session() as s:
         r = await s.execute(select(ContentItem).where(ContentItem.id == item_id))
         item = r.scalar_one_or_none()
     if not item:
         return
-    if item.channel_username and item.channel_message_id:
-        try:
-            await bot.forward_message(chat_id=user_id, from_chat_id=item.channel_username, message_id=item.channel_message_id)
-        except Exception as e:
-            pass
+    links = await get_content_links(item_id)
+    if not links:
+        return
+    for link in links:
+        if link.channel_username and link.channel_message_id:
+            try:
+                await bot.forward_message(chat_id=user_id, from_chat_id=link.channel_username, message_id=link.channel_message_id)
+            except Exception:
+                pass
+        else:
+            try:
+                await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
+            except Exception:
+                pass
 
 
 # ─── Admin folder navigation via reply keyboard ───

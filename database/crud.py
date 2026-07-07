@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -400,21 +400,9 @@ async def get_folder(folder_id: int) -> Folder | None:
         return await session.get(Folder, folder_id)
 
 
-async def add_content_item(
-    folder_id: int,
-    link: str,
-    title: str = None,
-    channel_username: str = None,
-    channel_message_id: int = None,
-) -> ContentItem:
+async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
     async with async_session() as session:
-        ci = ContentItem(
-            folder_id=folder_id,
-            title=title,
-            link=link,
-            channel_username=channel_username,
-            channel_message_id=channel_message_id,
-        )
+        ci = ContentItem(folder_id=folder_id, title=title)
         session.add(ci)
         await session.commit()
         await session.refresh(ci)
@@ -435,6 +423,23 @@ async def get_content_items(folder_id: int) -> list[ContentItem]:
     async with async_session() as session:
         result = await session.execute(
             select(ContentItem).where(ContentItem.folder_id == folder_id).order_by(ContentItem.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def add_content_link(content_item_id: int, link: str, channel_username: str = None, channel_message_id: int = None) -> ContentLink:
+    async with async_session() as session:
+        cl = ContentLink(content_item_id=content_item_id, link=link, channel_username=channel_username, channel_message_id=channel_message_id)
+        session.add(cl)
+        await session.commit()
+        await session.refresh(cl)
+        return cl
+
+
+async def get_content_links(content_item_id: int) -> list[ContentLink]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(ContentLink).where(ContentLink.content_item_id == content_item_id).order_by(ContentLink.created_at)
         )
         return list(result.scalars().all())
 

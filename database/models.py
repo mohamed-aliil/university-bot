@@ -101,6 +101,13 @@ class ContentItem(Base):
     id = Column(Integer, primary_key=True)
     folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+
+
+class ContentLink(Base):
+    __tablename__ = "content_links"
+    id = Column(Integer, primary_key=True)
+    content_item_id = Column(Integer, ForeignKey("content_items.id", ondelete="CASCADE"), nullable=False)
     link = Column(String, nullable=False)
     channel_username = Column(String, nullable=True)
     channel_message_id = Column(BigInteger, nullable=True)
