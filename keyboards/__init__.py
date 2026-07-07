@@ -7,8 +7,6 @@ from .reply import (
     admins_management_keyboard, users_management_keyboard,
     replies_management_keyboard, settings_keyboard, news_keyboard,
     customize_news_keyboard, quick_reply_keyboard, quick_reply_inline_keyboard,
-    materials_control_keyboard, materials_subjects_keyboard,
-    materials_sections_keyboard, materials_content_types_keyboard,
     stop_choice_keyboard, communication_keyboard,
 )
 
@@ -21,7 +19,5 @@ __all__ = [
     "admins_management_keyboard", "users_management_keyboard",
     "replies_management_keyboard", "settings_keyboard", "news_keyboard",
     "customize_news_keyboard", "quick_reply_keyboard", "quick_reply_inline_keyboard",
-    "materials_control_keyboard", "materials_subjects_keyboard",
-    "materials_sections_keyboard", "materials_content_types_keyboard",
     "stop_choice_keyboard", "communication_keyboard",
 ]

@@ -760,9 +760,9 @@ async def unban_all_handler(message: Message) -> None:
 # ─── أزرار الكيبورد الرئيسي للمسؤول ───
 
 @router.message(PermissionFilter("can_manage"), F.text == "📚 إدارة المواد")
-async def panel_button(message: Message) -> None:
-    from keyboards.reply import materials_control_keyboard
-    await message.answer("📚 إدارة المواد الدراسية:", reply_markup=materials_control_keyboard())
+async def panel_button(message: Message, state: FSMContext) -> None:
+    from handlers.materials import materials_entry
+    await materials_entry(message, state)
 
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")

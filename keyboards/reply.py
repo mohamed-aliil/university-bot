@@ -115,18 +115,7 @@ def stop_choice_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def materials_control_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="➕ إضافة مادة"), KeyboardButton(text="➖ حذف مادة")],
-            [KeyboardButton(text="➕ إضافة قسم"), KeyboardButton(text="➖ حذف قسم")],
-            [KeyboardButton(text="➕ إضافة نوع محتوى"), KeyboardButton(text="➖ حذف نوع محتوى")],
-            [KeyboardButton(text="📄 إضافة شيت/رابط"), KeyboardButton(text="🗑 حذف شيت")],
-            [KeyboardButton(text="📋 عرض المواد الدراسية")],
-            [KeyboardButton(text="🔙 رجوع")],
-        ],
-        resize_keyboard=True,
-    )
+
 
 
 def admins_management_keyboard() -> ReplyKeyboardMarkup:
@@ -296,51 +285,4 @@ async def quick_reply_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
-# ─── Materials Browsing Keyboards ───
 
-async def materials_subjects_keyboard() -> ReplyKeyboardMarkup:
-    from database.crud import get_all_subjects
-    subjects = await get_all_subjects()
-    kb = []
-    row = []
-    for s in subjects:
-        row.append(KeyboardButton(text=s.name))
-        if len(row) == 2:
-            kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
-    kb.append([KeyboardButton(text="🔙 رجوع")])
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
-
-async def materials_sections_keyboard(subject_id: int) -> ReplyKeyboardMarkup:
-    from database.crud import get_sections
-    sections = await get_sections(subject_id)
-    kb = []
-    row = []
-    for s in sections:
-        row.append(KeyboardButton(text=s.name))
-        if len(row) == 2:
-            kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
-    kb.append([KeyboardButton(text="🔙 رجوع")])
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
-
-
-async def materials_content_types_keyboard() -> ReplyKeyboardMarkup:
-    from database.crud import get_all_content_types
-    types = await get_all_content_types()
-    kb = []
-    row = []
-    for t in types:
-        row.append(KeyboardButton(text=t.name))
-        if len(row) == 2:
-            kb.append(row)
-            row = []
-    if row:
-        kb.append(row)
-    kb.append([KeyboardButton(text="🔙 رجوع")])
-    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
