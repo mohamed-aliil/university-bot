@@ -878,6 +878,7 @@ async def news_template_chosen(message: Message, state: FSMContext) -> None:
 
 @router.message(NewsState.waiting_content, AdminFilter())
 async def news_content_sent(message: Message, state: FSMContext) -> None:
+    from aiogram.enums import ParseMode
     from config import settings
     from services.news import load_templates
     data = await state.get_data()
@@ -885,27 +886,26 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
     channel = settings.NEWS_CHANNEL_ID
     content = message.text or message.caption or ""
 
-    header = f"📰 {template}\n{'-' * 15}\n"
-    full_text = f"{header}{content}"
+    full_text = f"<b>{template}</b>\n\n{content}"
 
     try:
         channel_id = int(channel) if channel.lstrip("-").isdigit() else channel
         if message.text:
-            await message.bot.send_message(chat_id=channel_id, text=full_text)
+            await message.bot.send_message(chat_id=channel_id, text=full_text, parse_mode=ParseMode.HTML)
         elif message.photo:
             await message.bot.send_photo(
                 chat_id=channel_id, photo=message.photo[-1].file_id,
-                caption=full_text,
+                caption=full_text, parse_mode=ParseMode.HTML,
             )
         elif message.video:
             await message.bot.send_video(
                 chat_id=channel_id, video=message.video.file_id,
-                caption=full_text,
+                caption=full_text, parse_mode=ParseMode.HTML,
             )
         elif message.document:
             await message.bot.send_document(
                 chat_id=channel_id, document=message.document.file_id,
-                caption=full_text,
+                caption=full_text, parse_mode=ParseMode.HTML,
             )
         else:
             await message.bot.send_message(chat_id=channel_id, text=full_text)

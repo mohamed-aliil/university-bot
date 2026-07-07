@@ -89,9 +89,8 @@ def customize_news_keyboard() -> ReplyKeyboardMarkup:
 
 
 def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
-    toggle = "▶️ تشغيل البوت" if not bot_active else "⏹ إيقاف البوت"
     kb = [
-        [KeyboardButton(text=toggle)],
+        [KeyboardButton(text="⏹ إيقاف البوت"), KeyboardButton(text="▶️ تشغيل البوت")],
         [KeyboardButton(text="📋 السجلات")],
         [KeyboardButton(text="📡 تخصيص الأخبار")],
         [KeyboardButton(text="🔄 تحديث البوت")],
