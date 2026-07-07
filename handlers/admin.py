@@ -859,11 +859,12 @@ async def news_button(message: Message) -> None:
     await message.answer("📰 اختر قالب الخبر:", reply_markup=await news_keyboard())
 
 
-@router.message(AdminFilter())
+async def _is_news_template(text: str) -> bool:
+    return text in await load_templates()
+
+
+@router.message(AdminFilter(), F.text.func(_is_news_template))
 async def news_template_chosen(message: Message, state: FSMContext) -> None:
-    templates = await load_templates()
-    if message.text not in templates:
-        return
     await state.set_state(NewsState.waiting_source)
     await state.update_data(news_template=message.text)
     await message.answer(
