@@ -48,7 +48,8 @@ def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> R
         [KeyboardButton(text="📋 السجلات")],
     ]
     if is_super:
-        kb.append([KeyboardButton(text="⏹ إيقاف البوت")])
+        toggle = "⏹ إيقاف البوت" if bot_active else "▶️ تشغيل البوت"
+        kb.append([KeyboardButton(text=toggle)])
         kb.append([KeyboardButton(text="🔄 تحديث البوت")])
     kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)

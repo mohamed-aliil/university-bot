@@ -9,7 +9,7 @@ from aiogram.enums import ParseMode
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user
+from database.crud import set_admin, set_permission, get_user, set_bot_active
 from handlers import start, messages, admin
 from middlewares import ThrottlingMiddleware
 from utils.logger import setup_logger
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def on_startup(bot: Bot) -> None:
     await init_db()
+    set_bot_active(True)
     for aid in settings.admin_ids:
         user = await get_user(aid)
         if user:

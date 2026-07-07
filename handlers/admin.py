@@ -752,8 +752,11 @@ async def unban_all_handler(message: Message) -> None:
 
 @router.message(PermissionFilter("can_manage"), F.text == "🔧 لوحة التحكم")
 async def panel_button(message: Message) -> None:
+    from database.crud import is_bot_active
+    active = is_bot_active()
     is_super = message.from_user.id in settings.admin_ids
-    await message.answer("🔧 لوحة التحكم", reply_markup=control_panel_keyboard(is_super=is_super))
+    status = "✅ البوت شغال" if active else "⛔ البوت متوقف"
+    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(active, is_super))
 
 
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
@@ -809,10 +812,16 @@ async def sendmsg_from_kb(message: Message, state: FSMContext) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")
 async def stop_bot_kb(message: Message) -> None:
-    await message.answer("⛔ جاري إيقاف البوت بالكامل...")
-    import subprocess, sys
-    subprocess.Popen(["systemctl", "--user", "stop", "botkey"])
-    sys.exit(0)
+    from database.crud import set_bot_active
+    set_bot_active(False)
+    await message.answer("⛔ تم إيقاف البوت.\nلن يتم استقبال رسائل جديدة.", reply_markup=await admin_main_keyboard(message.from_user.id))
+
+
+@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل البوت")
+async def start_bot_kb(message: Message) -> None:
+    from database.crud import set_bot_active
+    set_bot_active(True)
+    await message.answer("✅ تم تشغيل البوت.\nيمكن للمستخدمين إرسال الرسائل الآن.", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 السجلات")

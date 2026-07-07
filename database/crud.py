@@ -1,6 +1,21 @@
+from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
 from .models import User, Message, Attachment, AutoReply, ReplyLog
+
+BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
+
+
+def is_bot_active() -> bool:
+    return BOT_ACTIVE_FILE.exists()
+
+
+def set_bot_active(active: bool) -> None:
+    BOT_ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if active:
+        BOT_ACTIVE_FILE.touch()
+    else:
+        BOT_ACTIVE_FILE.unlink(missing_ok=True)
 
 async def get_user(user_id: int) -> User | None:
     async with async_session() as session:
