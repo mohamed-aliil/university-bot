@@ -11,7 +11,7 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read, mark_user_messages_read,
     save_reply_log, save_admin_action,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard
 from handlers.messages import ReplyState
 from config import settings
 
@@ -753,24 +753,57 @@ async def unban_all_handler(message: Message) -> None:
 @router.message(PermissionFilter("can_manage"), F.text == "🔧 لوحة التحكم")
 async def panel_button(message: Message) -> None:
     from database.crud import is_bot_active
-    active = is_bot_active()
+    bot_active = is_bot_active()
     is_super = message.from_user.id in settings.admin_ids
-    status = "✅ البوت شغال" if active else "⛔ البوت متوقف"
-    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(active, is_super))
+    status = "✅ البوت شغال" if bot_active else "⛔ البوت متوقف"
+    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(bot_active, is_super))
 
 
-@router.callback_query(SuperAdminFilter(), F.data == "panel:toggle_bot")
-async def toggle_bot_cb(callback: CallbackQuery) -> None:
-    from database.crud import is_bot_active, set_bot_active
-    active = is_bot_active()
-    if active:
-        set_bot_active(False)
-        status = "⛔ البوت متوقف"
-    else:
-        set_bot_active(True)
-        status = "✅ البوت شغال"
-    await callback.message.edit_text(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(not active, True))
-    await callback.answer()
+@router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")
+async def stop_bot_prompt(message: Message) -> None:
+    from database.crud import is_bot_active
+    if not is_bot_active():
+        return
+    from keyboards.reply import stop_choice_keyboard
+    await message.answer("اختر نوع الإيقاف:", reply_markup=stop_choice_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "🔇 إيقاف صامت")
+async def stop_bot_silent(message: Message) -> None:
+    from database.crud import set_bot_active
+    set_bot_active(False)
+    await message.answer("⛔ تم إيقاف البوت.", reply_markup=control_panel_keyboard(bot_active=False, is_super=True))
+
+
+@router.message(SuperAdminFilter(), F.text == "📢 إيقاف مع إعلام")
+async def stop_bot_with_notify(message: Message) -> None:
+    from database.crud import set_bot_active, get_all_users
+    from config import settings
+    set_bot_active(False)
+    users = await get_all_users()
+    sent = 0
+    for u in users:
+        if u.user_id in settings.admin_ids:
+            continue
+        try:
+            await message.bot.send_message(
+                u.user_id,
+                "⛔ البوت متوقف حاليًا. يرجى المحاولة لاحقًا.",
+            )
+            sent += 1
+        except Exception:
+            pass
+    await message.answer(
+        f"⛔ تم إيقاف البوت وإعلام {sent} مستخدم.",
+        reply_markup=control_panel_keyboard(bot_active=False, is_super=True),
+    )
+
+
+@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل البوت")
+async def start_bot_kb(message: Message) -> None:
+    from database.crud import set_bot_active
+    set_bot_active(True)
+    await message.answer("✅ تم تشغيل البوت.", reply_markup=control_panel_keyboard(bot_active=True, is_super=True))
 
 
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
