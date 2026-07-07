@@ -15,7 +15,7 @@ from filters import AdminFilter
 logger = logging.getLogger(__name__)
 router = Router()
 
-LINK_REGEX = re.compile(r"https?://t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
+LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 
 
 class MState(StatesGroup):
@@ -249,8 +249,8 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
+    import asyncio
     from database.crud import get_content_links
-    item = None
     from database.database import async_session
     from database.models import ContentItem
     from sqlalchemy import select
@@ -258,22 +258,37 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
         r = await s.execute(select(ContentItem).where(ContentItem.id == item_id))
         item = r.scalar_one_or_none()
     if not item:
+        await bot.send_message(chat_id=user_id, text="❌ المحتوى غير موجود.")
         return
     links = await get_content_links(item_id)
     if not links:
+        await bot.send_message(chat_id=user_id, text="❌ لا توجد روابط لهذا المحتوى.")
         return
-    forwarded = 0
-    for link in links:
-        if link.channel_username and link.channel_message_id:
+    status = await bot.send_message(chat_id=user_id, text=f"⏳ جاري تحويل {len(links)} رابط…")
+
+    async def forward_one(link):
+        ch = link.channel_username
+        mid = link.channel_message_id
+        if ch and mid:
             try:
-                await bot.forward_message(chat_id=user_id, from_chat_id=link.channel_username, message_id=link.channel_message_id)
-                forwarded += 1
+                fid = int(ch) if ch.lstrip("-").isdigit() else ch
+                await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
+                return True, None
             except Exception as e:
-                await bot.send_message(chat_id=user_id, text=f"❌ تعذر تحويل الرابط: {link.link}\n{e}")
+                return False, f"❌ تعذر تحويل الرابط: {link.link}\n{e}"
         else:
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
-    if forwarded:
-        logger.info(f"Forwarded {forwarded} links for content item {item_id} to user {user_id}")
+            return True, None
+
+    results = await asyncio.gather(*[forward_one(l) for l in links])
+    ok = sum(1 for s, _ in results if s)
+    errs = [e for _, e in results if e]
+    await bot.delete_message(chat_id=user_id, message_id=status.message_id)
+    if ok:
+        await bot.send_message(chat_id=user_id, text=f"✅ تم تحويل {ok} من {len(links)} روابط.")
+    for e in errs:
+        await bot.send_message(chat_id=user_id, text=e)
+    logger.info(f"Forwarded {ok}/{len(links)} links for content item {item_id} to user {user_id}")
 
 
 # ─── Back ───
