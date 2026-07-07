@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiohttp import web
 
 from config import settings
 from database.database import init_db
@@ -33,6 +34,21 @@ async def on_startup(bot: Bot) -> None:
     logger.info("Bot ready.")
 
 
+async def health(request: web.Request) -> web.Response:
+    return web.Response(text="OK")
+
+
+async def run_web():
+    app = web.Application()
+    app.router.add_get("/healthz", health)
+    port = int(os.environ.get("PORT", 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health server running on port {port}")
+
+
 async def main() -> None:
     setup_logger()
     bot = Bot(
@@ -45,6 +61,7 @@ async def main() -> None:
     dp.include_router(messages.router)
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
     dp.startup.register(on_startup)
+    await run_web()
     logger.info("Bot started polling...")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
 
