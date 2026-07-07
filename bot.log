@@ -1095,3 +1095,432 @@ aiogram.exceptions.TelegramBadRequest: Telegram server says - Bad Request: query
 2026-07-06 00:40:42,137 - aiogram.event - INFO - Update id=3517649 is handled. Duration 1033 ms by bot id=8903072909
 2026-07-06 00:40:44,378 - aiogram.event - INFO - Update id=3517651 is handled. Duration 251 ms by bot id=8903072909
 2026-07-06 00:40:46,721 - aiogram.event - INFO - Update id=3517652 is handled. Duration 144 ms by bot id=8903072909
+2026-07-06 00:54:18,567 - aiogram.event - INFO - Update id=3517653 is handled. Duration 1427 ms by bot id=8903072909
+2026-07-06 00:54:20,823 - aiogram.event - INFO - Update id=3517654 is handled. Duration 174 ms by bot id=8903072909
+2026-07-06 00:54:34,185 - aiogram.event - INFO - Update id=3517655 is handled. Duration 165 ms by bot id=8903072909
+2026-07-06 01:58:31,145 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 01:58:31,737 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 01:58:31,767 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 01:58:31,866 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 01:58:47,831 - __main__ - INFO - Bot started polling...
+2026-07-06 01:58:47,874 - __main__ - INFO - Bot ready.
+2026-07-06 01:58:47,874 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 01:58:47,954 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 01:58:56,543 - __main__ - INFO - Bot started polling...
+2026-07-06 01:58:56,584 - __main__ - INFO - Bot ready.
+2026-07-06 01:58:56,584 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 01:58:56,898 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 01:58:58,925 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 01:58:58,925 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 01:58:58,926 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 01:58:58,926 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 01:59:01,980 - __main__ - INFO - Bot started polling...
+2026-07-06 01:59:02,023 - __main__ - INFO - Bot ready.
+2026-07-06 01:59:02,023 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 01:59:02,282 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 02:02:50,095 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 02:02:50,109 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 02:02:50,159 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 02:02:50,160 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 02:06:25,544 - __main__ - INFO - Bot started polling...
+2026-07-06 02:06:25,704 - __main__ - INFO - Bot ready.
+2026-07-06 02:06:25,705 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 02:06:26,538 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 02:12:22,078 - __main__ - INFO - Bot started polling...
+2026-07-06 02:12:24,876 - __main__ - INFO - Bot ready.
+2026-07-06 02:12:24,876 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 02:12:25,705 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 02:12:25,827 - aiogram.event - INFO - Update id=3517656 is handled. Duration 6 ms by bot id=8903072909
+2026-07-06 02:12:25,829 - aiogram.event - INFO - Update id=3517657 is handled. Duration 8 ms by bot id=8903072909
+2026-07-06 02:12:26,246 - aiogram.event - INFO - Update id=3517658 is handled. Duration 425 ms by bot id=8903072909
+2026-07-06 02:14:52,934 - aiogram.event - INFO - Update id=3517659 is handled. Duration 292 ms by bot id=8903072909
+2026-07-06 02:14:55,188 - aiogram.event - INFO - Update id=3517660 is handled. Duration 190 ms by bot id=8903072909
+2026-07-06 02:14:57,126 - aiogram.event - INFO - Update id=3517661 is handled. Duration 228 ms by bot id=8903072909
+2026-07-06 02:15:02,116 - aiogram.event - INFO - Update id=3517662 is handled. Duration 276 ms by bot id=8903072909
+2026-07-06 02:15:07,609 - aiogram.event - INFO - Update id=3517663 is handled. Duration 673 ms by bot id=8903072909
+2026-07-06 02:16:07,160 - aiogram.event - INFO - Update id=3517664 is handled. Duration 233 ms by bot id=8903072909
+2026-07-06 02:16:09,988 - aiogram.event - INFO - Update id=3517665 is handled. Duration 193 ms by bot id=8903072909
+2026-07-06 02:16:11,836 - aiogram.event - INFO - Update id=3517666 is handled. Duration 1588 ms by bot id=8903072909
+2026-07-06 02:16:16,712 - aiogram.event - INFO - Update id=3517667 is handled. Duration 192 ms by bot id=8903072909
+2026-07-06 02:16:19,993 - aiogram.event - INFO - Update id=3517668 is handled. Duration 410 ms by bot id=8903072909
+2026-07-06 02:16:21,179 - aiogram.event - INFO - Update id=3517669 is handled. Duration 118 ms by bot id=8903072909
+2026-07-06 02:16:24,462 - aiogram.event - INFO - Update id=3517670 is handled. Duration 585 ms by bot id=8903072909
+2026-07-06 02:16:27,535 - aiogram.event - INFO - Update id=3517671 is handled. Duration 292 ms by bot id=8903072909
+2026-07-06 02:16:29,914 - aiogram.event - INFO - Update id=3517672 is handled. Duration 539 ms by bot id=8903072909
+2026-07-06 02:16:34,227 - aiogram.event - INFO - Update id=3517673 is handled. Duration 550 ms by bot id=8903072909
+2026-07-06 02:16:42,302 - aiogram.event - INFO - Update id=3517674 is handled. Duration 529 ms by bot id=8903072909
+2026-07-06 02:16:48,434 - aiogram.event - INFO - Update id=3517675 is handled. Duration 8 ms by bot id=8903072909
+2026-07-06 02:16:50,020 - aiogram.event - INFO - Update id=3517676 is handled. Duration 279 ms by bot id=8903072909
+2026-07-06 02:16:53,936 - aiogram.event - INFO - Update id=3517677 is handled. Duration 997 ms by bot id=8903072909
+2026-07-06 02:16:59,895 - aiogram.event - INFO - Update id=3517678 is handled. Duration 200 ms by bot id=8903072909
+2026-07-06 02:17:04,708 - aiogram.event - INFO - Update id=3517679 is handled. Duration 308 ms by bot id=8903072909
+2026-07-06 02:17:06,372 - aiogram.event - INFO - Update id=3517680 is handled. Duration 130 ms by bot id=8903072909
+2026-07-06 02:17:07,684 - aiogram.event - INFO - Update id=3517681 is handled. Duration 212 ms by bot id=8903072909
+2026-07-06 02:17:11,975 - aiogram.event - INFO - Update id=3517682 is handled. Duration 204 ms by bot id=8903072909
+2026-07-06 02:17:15,457 - aiogram.event - INFO - Update id=3517683 is handled. Duration 614 ms by bot id=8903072909
+2026-07-06 02:17:37,212 - aiogram.event - INFO - Update id=3517684 is handled. Duration 318 ms by bot id=8903072909
+2026-07-06 02:17:49,860 - aiogram.event - INFO - Update id=3517685 is handled. Duration 408 ms by bot id=8903072909
+2026-07-06 02:18:11,979 - aiogram.event - INFO - Update id=3517686 is handled. Duration 110 ms by bot id=8903072909
+2026-07-06 02:18:14,745 - aiogram.event - INFO - Update id=3517687 is handled. Duration 407 ms by bot id=8903072909
+2026-07-06 02:18:18,943 - aiogram.event - INFO - Update id=3517688 is handled. Duration 202 ms by bot id=8903072909
+2026-07-06 02:18:20,199 - aiogram.event - INFO - Update id=3517689 is handled. Duration 231 ms by bot id=8903072909
+2026-07-06 02:19:03,103 - aiogram.event - INFO - Update id=3517690 is handled. Duration 129 ms by bot id=8903072909
+2026-07-06 02:19:05,176 - aiogram.event - INFO - Update id=3517691 is handled. Duration 247 ms by bot id=8903072909
+2026-07-06 02:19:14,681 - aiogram.event - INFO - Update id=3517692 is handled. Duration 220 ms by bot id=8903072909
+2026-07-06 02:19:19,163 - aiogram.event - INFO - Update id=3517693 is handled. Duration 201 ms by bot id=8903072909
+2026-07-06 02:19:23,575 - aiogram.event - INFO - Update id=3517694 is handled. Duration 1849 ms by bot id=8903072909
+2026-07-06 02:19:29,916 - aiogram.event - INFO - Update id=3517695 is handled. Duration 201 ms by bot id=8903072909
+2026-07-06 02:19:30,337 - aiogram.event - INFO - Update id=3517696 is handled. Duration 523 ms by bot id=8903072909
+2026-07-06 02:19:32,417 - aiogram.event - INFO - Update id=3517697 is handled. Duration 245 ms by bot id=8903072909
+2026-07-06 02:19:50,714 - aiogram.event - INFO - Update id=3517699 is handled. Duration 13 ms by bot id=8903072909
+2026-07-06 02:19:50,717 - aiogram.event - INFO - Update id=3517700 is handled. Duration 15 ms by bot id=8903072909
+2026-07-06 02:19:50,981 - aiogram.event - INFO - Update id=3517701 is handled. Duration 278 ms by bot id=8903072909
+2026-07-06 02:19:50,998 - aiogram.event - INFO - Update id=3517698 is handled. Duration 297 ms by bot id=8903072909
+2026-07-06 02:19:56,145 - aiogram.event - INFO - Update id=3517702 is handled. Duration 312 ms by bot id=8903072909
+2026-07-06 02:20:01,760 - aiogram.event - INFO - Update id=3517703 is handled. Duration 398 ms by bot id=8903072909
+2026-07-06 02:20:05,286 - aiogram.event - INFO - Update id=3517704 is handled. Duration 180 ms by bot id=8903072909
+2026-07-06 02:20:08,428 - aiogram.event - INFO - Update id=3517705 is handled. Duration 268 ms by bot id=8903072909
+2026-07-06 02:20:12,324 - aiogram.event - INFO - Update id=3517706 is handled. Duration 204 ms by bot id=8903072909
+2026-07-06 02:20:13,882 - aiogram.event - INFO - Update id=3517707 is handled. Duration 172 ms by bot id=8903072909
+2026-07-06 02:20:19,669 - aiogram.event - INFO - Update id=3517708 is handled. Duration 177 ms by bot id=8903072909
+2026-07-06 02:20:43,539 - aiogram.event - INFO - Update id=3517709 is handled. Duration 183 ms by bot id=8903072909
+2026-07-06 02:20:44,178 - aiogram.event - INFO - Update id=3517710 is handled. Duration 308 ms by bot id=8903072909
+2026-07-06 02:20:50,140 - aiogram.event - INFO - Update id=3517711 is handled. Duration 739 ms by bot id=8903072909
+2026-07-06 02:20:54,344 - aiogram.event - INFO - Update id=3517712 is handled. Duration 129 ms by bot id=8903072909
+2026-07-06 02:20:56,004 - aiogram.event - INFO - Update id=3517713 is handled. Duration 254 ms by bot id=8903072909
+2026-07-06 02:20:59,743 - aiogram.event - INFO - Update id=3517714 is handled. Duration 309 ms by bot id=8903072909
+2026-07-06 02:21:57,103 - aiogram.event - INFO - Update id=3517715 is handled. Duration 201 ms by bot id=8903072909
+2026-07-06 02:21:59,285 - aiogram.event - INFO - Update id=3517716 is handled. Duration 278 ms by bot id=8903072909
+2026-07-06 02:22:00,694 - aiogram.event - INFO - Update id=3517717 is handled. Duration 137 ms by bot id=8903072909
+2026-07-06 02:22:08,164 - aiogram.event - INFO - Update id=3517718 is handled. Duration 161 ms by bot id=8903072909
+2026-07-06 02:22:11,044 - aiogram.event - INFO - Update id=3517719 is handled. Duration 440 ms by bot id=8903072909
+2026-07-06 02:27:44,395 - aiogram.event - INFO - Update id=3517720 is handled. Duration 247 ms by bot id=8903072909
+2026-07-06 02:27:47,863 - aiogram.event - INFO - Update id=3517721 is handled. Duration 227 ms by bot id=8903072909
+2026-07-06 02:27:49,941 - aiogram.event - INFO - Update id=3517722 is handled. Duration 157 ms by bot id=8903072909
+2026-07-06 02:27:50,399 - aiogram.event - INFO - Update id=3517723 is handled. Duration 202 ms by bot id=8903072909
+2026-07-06 02:27:54,176 - aiogram.event - INFO - Update id=3517724 is handled. Duration 191 ms by bot id=8903072909
+2026-07-06 02:27:57,975 - aiogram.event - INFO - Update id=3517725 is handled. Duration 200 ms by bot id=8903072909
+2026-07-06 02:28:00,948 - aiogram.event - INFO - Update id=3517726 is handled. Duration 406 ms by bot id=8903072909
+2026-07-06 02:28:06,532 - aiogram.event - INFO - Update id=3517727 is handled. Duration 664 ms by bot id=8903072909
+2026-07-06 02:28:10,320 - aiogram.event - INFO - Update id=3517728 is handled. Duration 191 ms by bot id=8903072909
+2026-07-06 02:28:11,860 - aiogram.event - INFO - Update id=3517729 is handled. Duration 265 ms by bot id=8903072909
+2026-07-06 02:28:12,513 - aiogram.event - INFO - Update id=3517730 is handled. Duration 832 ms by bot id=8903072909
+2026-07-06 02:28:15,693 - aiogram.event - INFO - Update id=3517731 is handled. Duration 269 ms by bot id=8903072909
+2026-07-06 02:28:28,694 - aiogram.event - INFO - Update id=3517734 is handled. Duration 100 ms by bot id=8903072909
+2026-07-06 02:28:28,703 - aiogram.event - INFO - Update id=3517735 is handled. Duration 109 ms by bot id=8903072909
+2026-07-06 02:28:28,706 - aiogram.event - INFO - Update id=3517736 is handled. Duration 110 ms by bot id=8903072909
+2026-07-06 02:28:28,904 - aiogram.event - INFO - Update id=3517732 is handled. Duration 413 ms by bot id=8903072909
+2026-07-06 02:28:28,906 - aiogram.event - INFO - Update id=3517733 is handled. Duration 313 ms by bot id=8903072909
+2026-07-06 02:28:34,710 - aiogram.event - INFO - Update id=3517737 is handled. Duration 241 ms by bot id=8903072909
+2026-07-06 02:30:37,021 - aiogram.event - INFO - Update id=3517738 is handled. Duration 253 ms by bot id=8903072909
+2026-07-06 02:30:40,163 - aiogram.event - INFO - Update id=3517739 is handled. Duration 234 ms by bot id=8903072909
+2026-07-06 02:30:41,438 - aiogram.event - INFO - Update id=3517740 is handled. Duration 243 ms by bot id=8903072909
+2026-07-06 02:30:46,110 - aiogram.event - INFO - Update id=3517741 is handled. Duration 306 ms by bot id=8903072909
+2026-07-06 02:30:50,920 - aiogram.event - INFO - Update id=3517742 is handled. Duration 511 ms by bot id=8903072909
+2026-07-06 02:32:07,925 - aiogram.event - INFO - Update id=3517743 is handled. Duration 382 ms by bot id=8903072909
+2026-07-06 02:44:11,466 - aiogram.event - INFO - Update id=3517744 is handled. Duration 843 ms by bot id=8903072909
+2026-07-06 02:46:04,445 - aiogram.event - INFO - Update id=3517745 is handled. Duration 130 ms by bot id=8903072909
+2026-07-06 02:46:09,192 - aiogram.event - INFO - Update id=3517746 is handled. Duration 305 ms by bot id=8903072909
+2026-07-06 02:49:04,079 - aiogram.event - INFO - Update id=3517747 is handled. Duration 415 ms by bot id=8903072909
+2026-07-06 02:49:05,514 - aiogram.event - INFO - Update id=3517748 is handled. Duration 305 ms by bot id=8903072909
+2026-07-06 02:49:06,977 - aiogram.event - INFO - Update id=3517749 is handled. Duration 235 ms by bot id=8903072909
+2026-07-06 02:50:22,624 - aiogram.event - INFO - Update id=3517750 is handled. Duration 207 ms by bot id=8903072909
+2026-07-06 02:50:30,140 - aiogram.event - INFO - Update id=3517751 is handled. Duration 369 ms by bot id=8903072909
+2026-07-06 02:56:13,611 - aiogram.event - INFO - Update id=3517752 is handled. Duration 307 ms by bot id=8903072909
+2026-07-06 02:56:16,617 - aiogram.event - INFO - Update id=3517753 is handled. Duration 411 ms by bot id=8903072909
+2026-07-06 02:56:18,253 - aiogram.event - INFO - Update id=3517754 is handled. Duration 150 ms by bot id=8903072909
+2026-07-06 02:56:20,304 - aiogram.event - INFO - Update id=3517755 is handled. Duration 409 ms by bot id=8903072909
+2026-07-06 02:56:25,175 - aiogram.event - INFO - Update id=3517756 is handled. Duration 120 ms by bot id=8903072909
+2026-07-06 02:56:36,890 - aiogram.event - INFO - Update id=3517757 is handled. Duration 197 ms by bot id=8903072909
+2026-07-06 02:56:42,982 - aiogram.event - INFO - Update id=3517758 is handled. Duration 116 ms by bot id=8903072909
+2026-07-06 09:32:25,237 - aiogram.event - INFO - Update id=3517759 is handled. Duration 353 ms by bot id=8903072909
+2026-07-06 09:32:31,715 - aiogram.event - INFO - Update id=3517760 is handled. Duration 303 ms by bot id=8903072909
+2026-07-06 09:32:56,731 - aiogram.event - INFO - Update id=3517761 is handled. Duration 136 ms by bot id=8903072909
+2026-07-06 09:33:20,458 - aiogram.event - INFO - Update id=3517762 is handled. Duration 202 ms by bot id=8903072909
+2026-07-06 09:33:28,237 - aiogram.event - INFO - Update id=3517763 is handled. Duration 239 ms by bot id=8903072909
+2026-07-06 09:33:33,575 - aiogram.event - INFO - Update id=3517764 is handled. Duration 129 ms by bot id=8903072909
+2026-07-06 10:04:42,596 - aiogram.event - INFO - Update id=3517765 is handled. Duration 926 ms by bot id=8903072909
+2026-07-06 10:08:59,631 - aiogram.event - INFO - Update id=3517766 is handled. Duration 218 ms by bot id=8903072909
+2026-07-06 10:09:01,075 - aiogram.event - INFO - Update id=3517767 is handled. Duration 126 ms by bot id=8903072909
+2026-07-06 10:09:10,266 - aiogram.event - INFO - Update id=3517768 is handled. Duration 200 ms by bot id=8903072909
+2026-07-06 10:09:11,372 - aiogram.event - INFO - Update id=3517769 is handled. Duration 105 ms by bot id=8903072909
+2026-07-06 10:15:20,144 - aiogram.event - INFO - Update id=3517770 is handled. Duration 55 ms by bot id=8903072909
+2026-07-06 10:25:41,497 - aiogram.event - INFO - Update id=3517771 is handled. Duration 434 ms by bot id=8903072909
+2026-07-06 10:25:55,700 - aiogram.event - INFO - Update id=3517772 is handled. Duration 102 ms by bot id=8903072909
+2026-07-06 10:26:04,267 - aiogram.event - INFO - Update id=3517773 is handled. Duration 228 ms by bot id=8903072909
+2026-07-06 10:26:07,852 - aiogram.event - INFO - Update id=3517774 is handled. Duration 144 ms by bot id=8903072909
+2026-07-06 10:26:13,803 - aiogram.event - INFO - Update id=3517775 is handled. Duration 116 ms by bot id=8903072909
+2026-07-06 10:26:28,256 - aiogram.event - INFO - Update id=3517776 is handled. Duration 298 ms by bot id=8903072909
+2026-07-06 10:26:53,556 - aiogram.event - INFO - Update id=3517777 is handled. Duration 198 ms by bot id=8903072909
+2026-07-06 10:26:57,496 - aiogram.event - INFO - Update id=3517778 is handled. Duration 250 ms by bot id=8903072909
+2026-07-06 10:27:00,699 - aiogram.event - INFO - Update id=3517779 is handled. Duration 1072 ms by bot id=8903072909
+2026-07-06 10:27:12,563 - aiogram.event - INFO - Update id=3517780 is handled. Duration 135 ms by bot id=8903072909
+2026-07-06 10:27:14,059 - aiogram.event - INFO - Update id=3517781 is handled. Duration 126 ms by bot id=8903072909
+2026-07-06 10:27:18,182 - aiogram.event - INFO - Update id=3517782 is handled. Duration 322 ms by bot id=8903072909
+2026-07-06 10:27:26,653 - aiogram.event - INFO - Update id=3517783 is handled. Duration 1046 ms by bot id=8903072909
+2026-07-06 10:27:31,196 - aiogram.event - INFO - Update id=3517784 is handled. Duration 303 ms by bot id=8903072909
+2026-07-06 10:27:37,558 - aiogram.event - INFO - Update id=3517785 is handled. Duration 109 ms by bot id=8903072909
+2026-07-06 10:28:10,990 - aiogram.event - INFO - Update id=3517786 is handled. Duration 660 ms by bot id=8903072909
+2026-07-06 10:28:17,414 - aiogram.event - INFO - Update id=3517787 is handled. Duration 306 ms by bot id=8903072909
+2026-07-06 10:28:28,959 - aiogram.event - INFO - Update id=3517788 is handled. Duration 380 ms by bot id=8903072909
+2026-07-06 10:28:32,688 - aiogram.event - INFO - Update id=3517789 is handled. Duration 116 ms by bot id=8903072909
+2026-07-06 10:29:20,286 - aiogram.event - INFO - Update id=3517790 is handled. Duration 203 ms by bot id=8903072909
+2026-07-06 10:29:21,642 - aiogram.event - INFO - Update id=3517791 is handled. Duration 228 ms by bot id=8903072909
+2026-07-06 10:29:23,255 - aiogram.event - INFO - Update id=3517792 is handled. Duration 389 ms by bot id=8903072909
+2026-07-06 10:29:36,611 - aiogram.event - INFO - Update id=3517793 is handled. Duration 197 ms by bot id=8903072909
+2026-07-06 10:29:43,123 - aiogram.event - INFO - Update id=3517794 is handled. Duration 258 ms by bot id=8903072909
+2026-07-06 10:29:48,355 - aiogram.event - INFO - Update id=3517795 is handled. Duration 190 ms by bot id=8903072909
+2026-07-06 14:09:59,292 - __main__ - INFO - Bot started polling...
+2026-07-06 14:10:01,390 - __main__ - INFO - Bot ready.
+2026-07-06 14:10:01,390 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 14:10:03,766 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 14:10:04,126 - aiogram.event - INFO - Update id=3517799 is handled. Duration 31 ms by bot id=8903072909
+2026-07-06 14:10:04,804 - aiogram.event - INFO - Update id=3517798 is handled. Duration 710 ms by bot id=8903072909
+2026-07-06 14:10:17,691 - aiogram.event - INFO - Update id=3517800 is handled. Duration 189 ms by bot id=8903072909
+2026-07-06 14:37:13,697 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 14:37:13,774 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 14:37:13,816 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 14:37:13,816 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 19:40:12,221 - __main__ - INFO - Bot started polling...
+2026-07-06 19:40:12,532 - __main__ - INFO - Bot ready.
+2026-07-06 19:40:12,532 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 19:40:12,726 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 19:40:23,340 - __main__ - INFO - Bot started polling...
+2026-07-06 19:40:23,422 - __main__ - INFO - Bot ready.
+2026-07-06 19:40:23,423 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 19:40:23,428 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 19:40:33,804 - __main__ - INFO - Bot started polling...
+2026-07-06 19:40:33,887 - __main__ - INFO - Bot ready.
+2026-07-06 19:40:33,887 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 19:40:34,245 - aiogram.dispatcher - INFO - Run polling for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 19:40:34,403 - aiogram.event - INFO - Update id=3517807 is handled. Duration 30 ms by bot id=8903072909
+2026-07-06 19:40:34,405 - aiogram.event - INFO - Update id=3517806 is handled. Duration 32 ms by bot id=8903072909
+2026-07-06 19:40:34,406 - aiogram.event - INFO - Update id=3517812 is handled. Duration 30 ms by bot id=8903072909
+2026-07-06 19:40:34,406 - aiogram.event - INFO - Update id=3517802 is handled. Duration 36 ms by bot id=8903072909
+2026-07-06 19:40:34,407 - aiogram.event - INFO - Update id=3517808 is handled. Duration 33 ms by bot id=8903072909
+2026-07-06 19:40:34,408 - aiogram.event - INFO - Update id=3517803 is handled. Duration 37 ms by bot id=8903072909
+2026-07-06 19:40:34,408 - aiogram.event - INFO - Update id=3517809 is handled. Duration 34 ms by bot id=8903072909
+2026-07-06 19:40:34,409 - aiogram.event - INFO - Update id=3517805 is handled. Duration 37 ms by bot id=8903072909
+2026-07-06 19:40:34,410 - aiogram.event - INFO - Update id=3517811 is handled. Duration 34 ms by bot id=8903072909
+2026-07-06 19:40:34,410 - aiogram.event - INFO - Update id=3517804 is handled. Duration 38 ms by bot id=8903072909
+2026-07-06 19:40:34,410 - aiogram.event - INFO - Update id=3517810 is handled. Duration 35 ms by bot id=8903072909
+2026-07-06 19:40:35,354 - aiogram.event - INFO - Update id=3517801 is handled. Duration 984 ms by bot id=8903072909
+2026-07-06 19:41:30,061 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 19:41:30,061 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 19:41:30,062 - aiogram.dispatcher - INFO - Polling stopped for bot @KeyitTripoli_bot id=8903072909 - 'كِـيـبُـورد الـIT \u200f| 07\u200f تواصل'
+2026-07-06 19:41:30,062 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 20:12:54,515 - __main__ - INFO - Bot started polling...
+2026-07-06 20:12:54,664 - __main__ - INFO - Bot ready.
+2026-07-06 20:12:54,664 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 20:12:59,669 - aiogram.dispatcher - INFO - Run polling for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:13:14,859 - aiogram.event - INFO - Update id=637416026 is handled. Duration 25 ms by bot id=8617649565
+2026-07-06 20:16:20,695 - aiogram.event - INFO - Update id=637416028 is handled. Duration 0 ms by bot id=8617649565
+2026-07-06 20:16:21,596 - aiogram.event - INFO - Update id=637416027 is handled. Duration 1809 ms by bot id=8617649565
+2026-07-06 20:16:28,036 - aiogram.event - INFO - Update id=637416029 is handled. Duration 377 ms by bot id=8617649565
+2026-07-06 20:16:39,341 - aiogram.event - INFO - Update id=637416030 is handled. Duration 130 ms by bot id=8617649565
+2026-07-06 20:16:56,999 - aiogram.event - INFO - Update id=637416031 is handled. Duration 112 ms by bot id=8617649565
+2026-07-06 20:17:00,700 - aiogram.event - INFO - Update id=637416032 is handled. Duration 166 ms by bot id=8617649565
+2026-07-06 20:17:02,341 - aiogram.event - INFO - Update id=637416033 is handled. Duration 308 ms by bot id=8617649565
+2026-07-06 20:17:05,238 - aiogram.event - INFO - Update id=637416034 is not handled. Duration 385 ms by bot id=8617649565
+2026-07-06 20:17:05,238 - aiogram.dispatcher - INFO - Polling stopped for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:17:05,239 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 20:17:05,242 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:17:05,243 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:17:05,491 - __main__ - INFO - Bot stopped.
+2026-07-06 20:17:05,569 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-70' coro=<Dispatcher._process_update() done, defined at /home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py:296> exception=SystemExit(0)>
+Traceback (most recent call last):
+  File "/home/mohamed/سطح المكتب/BOTKEY/bot.py", line 100, in <module>
+    asyncio.run(main_polling())
+  File "/usr/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 603, in run_forever
+    self._run_once()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 1909, in _run_once
+    handle._run()
+  File "/usr/lib/python3.10/asyncio/events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 309, in _process_update
+    response = await self.feed_update(bot, update, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 158, in feed_update
+    response = await self.update.wrap_outer_middleware(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/error.py", line 25, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/user_context.py", line 56, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/fsm/middleware.py", line 42, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 276, in _listen_update
+    return await self.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 174, in _propagate_event
+    response = await router.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 166, in _propagate_event
+    response = await observer.trigger(event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/middlewares/throttling.py", line 27, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/handlers/admin.py", line 815, in stop_bot_kb
+    sys.exit(0)
+SystemExit: 0
+2026-07-06 20:17:34,914 - __main__ - INFO - Bot started polling...
+2026-07-06 20:17:34,994 - __main__ - INFO - Bot ready.
+2026-07-06 20:17:34,995 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 20:17:35,378 - aiogram.dispatcher - INFO - Run polling for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:17:35,527 - aiogram.event - INFO - Update id=637416035 is handled. Duration 21 ms by bot id=8617649565
+2026-07-06 20:17:35,528 - aiogram.event - INFO - Update id=637416038 is handled. Duration 20 ms by bot id=8617649565
+2026-07-06 20:17:35,529 - aiogram.event - INFO - Update id=637416037 is handled. Duration 22 ms by bot id=8617649565
+2026-07-06 20:17:35,531 - aiogram.event - INFO - Update id=637416036 is handled. Duration 25 ms by bot id=8617649565
+2026-07-06 20:17:36,351 - aiogram.event - INFO - Update id=637416039 is handled. Duration 844 ms by bot id=8617649565
+2026-07-06 20:17:38,423 - aiogram.event - INFO - Update id=637416040 is handled. Duration 197 ms by bot id=8617649565
+2026-07-06 20:17:40,659 - aiogram.event - INFO - Update id=637416041 is not handled. Duration 223 ms by bot id=8617649565
+2026-07-06 20:17:40,660 - aiogram.dispatcher - INFO - Polling stopped for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:17:40,660 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 20:17:40,677 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:17:40,678 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:17:40,913 - __main__ - INFO - Bot stopped.
+2026-07-06 20:17:40,988 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-30' coro=<Dispatcher._process_update() done, defined at /home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py:296> exception=SystemExit(0)>
+Traceback (most recent call last):
+  File "/home/mohamed/سطح المكتب/BOTKEY/bot.py", line 100, in <module>
+    asyncio.run(main_polling())
+  File "/usr/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 603, in run_forever
+    self._run_once()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 1909, in _run_once
+    handle._run()
+  File "/usr/lib/python3.10/asyncio/events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 309, in _process_update
+    response = await self.feed_update(bot, update, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 158, in feed_update
+    response = await self.update.wrap_outer_middleware(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/error.py", line 25, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/user_context.py", line 56, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/fsm/middleware.py", line 42, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 276, in _listen_update
+    return await self.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 174, in _propagate_event
+    response = await router.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 166, in _propagate_event
+    response = await observer.trigger(event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/middlewares/throttling.py", line 27, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/handlers/admin.py", line 815, in stop_bot_kb
+    sys.exit(0)
+SystemExit: 0
+2026-07-06 20:19:34,482 - __main__ - INFO - Bot started polling...
+2026-07-06 20:19:34,627 - __main__ - INFO - Bot ready.
+2026-07-06 20:19:34,627 - aiogram.dispatcher - INFO - Start polling
+2026-07-06 20:19:35,334 - aiogram.dispatcher - INFO - Run polling for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:19:35,498 - aiogram.event - INFO - Update id=637416044 is handled. Duration 29 ms by bot id=8617649565
+2026-07-06 20:19:35,499 - aiogram.event - INFO - Update id=637416045 is handled. Duration 29 ms by bot id=8617649565
+2026-07-06 20:19:35,499 - aiogram.event - INFO - Update id=637416048 is handled. Duration 28 ms by bot id=8617649565
+2026-07-06 20:19:35,500 - aiogram.event - INFO - Update id=637416042 is handled. Duration 32 ms by bot id=8617649565
+2026-07-06 20:19:35,500 - aiogram.event - INFO - Update id=637416043 is handled. Duration 32 ms by bot id=8617649565
+2026-07-06 20:19:35,501 - aiogram.event - INFO - Update id=637416047 is handled. Duration 30 ms by bot id=8617649565
+2026-07-06 20:19:35,502 - aiogram.event - INFO - Update id=637416046 is handled. Duration 32 ms by bot id=8617649565
+2026-07-06 20:19:36,249 - aiogram.event - INFO - Update id=637416049 is handled. Duration 777 ms by bot id=8617649565
+2026-07-06 20:19:40,867 - aiogram.event - INFO - Update id=637416050 is handled. Duration 287 ms by bot id=8617649565
+2026-07-06 20:19:42,672 - aiogram.event - INFO - Update id=637416051 is handled. Duration 280 ms by bot id=8617649565
+2026-07-06 20:19:44,854 - aiogram.event - INFO - Update id=637416052 is handled. Duration 313 ms by bot id=8617649565
+2026-07-06 20:20:01,994 - aiogram.event - INFO - Update id=637416053 is handled. Duration 167 ms by bot id=8617649565
+2026-07-06 20:20:09,264 - aiogram.event - INFO - Update id=637416054 is handled. Duration 2497 ms by bot id=8617649565
+2026-07-06 20:20:33,505 - aiogram.event - INFO - Update id=637416055 is handled. Duration 178 ms by bot id=8617649565
+2026-07-06 20:20:34,764 - aiogram.event - INFO - Update id=637416056 is handled. Duration 135 ms by bot id=8617649565
+2026-07-06 20:20:39,128 - aiogram.event - INFO - Update id=637416057 is not handled. Duration 205 ms by bot id=8617649565
+2026-07-06 20:20:39,130 - aiogram.dispatcher - INFO - Polling stopped for bot @itjobTripoli_bot id=8617649565 - 'خدمة'
+2026-07-06 20:20:39,130 - aiogram.dispatcher - INFO - Polling stopped
+2026-07-06 20:20:39,155 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:20:39,158 - aiogram.dispatcher - WARNING - Received SIGTERM signal
+2026-07-06 20:20:39,386 - __main__ - INFO - Bot stopped.
+2026-07-06 20:20:39,508 - asyncio - ERROR - Task exception was never retrieved
+future: <Task finished name='Task-66' coro=<Dispatcher._process_update() done, defined at /home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py:296> exception=SystemExit(0)>
+Traceback (most recent call last):
+  File "/home/mohamed/سطح المكتب/BOTKEY/bot.py", line 100, in <module>
+    asyncio.run(main_polling())
+  File "/usr/lib/python3.10/asyncio/runners.py", line 44, in run
+    return loop.run_until_complete(main)
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 636, in run_until_complete
+    self.run_forever()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 603, in run_forever
+    self._run_once()
+  File "/usr/lib/python3.10/asyncio/base_events.py", line 1909, in _run_once
+    handle._run()
+  File "/usr/lib/python3.10/asyncio/events.py", line 80, in _run
+    self._context.run(self._callback, *self._args)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 309, in _process_update
+    response = await self.feed_update(bot, update, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 158, in feed_update
+    response = await self.update.wrap_outer_middleware(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/error.py", line 25, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/middlewares/user_context.py", line 56, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/fsm/middleware.py", line 42, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/dispatcher.py", line 276, in _listen_update
+    return await self.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 174, in _propagate_event
+    response = await router.propagate_event(update_type=update_type, event=event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 146, in propagate_event
+    return await observer.wrap_outer_middleware(_wrapped, event=event, data=kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 141, in _wrapped
+    return await self._propagate_event(
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/router.py", line 166, in _propagate_event
+    response = await observer.trigger(event, **kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/telegram.py", line 121, in trigger
+    return await wrapped_inner(event, kwargs)
+  File "/home/mohamed/سطح المكتب/BOTKEY/middlewares/throttling.py", line 27, in __call__
+    return await handler(event, data)
+  File "/home/mohamed/سطح المكتب/BOTKEY/venv/lib/python3.10/site-packages/aiogram/dispatcher/event/handler.py", line 43, in call
+    return await wrapped()
+  File "/home/mohamed/سطح المكتب/BOTKEY/handlers/admin.py", line 815, in stop_bot_kb
+    sys.exit(0)
+SystemExit: 0
