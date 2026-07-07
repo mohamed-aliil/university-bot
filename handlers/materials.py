@@ -38,12 +38,12 @@ class MState(StatesGroup):
 
 def level_kb(level: str) -> ReplyKeyboardMarkup:
     buttons = {
-        "subjects": ["➕ إضافة مادة", "➖ حذف مادة"],
-        "sections": ["➕ إضافة قسم", "➖ حذف قسم"],
-        "types":     ["➕ إضافة نوع محتوى", "➖ حذف نوع محتوى"],
-        "materials": ["📄 إضافة شيت", "🗑 حذف شيت"],
+        "subjects": [KeyboardButton(text="➕ إضافة مادة"), KeyboardButton(text="➖ حذف مادة")],
+        "sections": [KeyboardButton(text="➕ إضافة قسم"), KeyboardButton(text="➖ حذف قسم")],
+        "types":     [KeyboardButton(text="➕ إضافة نوع محتوى"), KeyboardButton(text="➖ حذف نوع محتوى")],
+        "materials": [KeyboardButton(text="📄 إضافة شيت"), KeyboardButton(text="🗑 حذف شيت")],
     }
-    return ReplyKeyboardMarkup(keyboard=[buttons[level], ["🔙 رجوع"]], resize_keyboard=True)
+    return ReplyKeyboardMarkup(keyboard=[buttons[level], [KeyboardButton(text="🔙 رجوع")]], resize_keyboard=True)
 
 
 def _items_kb(items: list, callback_prefix: str, extra_buttons: list = None) -> InlineKeyboardMarkup:
