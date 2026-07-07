@@ -251,12 +251,12 @@ async def mark_message_read(message_id: int) -> None:
 
 async def mark_user_messages_read(user_id: int) -> None:
     async with async_session() as session:
-        result = await session.execute(
-            select(Message).where(Message.user_id == user_id, Message.is_read == False)
+        from sqlalchemy import update
+        await session.execute(
+            update(Message)
+            .where(Message.user_id == user_id, Message.is_read == False)
+            .values(is_read=True)
         )
-        msgs = list(result.scalars().all())
-        for msg in msgs:
-            msg.is_read = True
         await session.commit()
 
 
