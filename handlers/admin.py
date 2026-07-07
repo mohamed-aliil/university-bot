@@ -759,10 +759,14 @@ async def unban_all_handler(message: Message) -> None:
 
 # ─── أزرار الكيبورد الرئيسي للمسؤول ───
 
-@router.message(PermissionFilter("can_manage"), F.text == "📚 إدارة المواد")
+@router.message(SuperAdminFilter(), F.text == "📚 إدارة المواد")
 async def panel_button(message: Message, state: FSMContext) -> None:
-    from handlers.materials import materials_entry
-    await materials_entry(message, state)
+    try:
+        from handlers.materials import materials_entry
+        await materials_entry(message, state)
+    except Exception as e:
+        import traceback
+        await message.answer(f"❌ خطأ: {e}\n\n{traceback.format_exc()[:500]}")
 
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")
