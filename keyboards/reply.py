@@ -32,13 +32,41 @@ def super_admin_keyboard(unread_count: int = 0, show_admins: bool = True) -> Rep
     msgs_btn = f"📩 الطلبات المرسلة ({unread_count})"
     kb = [
         [KeyboardButton(text="🔧 لوحة التحكم")],
+        [KeyboardButton(text=msgs_btn), KeyboardButton(text="👥 الإدارة")],
+        [KeyboardButton(text="💬 التواصل"), KeyboardButton(text="⚙️ الإعدادات")],
+        [KeyboardButton(text="🔄 تحديث")],
     ]
-    if show_admins:
-        kb.append([KeyboardButton(text=msgs_btn), KeyboardButton(text="👥 المشرفين")])
-    else:
-        kb.append([KeyboardButton(text=msgs_btn)])
-    kb.append([KeyboardButton(text="🤖 الردود السريعة"), KeyboardButton(text="📋 المستخدمين")])
-    kb.append([KeyboardButton(text="🔄 تحديث")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def admin_management_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="👥 المشرفين"), KeyboardButton(text="📋 المستخدمين")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def communication_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🤖 الردود السريعة"), KeyboardButton(text="📩 إرسال رسالة")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
+    toggle = "▶️ تشغيل البوت" if not bot_active else "⏹ إيقاف البوت"
+    kb = [
+        [KeyboardButton(text=toggle)],
+        [KeyboardButton(text="📋 السجلات")],
+        [KeyboardButton(text="🔄 تحديث البوت")],
+        [KeyboardButton(text="🔙 رجوع")],
+    ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 

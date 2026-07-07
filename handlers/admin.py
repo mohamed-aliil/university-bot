@@ -11,7 +11,7 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read, mark_user_messages_read,
     save_reply_log, save_admin_action,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard
 from handlers.messages import ReplyState
 from config import settings
 
@@ -27,10 +27,8 @@ async def admin_main_keyboard(user_id: int = 0) -> ReplyKeyboardMarkup:
         perms = await get_admin_permissions(user_id)
         if perms:
             rank = perms.get("rank", "moderator")
-            if rank == "super_admin":
+            if rank in ("super_admin", "admin"):
                 return super_admin_keyboard(unread_count=stats["unread"])
-            if rank == "admin":
-                return super_admin_keyboard(unread_count=stats["unread"], show_admins=False)
             return moderator_keyboard(unread_count=stats["unread"])
     return main_keyboard()
 
@@ -764,7 +762,6 @@ async def stop_bot_prompt(message: Message) -> None:
     from database.crud import is_bot_active
     if not is_bot_active():
         return
-    from keyboards.reply import stop_choice_keyboard
     await message.answer("اختر نوع الإيقاف:", reply_markup=stop_choice_keyboard())
 
 
@@ -772,7 +769,7 @@ async def stop_bot_prompt(message: Message) -> None:
 async def stop_bot_silent(message: Message) -> None:
     from database.crud import set_bot_active
     set_bot_active(False)
-    await message.answer("⛔ تم إيقاف البوت.", reply_markup=control_panel_keyboard(bot_active=False, is_super=True))
+    await message.answer("⛔ تم إيقاف البوت.", reply_markup=settings_keyboard(bot_active=False))
 
 
 @router.message(SuperAdminFilter(), F.text == "📢 إيقاف مع إعلام")
@@ -795,7 +792,7 @@ async def stop_bot_with_notify(message: Message) -> None:
             pass
     await message.answer(
         f"⛔ تم إيقاف البوت وإعلام {sent} مستخدم.",
-        reply_markup=control_panel_keyboard(bot_active=False, is_super=True),
+        reply_markup=settings_keyboard(bot_active=False),
     )
 
 
@@ -803,7 +800,7 @@ async def stop_bot_with_notify(message: Message) -> None:
 async def start_bot_kb(message: Message) -> None:
     from database.crud import set_bot_active
     set_bot_active(True)
-    await message.answer("✅ تم تشغيل البوت.", reply_markup=control_panel_keyboard(bot_active=True, is_super=True))
+    await message.answer("✅ تم تشغيل البوت.", reply_markup=settings_keyboard(bot_active=True))
 
 
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
@@ -834,6 +831,23 @@ async def replies_button(message: Message) -> None:
             await message.answer("🤖 الردود السريعة:", reply_markup=replies_management_keyboard())
         else:
             await message.answer("🔙 ارجع للخلف متى شئت.", reply_markup=await admin_main_keyboard(message.from_user.id))
+
+
+@router.message(AdminFilter(), F.text == "👥 الإدارة")
+async def admin_management_button(message: Message) -> None:
+    await message.answer("👥 اختر ما تريد:", reply_markup=admin_management_keyboard())
+
+
+@router.message(AdminFilter(), F.text == "💬 التواصل")
+async def communication_button(message: Message) -> None:
+    await message.answer("💬 اختر ما تريد:", reply_markup=communication_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "⚙️ الإعدادات")
+async def settings_button(message: Message) -> None:
+    from database.crud import is_bot_active
+    bot_active = is_bot_active()
+    await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active))
 
 
 @router.message(AdminFilter(), F.text == "🔄 تحديث")
