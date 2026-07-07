@@ -860,11 +860,15 @@ async def news_button(message: Message) -> None:
 
 
 class NewsTemplateFilter(AdminFilter):
-    async def __call__(self, obj: Message | CallbackQuery) -> bool:
+    async def __call__(self, obj: Message | CallbackQuery, state: FSMContext = None) -> bool:
         if not await super().__call__(obj):
             return False
         if not isinstance(obj, Message) or not obj.text:
             return False
+        if state is not None:
+            current = await state.get_state()
+            if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state):
+                return False
         return obj.text in await load_templates()
 
 
