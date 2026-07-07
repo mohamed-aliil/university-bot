@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import re
 from aiogram import Router, F
@@ -249,7 +250,6 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
-    import asyncio
     from database.crud import get_content_links
     from database.database import async_session
     from database.models import ContentItem
@@ -264,8 +264,6 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
     if not links:
         await bot.send_message(chat_id=user_id, text="❌ لا توجد روابط لهذا المحتوى.")
         return
-    status = await bot.send_message(chat_id=user_id, text=f"⏳ جاري تحويل {len(links)} رابط…")
-
     async def forward_one(link):
         ch = link.channel_username
         mid = link.channel_message_id
@@ -273,22 +271,13 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             try:
                 fid = int(ch) if ch.lstrip("-").isdigit() else ch
                 await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
-                return True, None
             except Exception as e:
-                return False, f"❌ تعذر تحويل الرابط: {link.link}\n{e}"
+                await bot.send_message(chat_id=user_id, text=f"❌ تعذر تحويل الرابط: {link.link}\n{e}")
         else:
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
-            return True, None
 
-    results = await asyncio.gather(*[forward_one(l) for l in links])
-    ok = sum(1 for s, _ in results if s)
-    errs = [e for _, e in results if e]
-    await bot.delete_message(chat_id=user_id, message_id=status.message_id)
-    if ok:
-        await bot.send_message(chat_id=user_id, text=f"✅ تم تحويل {ok} من {len(links)} روابط.")
-    for e in errs:
-        await bot.send_message(chat_id=user_id, text=e)
-    logger.info(f"Forwarded {ok}/{len(links)} links for content item {item_id} to user {user_id}")
+    await asyncio.gather(*[forward_one(l) for l in links])
+    logger.info(f"Forwarded {len(links)} links for content item {item_id} to user {user_id}")
 
 
 # ─── Back ───
