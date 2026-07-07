@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Subject, Section, ContentType, StudyMaterial
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -365,20 +365,20 @@ async def reset_all_data() -> dict:
         return counts
 
 
-# ─── Materials System ───
+# ─── Materials System (recursive tree) ───
 
-async def add_subject(name: str) -> Subject:
+async def add_folder(name: str, parent_id: int = None) -> Folder:
     async with async_session() as session:
-        subj = Subject(name=name)
-        session.add(subj)
+        f = Folder(name=name, parent_id=parent_id)
+        session.add(f)
         await session.commit()
-        await session.refresh(subj)
-        return subj
+        await session.refresh(f)
+        return f
 
 
-async def remove_subject(subject_id: int) -> bool:
+async def remove_folder(folder_id: int) -> bool:
     async with async_session() as session:
-        obj = await session.get(Subject, subject_id)
+        obj = await session.get(Folder, folder_id)
         if not obj:
             return False
         await session.delete(obj)
@@ -386,92 +386,44 @@ async def remove_subject(subject_id: int) -> bool:
         return True
 
 
-async def get_all_subjects() -> list[Subject]:
+async def get_folders(parent_id: int = None) -> list[Folder]:
     async with async_session() as session:
-        result = await session.execute(select(Subject).order_by(Subject.name))
+        if parent_id is None:
+            result = await session.execute(select(Folder).where(Folder.parent_id.is_(None)).order_by(Folder.name))
+        else:
+            result = await session.execute(select(Folder).where(Folder.parent_id == parent_id).order_by(Folder.name))
         return list(result.scalars().all())
 
 
-async def add_section(subject_id: int, name: str) -> Section:
+async def get_folder(folder_id: int) -> Folder | None:
     async with async_session() as session:
-        sec = Section(subject_id=subject_id, name=name)
-        session.add(sec)
-        await session.commit()
-        await session.refresh(sec)
-        return sec
+        return await session.get(Folder, folder_id)
 
 
-async def remove_section(section_id: int) -> bool:
-    async with async_session() as session:
-        obj = await session.get(Section, section_id)
-        if not obj:
-            return False
-        await session.delete(obj)
-        await session.commit()
-        return True
-
-
-async def get_sections(subject_id: int) -> list[Section]:
-    async with async_session() as session:
-        result = await session.execute(
-            select(Section).where(Section.subject_id == subject_id).order_by(Section.name)
-        )
-        return list(result.scalars().all())
-
-
-async def add_content_type(name: str) -> ContentType:
-    async with async_session() as session:
-        ct = ContentType(name=name)
-        session.add(ct)
-        await session.commit()
-        await session.refresh(ct)
-        return ct
-
-
-async def remove_content_type(content_type_id: int) -> bool:
-    async with async_session() as session:
-        obj = await session.get(ContentType, content_type_id)
-        if not obj:
-            return False
-        await session.delete(obj)
-        await session.commit()
-        return True
-
-
-async def get_all_content_types() -> list[ContentType]:
-    async with async_session() as session:
-        result = await session.execute(select(ContentType).order_by(ContentType.name))
-        return list(result.scalars().all())
-
-
-async def add_study_material(
-    subject_id: int,
-    section_id: int,
-    content_type_id: int,
+async def add_content_item(
+    folder_id: int,
     link: str,
     title: str = None,
     channel_username: str = None,
     channel_message_id: int = None,
-) -> StudyMaterial:
+) -> ContentItem:
     async with async_session() as session:
-        mat = StudyMaterial(
-            subject_id=subject_id,
-            section_id=section_id,
-            content_type_id=content_type_id,
+        ci = ContentItem(
+            folder_id=folder_id,
             title=title,
             link=link,
             channel_username=channel_username,
             channel_message_id=channel_message_id,
         )
-        session.add(mat)
+        session.add(ci)
         await session.commit()
-        await session.refresh(mat)
-        return mat
+        await session.refresh(ci)
+        return ci
 
 
-async def remove_study_material(material_id: int) -> bool:
+async def remove_content_item(item_id: int) -> bool:
     async with async_session() as session:
-        obj = await session.get(StudyMaterial, material_id)
+        obj = await session.get(ContentItem, item_id)
         if not obj:
             return False
         await session.delete(obj)
@@ -479,20 +431,10 @@ async def remove_study_material(material_id: int) -> bool:
         return True
 
 
-async def get_study_materials(
-    subject_id: int,
-    section_id: int,
-    content_type_id: int,
-) -> list[StudyMaterial]:
+async def get_content_items(folder_id: int) -> list[ContentItem]:
     async with async_session() as session:
         result = await session.execute(
-            select(StudyMaterial)
-            .where(
-                StudyMaterial.subject_id == subject_id,
-                StudyMaterial.section_id == section_id,
-                StudyMaterial.content_type_id == content_type_id,
-            )
-            .order_by(StudyMaterial.created_at.desc())
+            select(ContentItem).where(ContentItem.folder_id == folder_id).order_by(ContentItem.created_at.desc())
         )
         return list(result.scalars().all())
 

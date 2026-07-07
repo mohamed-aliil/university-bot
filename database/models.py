@@ -88,34 +88,18 @@ class ReplyLog(Base):
     replied_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
-class Subject(Base):
-    __tablename__ = "subjects"
+class Folder(Base):
+    __tablename__ = "folders"
     id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-
-class Section(Base):
-    __tablename__ = "sections"
-    id = Column(Integer, primary_key=True)
-    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
     created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
 
 
-class ContentType(Base):
-    __tablename__ = "content_types"
+class ContentItem(Base):
+    __tablename__ = "content_items"
     id = Column(Integer, primary_key=True)
-    name = Column(String, unique=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-
-
-class StudyMaterial(Base):
-    __tablename__ = "study_materials"
-    id = Column(Integer, primary_key=True)
-    subject_id = Column(Integer, ForeignKey("subjects.id", ondelete="CASCADE"), nullable=False)
-    section_id = Column(Integer, ForeignKey("sections.id", ondelete="CASCADE"), nullable=False)
-    content_type_id = Column(Integer, ForeignKey("content_types.id", ondelete="CASCADE"), nullable=False)
+    folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=True)
     link = Column(String, nullable=False)
     channel_username = Column(String, nullable=True)
