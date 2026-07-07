@@ -1039,7 +1039,13 @@ async def refresh_button(message: Message) -> None:
 # ─── أزرار القوائم الفرعية (ReplyKeyboard) ───
 
 @router.message(AdminFilter(), F.text == "🔙 رجوع")
-async def back_to_main(message: Message) -> None:
+async def back_to_main(message: Message, state: FSMContext = None) -> None:
+    if state is not None:
+        cur = await state.get_state()
+        if cur and cur.startswith("MState"):
+            from handlers.materials import handle_back
+            await handle_back(message, state)
+            return
     await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 

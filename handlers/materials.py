@@ -65,7 +65,6 @@ async def toggle_materials(message: Message) -> None:
 
 # ─── Entry: 📚 إدارة المواد (admin) ───
 
-@router.message(AdminFilter(), F.text == "📚 إدارة المواد")
 async def materials_entry(message: Message, state: FSMContext) -> None:
     subjects = await get_all_subjects()
     await state.set_state(MState.browsing)
@@ -501,15 +500,13 @@ async def del_confirm(cq: CallbackQuery, state: FSMContext) -> None:
 
 # ─── Back ───
 
-@router.message(AdminFilter(), F.text == "🔙 رجوع")
-async def manage_back(message: Message, state: FSMContext) -> None:
+async def handle_back(message: Message, state: FSMContext) -> None:
     from handlers.admin import admin_main_keyboard as main_kb
     data = await state.get_data()
     subj_id = data.get("subject_id")
     sec_id = data.get("section_id")
 
     if sec_id:
-        # go up to sections
         await state.update_data(section_id=None, type_id=None)
         secs = await get_sections(subj_id)
         if secs:
@@ -517,13 +514,11 @@ async def manage_back(message: Message, state: FSMContext) -> None:
                 [InlineKeyboardButton(text="➕ إضافة قسم", callback_data="m_addsec")]))
         await message.answer(reply_markup=level_kb("sections"))
     elif subj_id:
-        # go up to subjects
         await state.update_data(subject_id=None)
         subjects = await get_all_subjects()
         if subjects:
             await message.answer("📚 اختر المادة:", reply_markup=_items_kb(subjects, "m_subj"))
         await message.answer(reply_markup=level_kb("subjects"))
     else:
-        # go to main admin menu
         await state.clear()
         await message.answer("🔝 القائمة الرئيسية", reply_markup=await main_kb(message.from_user.id))
