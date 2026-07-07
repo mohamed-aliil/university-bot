@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     ADMIN_IDS: str = ""
     DATABASE_URL: str = "sqlite+aiosqlite:///data/database.sqlite3"
     CHANNEL_USERNAME: str = "@Moezabj7"
+    NEWS_CHANNEL_ID: str = ""
 
     @property
     def admin_ids(self) -> List[int]:

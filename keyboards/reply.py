@@ -53,6 +53,35 @@ def communication_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🤖 الردود السريعة"), KeyboardButton(text="📩 إرسال رسالة")],
+            [KeyboardButton(text="📰 الأخبار")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def news_keyboard() -> ReplyKeyboardMarkup:
+    from services.news import load_templates
+    templates = load_templates()
+    kb = []
+    row = []
+    for t in templates:
+        label = t if len(t) <= 20 else t[:18] + ".."
+        row.append(KeyboardButton(text=label))
+        if len(row) == 2:
+            kb.append(row)
+            row = []
+    if row:
+        kb.append(row)
+    kb.append([KeyboardButton(text="🔙 رجوع")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def customize_news_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة قالب"), KeyboardButton(text="➖ حذف قالب")],
+            [KeyboardButton(text="📋 عرض القوالب")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
@@ -64,6 +93,7 @@ def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text=toggle)],
         [KeyboardButton(text="📋 السجلات")],
+        [KeyboardButton(text="📡 تخصيص الأخبار")],
         [KeyboardButton(text="🔄 تحديث البوت")],
         [KeyboardButton(text="🔙 رجوع")],
     ]
