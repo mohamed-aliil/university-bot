@@ -11,7 +11,7 @@ from aiohttp import web
 from config import settings
 from database.database import init_db
 from database.crud import set_admin, set_permission, get_user, set_bot_active
-from handlers import start, messages, admin
+from handlers import start, messages, admin, materials
 from middlewares import ThrottlingMiddleware
 from utils.logger import setup_logger
 
@@ -59,6 +59,7 @@ async def main() -> None:
     dp.include_router(start.router)
     dp.include_router(admin.router)
     dp.include_router(messages.router)
+    dp.include_router(materials.router)
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
     dp.startup.register(on_startup)
     await run_web()

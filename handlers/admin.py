@@ -11,7 +11,7 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -759,11 +759,10 @@ async def unban_all_handler(message: Message) -> None:
 
 # ─── أزرار الكيبورد الرئيسي للمسؤول ───
 
-@router.message(PermissionFilter("can_manage"), F.text == "🔧 لوحة التحكم")
+@router.message(PermissionFilter("can_manage"), F.text == "📚 إدارة المواد")
 async def panel_button(message: Message) -> None:
-    from database.crud import is_bot_active
-    status = "✅ البوت شغال" if is_bot_active() else "⛔ البوت متوقف"
-    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard())
+    from keyboards.reply import materials_control_keyboard
+    await message.answer("📚 إدارة المواد الدراسية:", reply_markup=materials_control_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")
@@ -1026,9 +1025,10 @@ async def show_news_templates(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "⚙️ الإعدادات")
 async def settings_button(message: Message) -> None:
-    from database.crud import is_bot_active
+    from database.crud import is_bot_active, is_materials_active
     bot_active = is_bot_active()
-    await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active))
+    materials_active = is_materials_active()
+    await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active=bot_active, materials_active=materials_active))
 
 
 @router.message(AdminFilter(), F.text == "🔄 تحديث")

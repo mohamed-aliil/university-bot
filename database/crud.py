@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Subject, Section, ContentType, StudyMaterial
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -363,3 +363,149 @@ async def reset_all_data() -> dict:
 
         await session.commit()
         return counts
+
+
+# ─── Materials System ───
+
+async def add_subject(name: str) -> Subject:
+    async with async_session() as session:
+        subj = Subject(name=name)
+        session.add(subj)
+        await session.commit()
+        await session.refresh(subj)
+        return subj
+
+
+async def remove_subject(subject_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(Subject, subject_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
+
+
+async def get_all_subjects() -> list[Subject]:
+    async with async_session() as session:
+        result = await session.execute(select(Subject).order_by(Subject.name))
+        return list(result.scalars().all())
+
+
+async def add_section(subject_id: int, name: str) -> Section:
+    async with async_session() as session:
+        sec = Section(subject_id=subject_id, name=name)
+        session.add(sec)
+        await session.commit()
+        await session.refresh(sec)
+        return sec
+
+
+async def remove_section(section_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(Section, section_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
+
+
+async def get_sections(subject_id: int) -> list[Section]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(Section).where(Section.subject_id == subject_id).order_by(Section.name)
+        )
+        return list(result.scalars().all())
+
+
+async def add_content_type(name: str) -> ContentType:
+    async with async_session() as session:
+        ct = ContentType(name=name)
+        session.add(ct)
+        await session.commit()
+        await session.refresh(ct)
+        return ct
+
+
+async def remove_content_type(content_type_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(ContentType, content_type_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
+
+
+async def get_all_content_types() -> list[ContentType]:
+    async with async_session() as session:
+        result = await session.execute(select(ContentType).order_by(ContentType.name))
+        return list(result.scalars().all())
+
+
+async def add_study_material(
+    subject_id: int,
+    section_id: int,
+    content_type_id: int,
+    link: str,
+    title: str = None,
+    channel_username: str = None,
+    channel_message_id: int = None,
+) -> StudyMaterial:
+    async with async_session() as session:
+        mat = StudyMaterial(
+            subject_id=subject_id,
+            section_id=section_id,
+            content_type_id=content_type_id,
+            title=title,
+            link=link,
+            channel_username=channel_username,
+            channel_message_id=channel_message_id,
+        )
+        session.add(mat)
+        await session.commit()
+        await session.refresh(mat)
+        return mat
+
+
+async def remove_study_material(material_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(StudyMaterial, material_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
+
+
+async def get_study_materials(
+    subject_id: int,
+    section_id: int,
+    content_type_id: int,
+) -> list[StudyMaterial]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(StudyMaterial)
+            .where(
+                StudyMaterial.subject_id == subject_id,
+                StudyMaterial.section_id == section_id,
+                StudyMaterial.content_type_id == content_type_id,
+            )
+            .order_by(StudyMaterial.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+MATERIALS_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".materials_active"
+
+
+def is_materials_active() -> bool:
+    return MATERIALS_ACTIVE_FILE.exists()
+
+
+def set_materials_active(active: bool) -> None:
+    if active:
+        MATERIALS_ACTIVE_FILE.touch()
+    else:
+        MATERIALS_ACTIVE_FILE.unlink(missing_ok=True)
