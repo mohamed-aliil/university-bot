@@ -8,7 +8,7 @@ from database.crud import (
     ban_user, unban_user, get_user, set_admin, get_all_admins,
     unban_all_users, add_autoreply, remove_autoreply, get_all_autoreplies,
     set_permission, get_admin_permissions, get_all_users, get_stats,
-    get_unread_messages, get_user_messages, mark_message_read, mark_user_messages_read,
+    get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
 )
 from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
@@ -252,17 +252,6 @@ async def ban_user_handler(callback: CallbackQuery) -> None:
 async def ignore_user_handler(callback: CallbackQuery) -> None:
     _, user_id = callback.data.split(":", 1)
     user_id = int(user_id)
-    user = await get_user(user_id)
-    user_name = user.full_name if user else str(user_id)
-    await mark_user_messages_read(user_id)
-    await save_admin_action(
-        admin_id=callback.from_user.id,
-        admin_name=callback.from_user.full_name or "مشرف",
-        action_type="ignore",
-        details=f"تجاهل رسالة المستخدم {user_name}",
-        target_id=user_id,
-        target_name=user_name,
-    )
     try:
         await callback.message.delete()
     except Exception:
