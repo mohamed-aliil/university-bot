@@ -48,8 +48,7 @@ def control_panel_keyboard(bot_active: bool = True, is_super: bool = False) -> R
         [KeyboardButton(text="📋 السجلات")],
     ]
     if is_super:
-        toggle = "⏹ إيقاف البوت" if bot_active else "▶️ تشغيل البوت"
-        kb.append([KeyboardButton(text=toggle)])
+        kb.append([KeyboardButton(text="⏹ إيقاف البوت")])
         kb.append([KeyboardButton(text="🔄 تحديث البوت")])
     kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
@@ -94,7 +93,8 @@ def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMar
     builder.button(text="💬 رد", callback_data=f"reply:{user_id}:{user_full_name}")
     builder.button(text="🚫 حظر", callback_data=f"ban:{user_id}")
     builder.button(text="⏭ عدم الرد", callback_data=f"ignore:{user_id}")
-    builder.adjust(1, 2)
+    builder.button(text="📢 للقناة", callback_data=f"forward:{user_id}:{user_full_name}")
+    builder.adjust(1, 2, 1)
     return builder.as_markup()
 
 

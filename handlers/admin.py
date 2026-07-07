@@ -8,7 +8,7 @@ from database.crud import (
     ban_user, unban_user, get_user, set_admin, get_all_admins,
     unban_all_users, add_autoreply, remove_autoreply, get_all_autoreplies,
     set_permission, get_admin_permissions, get_all_users, get_stats,
-    get_unread_messages, mark_message_read, mark_user_messages_read,
+    get_unread_messages, get_user_messages, mark_message_read, mark_user_messages_read,
     save_reply_log, save_admin_action,
 )
 from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, control_panel_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard
@@ -251,6 +251,85 @@ async def ignore_user_handler(callback: CallbackQuery) -> None:
         target_name=user_name,
     )
     await callback.message.answer(f"⏭ تم تجاهل رسالة المستخدم {user_name}.")
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("forward:"))
+async def forward_to_channel_handler(callback: CallbackQuery) -> None:
+    from database.crud import get_user_messages
+    _, user_id, user_name = callback.data.split(":", 2)
+    user_id = int(user_id)
+
+    user_messages = await get_user_messages(user_id)
+    if not user_messages:
+        await callback.message.answer("❌ لا توجد رسائل لهذا المستخدم.")
+        await callback.answer()
+        return
+
+    last_msg = user_messages[0]
+    channel = settings.CHANNEL_USERNAME
+    header = f"📨 رسالة مستخدم\n👤 {user_name}\n🆔 {user_id}"
+
+    try:
+        if last_msg.message_type == "text":
+            await callback.bot.send_message(
+                chat_id=channel,
+                text=f"{header}\n\n{last_msg.content}",
+            )
+        elif last_msg.message_type == "photo" and last_msg.file_id:
+            await callback.bot.send_photo(
+                chat_id=channel, photo=last_msg.file_id,
+                caption=f"{header}\n\n{last_msg.caption or ''}",
+            )
+        elif last_msg.message_type == "video" and last_msg.file_id:
+            await callback.bot.send_video(
+                chat_id=channel, video=last_msg.file_id,
+                caption=f"{header}\n\n{last_msg.caption or ''}",
+            )
+        elif last_msg.message_type == "document" and last_msg.file_id:
+            await callback.bot.send_document(
+                chat_id=channel, document=last_msg.file_id,
+                caption=f"{header}\n\n{last_msg.caption or ''}",
+            )
+        elif last_msg.message_type == "audio" and last_msg.file_id:
+            await callback.bot.send_audio(
+                chat_id=channel, audio=last_msg.file_id,
+                caption=f"{header}\n\n{last_msg.caption or ''}",
+            )
+        elif last_msg.message_type == "voice" and last_msg.file_id:
+            await callback.bot.send_voice(
+                chat_id=channel, voice=last_msg.file_id,
+            )
+            await callback.bot.send_message(chat_id=channel, text=header)
+        elif last_msg.message_type == "sticker" and last_msg.file_id:
+            await callback.bot.send_sticker(chat_id=channel, sticker=last_msg.file_id)
+            await callback.bot.send_message(chat_id=channel, text=header)
+        elif last_msg.message_type == "animation" and last_msg.file_id:
+            await callback.bot.send_animation(
+                chat_id=channel, animation=last_msg.file_id,
+                caption=f"{header}\n\n{last_msg.caption or ''}",
+            )
+        elif last_msg.message_type == "video_note" and last_msg.file_id:
+            await callback.bot.send_video_note(chat_id=channel, video_note=last_msg.file_id)
+            await callback.bot.send_message(chat_id=channel, text=header)
+        else:
+            await callback.bot.send_message(chat_id=channel, text=header)
+
+        await save_admin_action(
+            admin_id=callback.from_user.id,
+            admin_name=callback.from_user.full_name or "مشرف",
+            action_type="forward",
+            details=f"تحويل رسالة المستخدم {user_name} إلى القناة",
+            target_id=user_id,
+            target_name=user_name,
+        )
+        await callback.message.answer(f"✅ تم تحويل رسالة {user_name} إلى القناة بنجاح.")
+    except Exception as e:
+        logger.error(f"Failed to forward to channel: {e}")
+        await callback.message.answer(
+            "❌ فشل التحويل إلى القناة.\n"
+            "تأكد أن البوت مشرف في القناة لديه صلاحية الإرسال.",
+        )
     await callback.answer()
 
 
@@ -673,11 +752,8 @@ async def unban_all_handler(message: Message) -> None:
 
 @router.message(PermissionFilter("can_manage"), F.text == "🔧 لوحة التحكم")
 async def panel_button(message: Message) -> None:
-    from database.crud import is_bot_active
-    active = is_bot_active()
     is_super = message.from_user.id in settings.admin_ids
-    status = "✅ البوت شغال" if active else "⛔ البوت متوقف"
-    await message.answer(f"🔧 لوحة التحكم\n{status}", reply_markup=control_panel_keyboard(active, is_super))
+    await message.answer("🔧 لوحة التحكم", reply_markup=control_panel_keyboard(is_super=is_super))
 
 
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
@@ -733,16 +809,10 @@ async def sendmsg_from_kb(message: Message, state: FSMContext) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف البوت")
 async def stop_bot_kb(message: Message) -> None:
-    from database.crud import set_bot_active
-    set_bot_active(False)
-    await message.answer("⛔ تم إيقاف البوت.\nلن يتم استقبال رسائل جديدة.", reply_markup=await admin_main_keyboard(message.from_user.id))
-
-
-@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل البوت")
-async def start_bot_kb(message: Message) -> None:
-    from database.crud import set_bot_active
-    set_bot_active(True)
-    await message.answer("✅ تم تشغيل البوت.\nيمكن للمستخدمين إرسال الرسائل الآن.", reply_markup=await admin_main_keyboard(message.from_user.id))
+    await message.answer("⛔ جاري إيقاف البوت بالكامل...")
+    import subprocess, sys
+    subprocess.Popen(["systemctl", "--user", "stop", "botkey"])
+    sys.exit(0)
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 السجلات")

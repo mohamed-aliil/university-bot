@@ -179,14 +179,6 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
     if await is_banned(user.id):
         return
 
-    from database.crud import is_bot_active
-    if not is_bot_active():
-        await message.answer(
-            "⛔ البوت متوقف حاليًا. يرجى المحاولة لاحقًا.",
-            reply_markup=main_keyboard(),
-        )
-        return
-
     is_spam, spam_reason = contains_spam(message.text or message.caption or "")
     if is_spam:
         return

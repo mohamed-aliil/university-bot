@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=/home/mohamed/.local/bin/botkey.sh
+ExecStart=/usr/bin/systemd-inhibit --what=sleep --why="BotKey يعمل" /home/mohamed/.local/bin/botkey.sh
 Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1

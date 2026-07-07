@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     BOT_TOKEN: str
     ADMIN_IDS: str = ""
     DATABASE_URL: str = "sqlite+aiosqlite:///data/database.sqlite3"
+    CHANNEL_USERNAME: str = "@Moezabj7"
 
     @property
     def admin_ids(self) -> List[int]:
