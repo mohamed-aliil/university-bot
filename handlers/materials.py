@@ -142,8 +142,7 @@ async def show_item(cq: CallbackQuery) -> None:
     await cq.answer()
     if item.channel_username and item.channel_message_id:
         try:
-            from bot import bot
-            await bot.forward_message(chat_id=cq.from_user.id, from_chat_id=item.channel_username, message_id=item.channel_message_id)
+            await cq.bot.forward_message(chat_id=cq.from_user.id, from_chat_id=item.channel_username, message_id=item.channel_message_id)
         except Exception as e:
             await cq.message.answer(f"❌ تعذر التوجيه: {e}")
     else:

@@ -883,8 +883,7 @@ async def quick_news_send(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
     try:
-        from bot import bot
-        await bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
+        await message.bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
         await message.answer("✅ تم نشر الخبر في القناة.", reply_markup=await news_keyboard())
     except Exception as e:
         logging.exception("quick_news_send")
