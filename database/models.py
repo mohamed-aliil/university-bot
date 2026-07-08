@@ -3,6 +3,9 @@ from sqlalchemy.orm import relationship
 from datetime import datetime, timezone
 from .database import Base
 
+def _utcnow():
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
 
 class User(Base):
     __tablename__ = "users"
@@ -19,7 +22,7 @@ class User(Base):
     can_manage = Column(Boolean, default=False)
     can_view_logs = Column(Boolean, default=False)
     can_control_bot = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
     messages = relationship("Message", back_populates="user", cascade="all, delete-orphan")
 
@@ -35,7 +38,7 @@ class Message(Base):
     file_unique_id = Column(String(255), nullable=True)
     caption = Column(Text, nullable=True)
     is_read = Column(Boolean, default=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
     user = relationship("User", back_populates="messages")
     attachments = relationship("Attachment", back_populates="message", cascade="all, delete-orphan")
@@ -60,7 +63,7 @@ class AutoReply(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     trigger = Column(String(255), nullable=False)
     response = Column(Text, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class NewsTemplate(Base):
@@ -68,7 +71,7 @@ class NewsTemplate(Base):
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     name = Column(String(255), unique=True, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class ReplyLog(Base):
@@ -85,7 +88,7 @@ class ReplyLog(Base):
     user_message = Column(Text, nullable=True)
     user_message_type = Column(String(50), default="text")
     admin_reply = Column(Text, nullable=True)
-    replied_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    replied_at = Column(DateTime, default=_utcnow)
 
 
 class Folder(Base):
@@ -93,7 +96,7 @@ class Folder(Base):
     id = Column(Integer, primary_key=True)
     parent_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class ContentItem(Base):
@@ -101,7 +104,7 @@ class ContentItem(Base):
     id = Column(Integer, primary_key=True)
     folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
 
 
 class ContentLink(Base):
@@ -111,4 +114,4 @@ class ContentLink(Base):
     link = Column(String, nullable=False)
     channel_username = Column(String, nullable=True)
     channel_message_id = Column(BigInteger, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    created_at = Column(DateTime, default=_utcnow)
