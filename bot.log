@@ -3377,3 +3377,47 @@ SystemExit: 0
 2026-07-08 23:17:27,357 - aiogram.dispatcher - WARNING - Sleep for 5.118943 seconds and try again... (tryings = 458, bot id = 8617649565)
 2026-07-08 23:17:32,552 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
 2026-07-08 23:17:32,553 - aiogram.dispatcher - WARNING - Sleep for 5.021958 seconds and try again... (tryings = 459, bot id = 8617649565)
+2026-07-08 23:17:37,659 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:17:37,659 - aiogram.dispatcher - WARNING - Sleep for 4.856253 seconds and try again... (tryings = 460, bot id = 8617649565)
+2026-07-08 23:17:42,614 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:17:42,614 - aiogram.dispatcher - WARNING - Sleep for 5.181999 seconds and try again... (tryings = 461, bot id = 8617649565)
+2026-07-08 23:17:48,076 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:17:48,077 - aiogram.dispatcher - WARNING - Sleep for 5.088260 seconds and try again... (tryings = 462, bot id = 8617649565)
+2026-07-08 23:17:56,063 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:17:56,064 - aiogram.dispatcher - WARNING - Sleep for 5.040605 seconds and try again... (tryings = 463, bot id = 8617649565)
+2026-07-08 23:18:01,181 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:01,182 - aiogram.dispatcher - WARNING - Sleep for 5.060931 seconds and try again... (tryings = 464, bot id = 8617649565)
+2026-07-08 23:18:06,320 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:06,320 - aiogram.dispatcher - WARNING - Sleep for 4.898050 seconds and try again... (tryings = 465, bot id = 8617649565)
+2026-07-08 23:18:11,371 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:11,372 - aiogram.dispatcher - WARNING - Sleep for 4.868510 seconds and try again... (tryings = 466, bot id = 8617649565)
+2026-07-08 23:18:16,310 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:16,310 - aiogram.dispatcher - WARNING - Sleep for 4.997043 seconds and try again... (tryings = 467, bot id = 8617649565)
+2026-07-08 23:18:21,373 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:21,373 - aiogram.dispatcher - WARNING - Sleep for 5.069278 seconds and try again... (tryings = 468, bot id = 8617649565)
+2026-07-08 23:18:26,521 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:26,521 - aiogram.dispatcher - WARNING - Sleep for 5.103763 seconds and try again... (tryings = 469, bot id = 8617649565)
+2026-07-08 23:18:31,817 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:31,818 - aiogram.dispatcher - WARNING - Sleep for 4.896578 seconds and try again... (tryings = 470, bot id = 8617649565)
+2026-07-08 23:18:36,847 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:36,847 - aiogram.dispatcher - WARNING - Sleep for 4.921096 seconds and try again... (tryings = 471, bot id = 8617649565)
+2026-07-08 23:18:41,851 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:41,851 - aiogram.dispatcher - WARNING - Sleep for 4.915155 seconds and try again... (tryings = 472, bot id = 8617649565)
+2026-07-08 23:18:46,847 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:46,848 - aiogram.dispatcher - WARNING - Sleep for 5.215233 seconds and try again... (tryings = 473, bot id = 8617649565)
+2026-07-08 23:18:52,125 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:52,125 - aiogram.dispatcher - WARNING - Sleep for 4.981249 seconds and try again... (tryings = 474, bot id = 8617649565)
+2026-07-08 23:18:57,173 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:18:57,174 - aiogram.dispatcher - WARNING - Sleep for 4.927245 seconds and try again... (tryings = 475, bot id = 8617649565)
+2026-07-08 23:19:02,170 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:02,170 - aiogram.dispatcher - WARNING - Sleep for 5.013144 seconds and try again... (tryings = 476, bot id = 8617649565)
+2026-07-08 23:19:07,252 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:07,252 - aiogram.dispatcher - WARNING - Sleep for 4.980482 seconds and try again... (tryings = 477, bot id = 8617649565)
+2026-07-08 23:19:12,328 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:12,328 - aiogram.dispatcher - WARNING - Sleep for 5.043901 seconds and try again... (tryings = 478, bot id = 8617649565)
+2026-07-08 23:19:17,446 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:17,447 - aiogram.dispatcher - WARNING - Sleep for 4.942432 seconds and try again... (tryings = 479, bot id = 8617649565)
+2026-07-08 23:19:22,477 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:22,478 - aiogram.dispatcher - WARNING - Sleep for 5.067884 seconds and try again... (tryings = 480, bot id = 8617649565)
+2026-07-08 23:19:27,635 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 23:19:27,635 - aiogram.dispatcher - WARNING - Sleep for 5.068968 seconds and try again... (tryings = 481, bot id = 8617649565)

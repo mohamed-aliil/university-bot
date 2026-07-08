@@ -83,8 +83,6 @@ class UserSearchState(StatesGroup):
 
 
 class NewsState(StatesGroup):
-    waiting_template = State()
-    waiting_source = State()
     waiting_content = State()
 
 
@@ -894,32 +892,21 @@ async def quick_news_send(message: Message, state: FSMContext) -> None:
 
 
 class NewsTemplateFilter(AdminFilter):
-    async def __call__(self, obj: Message | CallbackQuery, state: FSMContext = None) -> bool:
+    async def __call__(self, obj: Message | CallbackQuery, state: FSMContext) -> bool:
         if not await super().__call__(obj):
             return False
         if not isinstance(obj, Message) or not obj.text:
             return False
-        if state is not None:
-            current = await state.get_state()
-            if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state, QuickNewsState.waiting_content.state):
-                return False
+        current = await state.get_state()
+        if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state, QuickNewsState.waiting_content.state):
+            return False
         return obj.text in await load_templates()
 
 
 @router.message(NewsTemplateFilter())
 async def news_template_chosen(message: Message, state: FSMContext) -> None:
-    await state.set_state(NewsState.waiting_source)
-    await state.update_data(news_template=message.text)
-    await message.answer(
-        "✏️ أرسل مصدر الخبر (مثلاً: موقع الجامعة، وكالة الأنباء...):",
-        reply_markup=cancel_keyboard(),
-    )
-
-
-@router.message(NewsState.waiting_source, AdminFilter())
-async def news_source_received(message: Message, state: FSMContext) -> None:
-    await state.update_data(news_source=message.text.strip())
     await state.set_state(NewsState.waiting_content)
+    await state.update_data(news_template=message.text)
     await message.answer(
         "✏️ أرسل محتوى الخبر الآن:",
         reply_markup=cancel_keyboard(),
@@ -932,14 +919,10 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
     from config import settings
     data = await state.get_data()
     template = data.get("news_template", "")
-    source = data.get("news_source", "")
     channel = settings.NEWS_CHANNEL_ID
     content = message.text or message.caption or ""
 
-    if source:
-        full_text = f"<b>{template}</b> {source}\n\n{content}"
-    else:
-        full_text = f"<b>{template}</b>\n\n{content}"
+    full_text = f"<b>{template}</b>\n\n{content}"
 
     try:
         channel_id = int(channel) if channel.lstrip("-").isdigit() else channel
