@@ -178,7 +178,7 @@ async def add_item_extra_link(message: Message, state: FSMContext) -> None:
         return
     match = LINK_REGEX.search(text)
     if not match:
-        await message.answer("❌ رابط غير صالح. أرسل رابط صحيح أو /skip.")
+        await message.answer(f"❌ الرابط غير معروف. تأكد أن الرابط صحيح:\n\n{text[:200]}")
         return
     ch, msg = match.group(1), int(match.group(2))
     chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
@@ -272,7 +272,10 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
                 fid = int(ch) if ch.lstrip("-").isdigit() else ch
                 await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
             except Exception as e:
-                await bot.send_message(chat_id=user_id, text=f"❌ تعذر تحويل الرابط: {link.link}\n{e}")
+                err = str(e)
+                if "chat not found" in err.lower():
+                    err += "\n⚠️ البوت ليس مشرفاً في هذه القناة أو القناة محذوفة."
+                await bot.send_message(chat_id=user_id, text=f"❌ فشل التحويل: {link.link}\n{err}")
         else:
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
 

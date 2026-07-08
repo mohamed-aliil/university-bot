@@ -11,7 +11,7 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -28,8 +28,10 @@ async def admin_main_keyboard(user_id: int = 0) -> ReplyKeyboardMarkup:
         perms = await get_admin_permissions(user_id)
         if perms:
             rank = perms.get("rank", "moderator")
-            if rank in ("super_admin", "admin"):
+            if rank == "super_admin":
                 return super_admin_keyboard(unread_count=stats["unread"])
+            if rank == "admin":
+                return admin_keyboard(unread_count=stats["unread"])
             return moderator_keyboard(unread_count=stats["unread"])
     return main_keyboard()
 
@@ -845,7 +847,7 @@ async def replies_button(message: Message) -> None:
             await message.answer("🔙 ارجع للخلف متى شئت.", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 
-@router.message(AdminFilter(), F.text == "👥 الإدارة")
+@router.message(SuperAdminFilter(), F.text == "👥 الإدارة")
 async def admin_management_button(message: Message) -> None:
     await message.answer("👥 اختر ما تريد:", reply_markup=admin_management_keyboard())
 
