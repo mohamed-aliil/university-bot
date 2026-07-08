@@ -49,7 +49,7 @@ async def webhook_handler(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     dp = request.app["dp"]
     body = await request.read()
-    update = Update.model_validate(json.loads(body), context={"bot": bot})
+    update = Update.model_validate(json.loads(body))
     await dp.feed_update(bot, update)
     return web.Response(status=200)
 

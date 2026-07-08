@@ -2589,3 +2589,11 @@ SystemExit: 0
 2026-07-08 22:41:57,971 - aiogram.dispatcher - WARNING - Sleep for 5.107912 seconds and try again... (tryings = 64, bot id = 8617649565)
 2026-07-08 22:42:03,157 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
 2026-07-08 22:42:03,158 - aiogram.dispatcher - WARNING - Sleep for 5.027652 seconds and try again... (tryings = 65, bot id = 8617649565)
+2026-07-08 22:42:08,305 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 22:42:08,305 - aiogram.dispatcher - WARNING - Sleep for 5.156104 seconds and try again... (tryings = 66, bot id = 8617649565)
+2026-07-08 22:42:13,519 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 22:42:13,519 - aiogram.dispatcher - WARNING - Sleep for 4.872862 seconds and try again... (tryings = 67, bot id = 8617649565)
+2026-07-08 22:42:18,449 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 22:42:18,449 - aiogram.dispatcher - WARNING - Sleep for 5.080652 seconds and try again... (tryings = 68, bot id = 8617649565)
+2026-07-08 22:42:23,589 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: can't use getUpdates method while webhook is active; use deleteWebhook to delete the webhook first
+2026-07-08 22:42:23,589 - aiogram.dispatcher - WARNING - Sleep for 4.827919 seconds and try again... (tryings = 69, bot id = 8617649565)
