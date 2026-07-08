@@ -686,6 +686,19 @@ async def show_users_list(target, search: str = "") -> None:
     await target.answer(out)
 
 
+# ─── رجوع للقائمة الرئيسية ───
+
+@router.message(AdminFilter(), F.text == "🔙 رجوع")
+async def back_to_main(message: Message, state: FSMContext) -> None:
+    cur = await state.get_state()
+    if cur and cur.startswith("MState"):
+        from handlers.materials import handle_back
+        await handle_back(message, state)
+        return
+    await state.clear()
+    await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
+
+
 # ─── الردود السريعة ───
 
 @router.message(PermissionFilter("can_manage"), F.text == "/addreply")
@@ -1024,17 +1037,6 @@ async def refresh_button(message: Message) -> None:
 
 
 # ─── أزرار القوائم الفرعية (ReplyKeyboard) ───
-
-@router.message(AdminFilter(), F.text == "🔙 رجوع")
-async def back_to_main(message: Message, state: FSMContext = None) -> None:
-    if state is not None:
-        cur = await state.get_state()
-        if cur and cur.startswith("MState"):
-            from handlers.materials import handle_back
-            await handle_back(message, state)
-            return
-    await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
-
 
 @router.message(PermissionFilter("can_manage"), F.text == "📩 إرسال رسالة")
 async def sendmsg_from_kb(message: Message, state: FSMContext) -> None:
