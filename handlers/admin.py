@@ -873,6 +873,16 @@ async def communication_button(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "➕ إضافة قالب")
 async def add_news_template_start(message: Message, state: FSMContext) -> None:
+    cur = await state.get_state()
+    if cur == AddNewsTemplateState.waiting_name.state:
+        name = message.text.strip()
+        ok = await add_template(name)
+        if ok:
+            await message.answer(f"✅ تم إضافة القالب: {name}", reply_markup=customize_news_keyboard())
+        else:
+            await message.answer("❌ هذا القالب موجود بالفعل.")
+        await state.clear()
+        return
     await state.set_state(AddNewsTemplateState.waiting_name)
     await message.answer("✏️ أرسل اسم القالب الجديد:", reply_markup=cancel_keyboard())
 
@@ -890,6 +900,16 @@ async def add_news_template_save(message: Message, state: FSMContext) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "➖ حذف قالب")
 async def remove_news_template_start(message: Message, state: FSMContext) -> None:
+    cur = await state.get_state()
+    if cur == RemoveNewsTemplateState.waiting_name.state:
+        name = message.text.strip()
+        ok = await remove_template(name)
+        if ok:
+            await message.answer(f"✅ تم حذف القالب: {name}", reply_markup=customize_news_keyboard())
+        else:
+            await message.answer("❌ هذا القالب غير موجود.")
+        await state.clear()
+        return
     await state.set_state(RemoveNewsTemplateState.waiting_name)
     await message.answer("✏️ أرسل اسم القالب الذي تريد حذفه:", reply_markup=cancel_keyboard())
 
