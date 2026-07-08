@@ -161,10 +161,9 @@ async def contact_prompt(message: Message) -> None:
         await message.answer("🔧 لوحة التحكم:", reply_markup=admin_panel_keyboard())
         return
     await message.answer(
-        "أهلاً بك 👋\n\n"
-        "يمكنك الآن إرسال رسالتك بأي شكل تريده:\n"
-        "نص، صورة، فيديو، ملف، تسجيل صوتي، أو حتى ملصق.\n\n"
-        "سيتم إرسال رسالتك فورًا إلى المشرفين.",
+        "✉️ نافذة التواصل المباشر مع إدارة القناة.\n\n"
+        "يمكنك إرسال رسالتك أو ملفاتك الآن بأي صيغة تفضلها؛\n"
+        "وسيتولى فريق الإشراف مراجعتها والرد عليك في أسرع وقت لخدمتك.",
         reply_markup=main_keyboard(),
     )
 
@@ -220,11 +219,6 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
 @router.callback_query(PendingUserMessage.waiting_confirmation, F.data.startswith("confirm_send:yes:"))
 async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    pending_id = data.get("pending_msg_id")
-    parts = callback.data.split(":")
-    if len(parts) >= 3 and int(parts[2]) != pending_id:
-        await callback.answer("❌ هذه الرسالة قديمة.")
-        return
     content_data = data.get("content_data", {})
     user = callback.from_user
 
@@ -279,12 +273,6 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(PendingUserMessage.waiting_confirmation, F.data.startswith("confirm_send:no:"))
 async def confirm_send_no(callback: CallbackQuery, state: FSMContext) -> None:
-    data = await state.get_data()
-    pending_id = data.get("pending_msg_id")
-    parts = callback.data.split(":")
-    if len(parts) >= 3 and int(parts[2]) != pending_id:
-        await callback.answer("❌ هذه الرسالة قديمة.")
-        return
     await callback.message.edit_reply_markup(reply_markup=None)
     await callback.message.answer(
         "❌ تم إلغاء الإرسال.",
