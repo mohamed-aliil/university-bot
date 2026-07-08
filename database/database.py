@@ -5,7 +5,10 @@ import os
 
 os.makedirs("data", exist_ok=True)
 
-engine = create_async_engine(settings.DATABASE_URL, echo=False, pool_pre_ping=True)
+_url = settings.DATABASE_URL
+if _url.startswith("postgresql://") and "+asyncpg" not in _url:
+    _url = _url.replace("postgresql://", "postgresql+asyncpg://", 1)
+engine = create_async_engine(_url, echo=False, pool_pre_ping=True)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
