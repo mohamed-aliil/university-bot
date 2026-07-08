@@ -18,7 +18,6 @@ def moderator_keyboard(unread_count: int = 0) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text=msgs_btn)],
-            [KeyboardButton(text="🤖 الردود السريعة")],
             [KeyboardButton(text="💬 التواصل")],
             [KeyboardButton(text="🔄 تحديث")],
         ],
