@@ -83,6 +83,7 @@ class UserSearchState(StatesGroup):
 
 
 class NewsState(StatesGroup):
+    waiting_template = State()
     waiting_content = State()
 
 
@@ -871,11 +872,12 @@ async def communication_button(message: Message) -> None:
 # ─── الأخبار ───
 
 @router.message(AdminFilter(), F.text == "📰 الأخبار")
-async def news_button(message: Message) -> None:
+async def news_button(message: Message, state: FSMContext) -> None:
     from config import settings
     if not settings.NEWS_CHANNEL_ID:
         await message.answer("❌ لم يتم تعيين قناة الأخبار.\nتواصل مع السوبر administrator لإعدادها.")
         return
+    await state.set_state(NewsState.waiting_template)
     await message.answer("📰 اختر قالب الخبر:", reply_markup=await news_keyboard())
 
 
@@ -904,20 +906,12 @@ async def quick_news_send(message: Message, state: FSMContext) -> None:
     await state.clear()
 
 
-class NewsTemplateFilter(AdminFilter):
-    async def __call__(self, obj: Message | CallbackQuery, state: FSMContext) -> bool:
-        if not await super().__call__(obj):
-            return False
-        if not isinstance(obj, Message) or not obj.text:
-            return False
-        current = await state.get_state()
-        if current in (AddNewsTemplateState.waiting_name.state, RemoveNewsTemplateState.waiting_name.state, QuickNewsState.waiting_content.state):
-            return False
-        return obj.text in await load_templates()
-
-
-@router.message(NewsTemplateFilter())
+@router.message(NewsState.waiting_template, AdminFilter())
 async def news_template_chosen(message: Message, state: FSMContext) -> None:
+    templates = await load_templates()
+    if message.text not in templates:
+        await message.answer("❌ هذا القالب غير موجود. اختر من القائمة:", reply_markup=await news_keyboard())
+        return
     await state.set_state(NewsState.waiting_content)
     await state.update_data(news_template=message.text)
     await message.answer(
