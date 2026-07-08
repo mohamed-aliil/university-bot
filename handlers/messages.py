@@ -237,11 +237,13 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
         caption=content_data.get("caption"),
     )
 
-    short_notification = (
-        f"💬 محادثة جديدة\n"
+    caption_text = (
+        f"💬 رسالة جديدة\n"
         f"👤 {user.full_name}\n"
-        f"🆔 {user.id}"
+        f"🆔 {user.id}\n"
     )
+    if content_data.get("caption"):
+        caption_text += f"\n📝 {content_data['caption']}"
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)
 
@@ -253,11 +255,29 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
 
     for admin_id in all_admin_ids:
         try:
-            await callback.bot.send_message(
-                chat_id=admin_id,
-                text=short_notification,
-                reply_markup=reply_markup,
-            )
+            msg_type = content_data.get("type", "text")
+            file_id = content_data.get("file_id")
+            bot = callback.bot
+            if msg_type == "photo" and file_id:
+                await bot.send_photo(chat_id=admin_id, photo=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "video" and file_id:
+                await bot.send_video(chat_id=admin_id, video=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "document" and file_id:
+                await bot.send_document(chat_id=admin_id, document=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "audio" and file_id:
+                await bot.send_audio(chat_id=admin_id, audio=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "voice" and file_id:
+                await bot.send_voice(chat_id=admin_id, voice=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "sticker" and file_id:
+                await bot.send_sticker(chat_id=admin_id, sticker=file_id)
+                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+            elif msg_type == "animation" and file_id:
+                await bot.send_animation(chat_id=admin_id, animation=file_id, caption=caption_text, reply_markup=reply_markup)
+            elif msg_type == "video_note" and file_id:
+                await bot.send_video_note(chat_id=admin_id, video_note=file_id)
+                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+            else:
+                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
         except Exception as e:
             logger.error(f"Failed to send notification to admin {admin_id}: {e}")
 
