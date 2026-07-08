@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.types import ErrorEvent
 from aiohttp import web
 
 from config import settings
@@ -62,6 +63,11 @@ async def main() -> None:
     dp.include_router(messages.router)
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
     dp.startup.register(on_startup)
+
+    @dp.errors()
+    async def global_error(event: ErrorEvent) -> None:
+        logger.exception("Unhandled error: %s", event.exception)
+
     await run_web()
     logger.info("Bot started polling...")
     await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
