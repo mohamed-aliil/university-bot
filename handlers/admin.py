@@ -1528,26 +1528,53 @@ async def show_next_unread(target, state: FSMContext) -> None:
     user = await get_user(msg.user_id)
     user_name = user.full_name if user else "غير معروف"
     username_part = f"@{user.username}" if user and user.username else "لا يوجد"
-    content = msg.content or msg.caption or "بدون محتوى"
     type_map = {"text": "📝", "photo": "🖼", "video": "🎥", "document": "📄",
                 "audio": "🎵", "voice": "🎤", "sticker": "😊"}
     msg_type_icon = type_map.get(msg.message_type, "📎")
 
-    text = (
+    caption = (
         f"📩 الرسالة {current_idx + 1}/{len(messages)}\n"
         f"{'═' * 15}\n"
         f"👤 {user_name}\n"
         f"🆔 {msg.user_id}\n"
-        f"🔗 {username_part}\n"
-        f"{msg_type_icon} {msg.message_type}\n"
-        f"{'─' * 10}\n"
-        f"{content}\n"
-        f"{'═' * 15}"
+        f"🔗 {username_part}"
     )
 
     await state.update_data(queue_index=current_idx, queue_total=len(messages))
     reply_markup = message_review_keyboard(msg.id, msg.user_id, user_name, current_idx, len(messages))
-    await target.answer(text, reply_markup=reply_markup)
+
+    bot = target.bot if hasattr(target, "bot") else target.message.bot
+    chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
+    mtype = msg.message_type
+    fid = msg.file_id
+    text_content = msg.content or msg.caption or "بدون محتوى"
+
+    if mtype == "photo" and fid:
+        await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "video" and fid:
+        await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "document" and fid:
+        await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "audio" and fid:
+        await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "voice" and fid:
+        await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "sticker" and fid:
+        await bot.send_sticker(chat_id=chat_id, sticker=fid)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
+    elif mtype == "animation" and fid:
+        await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=reply_markup)
+    elif mtype == "video_note" and fid:
+        await bot.send_video_note(chat_id=chat_id, video_note=fid)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
+    else:
+        text = (
+            f"{caption}\n"
+            f"{'─' * 10}\n"
+            f"{text_content}\n"
+            f"{'═' * 15}"
+        )
+        await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
 
 
 @router.callback_query(AdminFilter(), F.data == "review_prev")
