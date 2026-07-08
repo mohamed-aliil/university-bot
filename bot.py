@@ -6,6 +6,7 @@ import sys
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramConflictError
 from aiogram.types import ErrorEvent
 from aiohttp import web
 
@@ -52,6 +53,7 @@ async def run_web():
 
 async def main() -> None:
     setup_logger()
+    await asyncio.sleep(5)
     bot = Bot(
         token=settings.BOT_TOKEN,
         default=DefaultBotProperties(parse_mode=ParseMode.HTML),
@@ -70,7 +72,17 @@ async def main() -> None:
 
     await run_web()
     logger.info("Bot started polling...")
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    polling_kwargs = dict(allowed_updates=dp.resolve_used_update_types())
+    while True:
+        try:
+            await dp.start_polling(bot, **polling_kwargs)
+            break
+        except TelegramConflictError:
+            logger.warning("تعارض polling — ننتظر 10 ثوانٍ ونحاول مجدداً…")
+            await asyncio.sleep(10)
+        except Exception as e:
+            logger.exception("خطأ غير متوقع في polling: %s", e)
+            await asyncio.sleep(5)
 
 
 if __name__ == "__main__":
