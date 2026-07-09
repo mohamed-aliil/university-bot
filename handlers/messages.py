@@ -183,7 +183,10 @@ async def contact_prompt(message: Message) -> None:
 
 @router.callback_query(F.data == "cancel_contact")
 async def cancel_contact_cb(callback: CallbackQuery) -> None:
-    await callback.message.delete()
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
     await callback.message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
     await callback.answer()
 
