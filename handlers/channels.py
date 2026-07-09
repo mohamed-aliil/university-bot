@@ -31,6 +31,7 @@ CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
 
 @router.message(SuperAdminFilter(), F.text == "📡 إدارة القنوات")
 async def channels_menu(message: Message, state: FSMContext) -> None:
+    logger.info(f"channels_menu called by {message.from_user.id}")
     await state.clear()
     await message.answer("📡 إدارة القنوات:", reply_markup=channels_keyboard())
 
