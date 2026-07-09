@@ -177,29 +177,19 @@ async def add_item_link(message: Message, state: FSMContext) -> None:
     chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
     await state.update_data(link=link, channel_username=chat_id, channel_message_id=msg)
 
-    mc = None
-    if not ch.startswith("-"):
-        mc = await get_monitored_channel_by_username(ch)
-        if not mc:
-            mc = await get_monitored_channel_by_channel_id(f"@{ch}")
-    else:
-        lookup_id = f"-100{ch}"
-        mc = await get_monitored_channel_by_channel_id(lookup_id)
-
-    if mc:
-        try:
-            fwd = await message.bot.forward_message(
-                chat_id=message.chat.id,
-                from_chat_id=chat_id,
-                message_id=msg,
-            )
-            if fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation:
-                await message.answer("✅ تم جلب الملف من القناة.")
-            else:
-                await fwd.delete()
-                await message.answer("🔗 تم التعرف على القناة (لا يوجد ملف في هذه الرسالة).")
-        except Exception as e:
-            logger.warning(f"Could not fetch from monitored channel {chat_id}: {e}")
+    try:
+        fwd = await message.bot.forward_message(
+            chat_id=message.chat.id,
+            from_chat_id=chat_id,
+            message_id=msg,
+        )
+        if fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation:
+            await message.answer("✅ تم جلب الملف من القناة.")
+        else:
+            await fwd.delete()
+            await message.answer("🔗 تم التعرف على القناة (لا يوجد ملف في هذه الرسالة).")
+    except Exception as e:
+        logger.warning(f"Could not forward {chat_id}/{msg}: {e}")
 
     await state.set_state(MState.add_item_title)
     await message.answer("✏️ أرسل عنوانًا (أو /skip):")
