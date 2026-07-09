@@ -225,10 +225,7 @@ async def auto_forward_channel_post(message: Message) -> None:
     try:
         ci = await add_content_item(folder_id=folder_id, title=title)
         link = f"https://t.me/{ch_id.replace('-100', 'c/').replace('@', '') if ch_id.startswith('-') else ch_id.replace('@', '')}/{msg_id}"
-        if ch_id.startswith("-100"):
-            uname = int(ch_id.replace("-100", ""))
-        else:
-            uname = ch_id
+        uname = ch_id
         await add_content_link(ci.id, link, str(uname), msg_id)
         logger.info(f"Auto-saved from {ch_id} -> folder {folder_id} title={title}")
     except Exception as e:

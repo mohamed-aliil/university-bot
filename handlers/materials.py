@@ -273,14 +273,19 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             try:
                 fid = int(ch) if ch.lstrip("-").isdigit() else ch
                 await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
-            except Exception as e:
-                err = str(e)
-                if "chat not found" in err.lower():
-                    await bot.send_message(chat_id=user_id, text=f"⚠️ البوت لا يستطيع الوصول للقناة.\n🔗 {link.link}")
-                else:
-                    await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
-        else:
-            await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
+                return
+            except Exception:
+                pass
+        try:
+            m = LINK_REGEX.search(link.link)
+            if m:
+                ch2, mid2 = m.group(1), int(m.group(2))
+                fid2 = int(ch2) if ch2.lstrip("-").isdigit() else f"@{ch2}"
+                await bot.copy_message(chat_id=user_id, from_chat_id=fid2, message_id=mid2)
+                return
+        except Exception:
+            pass
+        await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
 
     await asyncio.gather(*[forward_one(l) for l in links])
     logger.info(f"Forwarded {len(links)} links for content item {item_id} to user {user_id}")
@@ -358,6 +363,21 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
         return
     ch, msg = match.group(1), int(match.group(2))
     chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+
+    try:
+        fwd = await message.bot.forward_message(
+            chat_id=message.chat.id,
+            from_chat_id=chat_id,
+            message_id=msg,
+        )
+        if fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation:
+            await message.answer("✅ تم جلب الملف من القناة.")
+        else:
+            await fwd.delete()
+            await message.answer("🔗 تم التعرف على القناة.")
+    except Exception as e:
+        logger.warning(f"Could not forward {chat_id}/{msg}: {e}")
+
     await add_content_link(item_id, text, str(chat_id), msg)
     await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_link_content", f"🔗 محتوى #{item_id}: {text[:80]}")
     links = await get_content_links(item_id)
