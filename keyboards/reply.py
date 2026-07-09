@@ -69,6 +69,7 @@ def communication_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="🤖 الردود السريعة"), KeyboardButton(text="📩 إرسال رسالة")],
+            [KeyboardButton(text="📢 إرسال للكل")],
             [KeyboardButton(text="📰 الأخبار")],
             [KeyboardButton(text="🔙 رجوع")],
         ],

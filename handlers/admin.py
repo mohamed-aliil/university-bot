@@ -62,6 +62,10 @@ class SendMsgState(StatesGroup):
     waiting_for_msg = State()
 
 
+class BroadcastState(StatesGroup):
+    waiting_for_msg = State()
+
+
 class BanUserState(StatesGroup):
     waiting_for_id = State()
 
@@ -1508,6 +1512,48 @@ async def sendmsg_send(message: Message, state: FSMContext) -> None:
         logger.error(f"Failed to send message to {target_id}: {e}")
         await message.answer("❌ فشل الإرسال. قد يكون المستخدم أوقف البوت.", reply_markup=await admin_main_keyboard(message.from_user.id))
 
+    await state.clear()
+
+
+@router.message(PermissionFilter("can_manage"), F.text == "📢 إرسال للكل")
+async def broadcast_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(BroadcastState.waiting_for_msg)
+    await message.answer(
+        "📢 أرسل الرسالة التي تريد إرسالها لكل المستخدمين:\n"
+        "(نص، صورة، فيديو، ملف...)",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(BroadcastState.waiting_for_msg, PermissionFilter("can_manage"))
+async def broadcast_send(message: Message, state: FSMContext) -> None:
+    from database.crud import get_all_users
+    users = await get_all_users()
+    sent = 0
+    failed = 0
+    status_msg = await message.answer("📢 جاري الإرسال...")
+    for u in users:
+        try:
+            if message.text:
+                await message.bot.send_message(chat_id=u.user_id, text=message.text)
+            elif message.photo:
+                await message.bot.send_photo(chat_id=u.user_id, photo=message.photo[-1].file_id, caption=message.caption or "")
+            elif message.video:
+                await message.bot.send_video(chat_id=u.user_id, video=message.video.file_id, caption=message.caption or "")
+            elif message.document:
+                await message.bot.send_document(chat_id=u.user_id, document=message.document.file_id, caption=message.caption or "")
+            elif message.voice:
+                await message.bot.send_voice(chat_id=u.user_id, voice=message.voice.file_id)
+            else:
+                await message.bot.send_message(chat_id=u.user_id, text="📢 رسالة إدارية.")
+            sent += 1
+        except Exception:
+            failed += 1
+    await status_msg.delete()
+    await message.answer(
+        f"📢 تم الإرسال!\n✅ نجح: {sent}\n❌ فشل: {failed}",
+        reply_markup=await admin_main_keyboard(message.from_user.id),
+    )
     await state.clear()
 
 
