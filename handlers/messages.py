@@ -5,6 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from config import settings
 from database.crud import get_or_create_user, save_message, save_attachment, is_banned, is_admin_user, get_all_autoreplies, get_all_admins
+from filters import AdminFilter
 from keyboards.reply import main_keyboard, admin_reply_keyboard, cancel_keyboard, confirm_send_keyboard
 from services.spam import contains_spam
 
@@ -309,3 +310,9 @@ async def confirm_send_no(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data == "dismiss_notification")
+async def dismiss_notification_cb(callback: CallbackQuery) -> None:
+    await callback.message.delete()
+    await callback.answer("✅ تم إلغاء الإشعار.")
