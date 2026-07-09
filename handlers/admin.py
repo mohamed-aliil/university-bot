@@ -11,7 +11,7 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -1075,9 +1075,29 @@ async def sendmsg_from_kb(message: Message, state: FSMContext) -> None:
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 السجلات")
 async def logs_prompt(message: Message, state: FSMContext) -> None:
-    await state.set_state(LogsState.waiting_for_id)
+    await state.clear()
     await message.answer(
-        "📋 أرسل معرف المشرف (ID) أو اسم المستخدم (@username) لعرض سجل نشاطه:",
+        "📋 اختر نوع السجلات:",
+        reply_markup=logs_type_keyboard(),
+    )
+
+
+@router.message(PermissionFilter("can_view_logs"), F.text == "📦 سجلات المواد")
+async def logs_materials_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(LogsState.waiting_for_id)
+    await state.update_data(log_type="materials")
+    await message.answer(
+        "📋 أرسل معرف المشرف (ID) أو اسم المستخدم (@username):",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(PermissionFilter("can_view_logs"), F.text == "💬 سجلات الطلبات")
+async def logs_messages_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(LogsState.waiting_for_id)
+    await state.update_data(log_type="messages")
+    await message.answer(
+        "📋 أرسل معرف المشرف (ID) أو اسم المستخدم (@username):",
         reply_markup=cancel_keyboard(),
     )
 
@@ -1458,6 +1478,28 @@ async def sendmsg_send(message: Message, state: FSMContext) -> None:
 @router.message(LogsState.waiting_for_id, PermissionFilter("can_view_logs"))
 async def logs_show(message: Message, state: FSMContext) -> None:
     from database.crud import get_reply_logs, get_all_users
+    data = await state.get_data()
+    log_type = data.get("log_type", "messages")
+
+    materials_actions = {
+        "add_folder": "➕ إضافة مجلد",
+        "remove_folder": "➖ حذف مجلد",
+        "add_content": "📄 إضافة محتوى",
+        "remove_content": "🗑 حذف محتوى",
+        "edit_content_title": "✏️ تعديل اسم محتوى",
+        "add_link_content": "🔗 إضافة رابط",
+        "remove_link_content": "➖ حذف رابط",
+    }
+    messages_actions = {
+        "reply": "💬 رد",
+        "quick_reply": "⚡ رد سريع",
+        "ban": "🚫 حظر",
+        "ignore": "⏭ تجاهل",
+        "unban": "🔓 إلغاء حظر",
+        "add_admin": "➕ إضافة مشرف",
+        "remove_admin": "➖ إزالة مشرف",
+    }
+
     text = message.text.strip()
     admin_id = None
 
@@ -1480,38 +1522,34 @@ async def logs_show(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
 
-    logs = await get_reply_logs(admin_id=admin_id, limit=30)
-    if not logs:
-        await message.answer("📋 لا توجد سجلات نشاط لهذا المشرف.")
+    logs = await get_reply_logs(admin_id=admin_id, limit=50)
+    if log_type == "materials":
+        label_map = materials_actions
+        title = "📦 سجل إدارة المواد"
+    else:
+        label_map = messages_actions
+        title = "💬 سجل الطلبات"
+
+    filtered = [l for l in logs if l.action_type in label_map]
+    if not filtered:
+        await message.answer(f"📋 لا توجد سجلات {title} لهذا المشرف.")
         await state.clear()
         return
 
     admin_info = await get_user(admin_id)
     admin_name = admin_info.full_name if admin_info else str(admin_id)
-    action_labels = {
-        "reply": "💬 رد",
-        "quick_reply": "⚡ رد سريع",
-        "ban": "🚫 حظر",
-        "ignore": "⏭ تجاهل",
-        "unban": "🔓 إلغاء حظر",
-        "add_admin": "➕ إضافة مشرف",
-        "remove_admin": "➖ إزالة مشرف",
-    }
-    out = f"📋 سجل نشاط المشرف {admin_name}:\n\n"
-    for log in logs[:15]:
-        action = action_labels.get(log.action_type, log.action_type)
+    out = f"📋 {title} للمشرف {admin_name}:\n\n"
+    for log in filtered[:15]:
+        action = label_map.get(log.action_type, log.action_type)
         out += f"{action} "
-        if log.action_type == "reply":
+        if log.action_type in ("reply", "quick_reply"):
             out += f"للمستخدم {log.user_name or log.user_id}\n"
-            out += f"💬 {log.admin_reply or 'رسالة وسائط'}\n"
-        elif log.action_type in ("quick_reply",):
-            out += f"للمستخدم {log.user_name or log.user_id}: {log.details or ''}\n"
-            out += f"💬 {log.admin_reply}\n"
+            out += f"💬 {log.admin_reply or 'رسالة'}\n"
         else:
             out += f"{log.details or ''}\n"
         out += f"🕐 {log.replied_at.strftime('%Y-%m-%d %H:%M')}\n\n"
-    if len(logs) > 15:
-        out += f"...و {len(logs) - 15} سجل آخر"
+    if len(filtered) > 15:
+        out += f"...و {len(filtered) - 15} سجل آخر"
     await message.answer(out)
     await state.clear()
 

@@ -197,6 +197,16 @@ def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMar
     return builder.as_markup()
 
 
+def logs_type_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="📦 سجلات المواد"), KeyboardButton(text="💬 سجلات الطلبات")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def cancel_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ إلغاء", callback_data="cancel_reply")

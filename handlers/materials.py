@@ -11,6 +11,7 @@ from database.crud import (
     add_content_link, get_content_links, remove_content_link,
     update_content_item_title,
     is_materials_active,
+    save_admin_action,
 )
 from filters import AdminFilter
 
@@ -145,7 +146,9 @@ async def add_folder_done(message: Message, state: FSMContext) -> None:
         await message.answer("❌ الاسم فارغ.")
         return
     data = await state.get_data()
-    await add_folder(name, data.get("parent_id"))
+    pid = data.get("parent_id")
+    await add_folder(name=name, parent_id=pid)
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_folder", f"📂 {name}")
     await message.answer(f"✅ تم إضافة المجلد: {name}")
     await state.set_state(MState.browsing)
     await render_admin(message, data.get("parent_id"))
@@ -196,6 +199,7 @@ async def add_item_title(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     ci = await add_content_item(folder_id=data["folder_id"], title=title)
     await add_content_link(ci.id, data["link"], str(data["channel_username"]), data["channel_message_id"])
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_content", f"📄 {title or 'بدون عنوان'} في مجلد {data['folder_id']}")
     await state.update_data(content_item_id=ci.id)
     await state.set_state(MState.add_item_link_extra)
     await message.answer("✅ تم حفظ الرابط. أرسل رابط آخر أو /skip:")
@@ -257,9 +261,11 @@ async def delete_by_name(message: Message, state: FSMContext) -> None:
         return
     for f in folder_match:
         await remove_folder(f.id)
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_folder", f"📂 {f.name}")
         await message.answer(f"✅ تم حذف المجلد: {f.name}")
     for i in item_match:
         await remove_content_item(i.id)
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_content", f"📄 {i.title or 'بدون عنوان'}")
         await message.answer(f"✅ تم حذف المحتوى: {i.title or 'بدون عنوان'}")
     await state.set_state(MState.browsing)
     await render_admin(message, fid)
@@ -362,6 +368,7 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
 
     elif text == "🗑 حذف المحتوى":
         await remove_content_item(item_id)
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_content", f"🗑 محتوى #{item_id}")
         await message.answer("✅ تم حذف المحتوى.")
         await state.set_state(MState.browsing)
         await render_admin(message, data.get("folder_id"))
@@ -379,6 +386,7 @@ async def edit_title_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
     await update_content_item_title(item_id, message.text.strip())
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_title", f"✏️ محتوى #{item_id} ← {message.text.strip()}")
     links = await get_content_links(item_id)
     t = f"✅ تم تحديث الاسم.\n📄 {message.text.strip()}\n{'═' * 15}\n"
     for idx, lnk in enumerate(links, 1):
@@ -399,6 +407,7 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
     ch, msg = match.group(1), int(match.group(2))
     chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
     await add_content_link(item_id, text, str(chat_id), msg)
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_link_content", f"🔗 محتوى #{item_id}: {text[:80]}")
     links = await get_content_links(item_id)
     t = "✅ تم إضافة الرابط.\n"
     for idx, lnk in enumerate(links, 1):
@@ -420,6 +429,7 @@ async def edit_dellink_save(message: Message, state: FSMContext) -> None:
         await message.answer("❌ رقم غير صالح.")
         return
     await remove_content_link(links[idx].id)
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_link_content", f"➖ محتوى #{item_id}: {links[idx].link[:80]}")
     links = await get_content_links(item_id)
     t = "✅ تم حذف الرابط.\n"
     for idx, lnk in enumerate(links, 1):
