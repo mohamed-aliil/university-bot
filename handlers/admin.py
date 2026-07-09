@@ -875,7 +875,11 @@ async def admins_button(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "📋 المستخدمين")
 async def users_button(message: Message) -> None:
-    await list_users(message)
+    try:
+        await list_users(message)
+    except Exception as e:
+        logger.error(f"users_button error: {e}")
+        await message.answer("❌ حدث خطأ أثناء عرض المستخدمين.")
     await message.answer("📋 إدارة المستخدمين:", reply_markup=users_management_keyboard())
 
 
