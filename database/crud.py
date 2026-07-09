@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -456,3 +456,61 @@ def set_materials_active(active: bool) -> None:
         MATERIALS_ACTIVE_FILE.touch()
     else:
         MATERIALS_ACTIVE_FILE.unlink(missing_ok=True)
+
+
+# ─── Monitored Channels ───
+
+async def add_monitored_channel(channel_id: str, channel_username: str = None, title: str = None, monitor_mode: str = "manual", target_folder_id: int = None) -> MonitoredChannel:
+    async with async_session() as session:
+        mc = MonitoredChannel(
+            channel_id=channel_id,
+            channel_username=channel_username,
+            title=title,
+            monitor_mode=monitor_mode,
+            target_folder_id=target_folder_id,
+        )
+        session.add(mc)
+        await session.commit()
+        await session.refresh(mc)
+        return mc
+
+
+async def get_all_monitored_channels() -> list[MonitoredChannel]:
+    async with async_session() as session:
+        result = await session.execute(select(MonitoredChannel).order_by(MonitoredChannel.created_at.desc()))
+        return list(result.scalars().all())
+
+
+async def remove_monitored_channel(channel_id: str) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(MonitoredChannel).where(MonitoredChannel.channel_id == channel_id))
+        mc = result.scalar_one_or_none()
+        if mc:
+            await session.delete(mc)
+            await session.commit()
+            return True
+        return False
+
+
+async def get_auto_monitored_channels() -> list[MonitoredChannel]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.monitor_mode == "auto").order_by(MonitoredChannel.created_at.desc())
+        )
+        return list(result.scalars().all())
+
+
+async def get_monitored_channel_by_username(username: str) -> MonitoredChannel | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.channel_username == username)
+        )
+        return result.scalar_one_or_none()
+
+
+async def get_monitored_channel_by_channel_id(channel_id: str) -> MonitoredChannel | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(MonitoredChannel).where(MonitoredChannel.channel_id == channel_id)
+        )
+        return result.scalar_one_or_none()

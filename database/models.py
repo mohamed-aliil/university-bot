@@ -115,3 +115,14 @@ class ContentLink(Base):
     channel_username = Column(String, nullable=True)
     channel_message_id = Column(BigInteger, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class MonitoredChannel(Base):
+    __tablename__ = "monitored_channels"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_id = Column(String, nullable=False)
+    channel_username = Column(String, nullable=True)
+    title = Column(String, nullable=True)
+    monitor_mode = Column(String, default="manual")  # "manual" or "auto"
+    target_folder_id = Column(Integer, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime, default=_utcnow)

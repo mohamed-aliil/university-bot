@@ -110,11 +110,22 @@ def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="⏹ إيقاف البوت"), KeyboardButton(text="▶️ تشغيل البوت")],
         [KeyboardButton(text="📚 إعدادات المواد")],
         [KeyboardButton(text="📋 السجلات")],
-        [KeyboardButton(text="📡 تخصيص الأخبار")],
+        [KeyboardButton(text="📡 تخصيص الأخبار"), KeyboardButton(text="📡 إدارة القنوات")],
         [KeyboardButton(text="🔄 تحديث البوت")],
         [KeyboardButton(text="🔙 رجوع")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def channels_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة قناة"), KeyboardButton(text="➖ حذف قناة")],
+            [KeyboardButton(text="📋 عرض القنوات")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def materials_settings_keyboard() -> ReplyKeyboardMarkup:
