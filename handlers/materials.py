@@ -299,9 +299,17 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
                 await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
             except Exception as e:
                 err = str(e)
-                if "chat not found" in err.lower():
-                    err += "\n⚠️ البوت ليس مشرفاً في هذه القناة أو القناة محذوفة."
-                await bot.send_message(chat_id=user_id, text=f"❌ فشل التحويل: {link.link}\n{err}")
+                mc = None
+                if isinstance(ch, str) and ch.startswith("@"):
+                    mc = await get_monitored_channel_by_channel_id(ch)
+                elif isinstance(ch, str) and ch.startswith("-100"):
+                    mc = await get_monitored_channel_by_channel_id(ch)
+                if mc and mc.monitor_mode == "manual":
+                    await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
+                else:
+                    if "chat not found" in err.lower():
+                        err += "\n⚠️ البوت ليس مشرفاً في هذه القناة أو القناة محذوفة."
+                    await bot.send_message(chat_id=user_id, text=f"❌ فشل التحويل: {link.link}\n{err}")
         else:
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
 
