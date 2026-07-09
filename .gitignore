@@ -6,3 +6,5 @@ data/
 venv/
 *.log
 bot_output.log
+test.db
+bot.log

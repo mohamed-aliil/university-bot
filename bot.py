@@ -11,7 +11,7 @@ from aiohttp import web
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user, set_bot_active
+from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active
 from handlers import start, messages, admin, materials, channels
 from middlewares import ThrottlingMiddleware
 from utils.logger import setup_logger
@@ -25,6 +25,7 @@ async def on_startup(app: web.Application) -> None:
     await init_db()
     await bot.set_webhook(f"{BASE_URL}/webhook", drop_pending_updates=True)
     set_bot_active(True)
+    set_materials_active(True)
     for aid in settings.admin_ids:
         user = await get_user(aid)
         if user:
