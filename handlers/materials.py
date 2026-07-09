@@ -11,7 +11,6 @@ from database.crud import (
     add_content_link, get_content_links, remove_content_link,
     update_content_item_title,
     is_materials_active,
-    get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
 )
 from filters import AdminFilter
 
@@ -321,20 +320,13 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
         if ch and mid:
             try:
                 fid = int(ch) if ch.lstrip("-").isdigit() else ch
-                await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
+                await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
             except Exception as e:
                 err = str(e)
-                mc = None
-                if isinstance(ch, str) and ch.startswith("@"):
-                    mc = await get_monitored_channel_by_channel_id(ch)
-                elif isinstance(ch, str) and ch.startswith("-100"):
-                    mc = await get_monitored_channel_by_channel_id(ch)
-                if mc and mc.monitor_mode == "manual":
-                    await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
+                if "chat not found" in err.lower():
+                    await bot.send_message(chat_id=user_id, text=f"⚠️ البوت لا يستطيع الوصول للقناة.\n🔗 {link.link}")
                 else:
-                    if "chat not found" in err.lower():
-                        err += "\n⚠️ البوت ليس مشرفاً في هذه القناة أو القناة محذوفة."
-                    await bot.send_message(chat_id=user_id, text=f"❌ فشل التحويل: {link.link}\n{err}")
+                    await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
         else:
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}")
 
