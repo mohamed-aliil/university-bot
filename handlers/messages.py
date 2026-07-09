@@ -184,6 +184,9 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
     if await is_banned(user.id):
         return
 
+    if message.text and message.text.strip() in ("🔙 رجوع",):
+        return
+
     from database.crud import is_bot_active
     if not is_bot_active():
         await message.answer(
