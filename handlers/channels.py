@@ -2,20 +2,18 @@ import logging
 import re
 
 from aiogram import Router, F
-from aiogram.filters import StateFilter
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import Message, CallbackQuery, ChatJoinRequest, ChatMemberUpdated
+from aiogram.types import Message
 
-from config import settings
 from database.crud import (
     add_monitored_channel, get_all_monitored_channels, remove_monitored_channel,
     get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
-    get_auto_monitored_channels, add_content_item, add_content_link,
-    get_folders, get_folder,
+    add_content_item, add_content_link, get_folders, add_folder,
 )
-from filters import AdminFilter, SuperAdminFilter
-from keyboards.reply import channels_keyboard, cancel_keyboard, main_keyboard
+from datetime import datetime, timezone
+from filters import SuperAdminFilter
+from keyboards.reply import channels_keyboard, cancel_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -25,7 +23,6 @@ channel_router = Router()
 class ChannelManageState(StatesGroup):
     waiting_channel_input = State()
     waiting_mode = State()
-    waiting_folder = State()
     waiting_delete = State()
 
 
@@ -130,53 +127,23 @@ async def add_channel_mode(message: Message, state: FSMContext) -> None:
         await state.clear()
 
     elif text == "🤖 تلقائي":
-        folders = await get_folders()
-        if not folders:
-            await message.answer(
-                "❌ لا توجد مجلدات في المواد. أضف مجلداً أولاً من 📚 إدارة المواد.",
-                reply_markup=channels_keyboard(),
-            )
-            await state.clear()
-            return
-        await state.set_state(ChannelManageState.waiting_folder)
-        flist = "\n".join(f"📂 {f.name} (ID: {f.id})" for f in folders)
-        await message.answer(
-            f"📂 اختر المجلد الذي ستحفظ فيه الملفات:\n\n{flist}\n\n"
-            f"أرسل اسم المجلد بالضبط:",
-            reply_markup=cancel_keyboard(),
+        mc = await add_monitored_channel(
+            channel_id=data["channel_id"],
+            channel_username=data.get("channel_username"),
+            title=data.get("title"),
+            monitor_mode="auto",
         )
+        await message.answer(
+            f"✅ تم إضافة القناة: {data.get('title')}\n"
+            f"الوضع: 🤖 تلقائي\n"
+            f"أول هاشتاق في المنشور = اسم المجلد\n"
+            f"ثاني هاشتاق = عنوان المحتوى\n"
+            f"بدون هاشتاقات = يتجاهله",
+            reply_markup=channels_keyboard(),
+        )
+        await state.clear()
     else:
         await message.answer("❌ اختر 🖐 يدوي أو 🤖 تلقائي.")
-
-
-@router.message(ChannelManageState.waiting_folder, SuperAdminFilter())
-async def add_channel_folder(message: Message, state: FSMContext) -> None:
-    name = message.text.strip()
-    folders = await get_folders()
-    target = None
-    for f in folders:
-        if f.name == name:
-            target = f
-            break
-    if not target:
-        await message.answer("❌ مجلد غير موجود. تأكد من الاسم:", reply_markup=cancel_keyboard())
-        return
-    data = await state.get_data()
-    mc = await add_monitored_channel(
-        channel_id=data["channel_id"],
-        channel_username=data.get("channel_username"),
-        title=data.get("title"),
-        monitor_mode="auto",
-        target_folder_id=target.id,
-    )
-    await message.answer(
-        f"✅ تم إضافة القناة: {data.get('title')}\n"
-        f"الوضع: 🤖 تلقائي\n"
-        f"المجلد الهدف: 📂 {target.name}\n"
-        f"الملفات الجديدة ستُضاف تلقائياً.",
-        reply_markup=channels_keyboard(),
-    )
-    await state.clear()
 
 
 @router.message(SuperAdminFilter(), F.text == "➖ حذف قناة")
@@ -214,50 +181,53 @@ async def delete_channel_confirm(message: Message, state: FSMContext) -> None:
     await state.clear()
 
 
-# ─── Auto-monitoring: channel posts ───
+# ─── Auto-monitoring: channel posts (hashtag system) ───
+
+HASHTAG_RE = re.compile(r"#(\w+)")
+
+async def _resolve_folder(hashtag: str) -> int | None:
+    roots = await get_folders(None)
+    for f in roots:
+        if f.name == hashtag:
+            return f.id
+    f = await add_folder(name=hashtag, parent_id=None)
+    return f.id
+
 
 @channel_router.channel_post()
 async def auto_forward_channel_post(message: Message) -> None:
     ch_id = str(message.chat.id)
     mc = await get_monitored_channel_by_channel_id(ch_id)
-    if not mc or mc.monitor_mode != "auto" or not mc.target_folder_id:
+    if not mc or mc.monitor_mode != "auto":
         return
 
-    chat_id = message.chat.id
     msg_id = message.message_id
-    media_types = ("photo", "video", "document", "audio", "voice", "animation")
     if message.media_group_id:
         return
 
-    content = message.text or message.caption or ""
-    title = content[:50] if content else f"من {mc.title or ch_id}"
+    text = message.text or message.caption or ""
+    tags = HASHTAG_RE.findall(text)
 
-    if message.photo:
-        file_id = message.photo[-1].file_id
-    elif message.video:
-        file_id = message.video.file_id
-    elif message.document:
-        file_id = message.document.file_id
-    elif message.audio:
-        file_id = message.audio.file_id
-    elif message.voice:
-        file_id = message.voice.file_id
-    elif message.animation:
-        file_id = message.animation.file_id
-    elif message.text:
-        file_id = None
-    else:
+    if not tags:
         return
 
+    folder_id = await _resolve_folder(tags[0])
+
+    if len(tags) >= 2:
+        title = tags[1]
+    else:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        title = today
+
     try:
-        ci = await add_content_item(folder_id=mc.target_folder_id, title=title)
+        ci = await add_content_item(folder_id=folder_id, title=title)
         link = f"https://t.me/{ch_id.replace('-100', 'c/').replace('@', '') if ch_id.startswith('-') else ch_id.replace('@', '')}/{msg_id}"
         if ch_id.startswith("-100"):
             uname = int(ch_id.replace("-100", ""))
         else:
             uname = ch_id
         await add_content_link(ci.id, link, str(uname), msg_id)
-        logger.info(f"Auto-saved {message.media_group_id or 'single'} from {ch_id} -> folder {mc.target_folder_id}")
+        logger.info(f"Auto-saved from {ch_id} -> folder {folder_id} title={title}")
     except Exception as e:
         logger.error(f"Auto-forward failed from {ch_id}: {e}")
 
