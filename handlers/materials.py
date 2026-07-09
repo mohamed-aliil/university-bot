@@ -21,15 +21,15 @@ router = Router()
 
 LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 
-def content_edit_kb() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="✏️ تغيير الاسم", callback_data="edit:title")
-    builder.button(text="➕ إضافة رابط", callback_data="edit:addlink")
-    builder.button(text="➖ حذف رابط", callback_data="edit:dellink")
-    builder.button(text="🗑 حذف المحتوى", callback_data="edit:delete")
-    builder.button(text="🔙 رجوع", callback_data="edit:back")
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
+def content_edit_kb() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="➕ إضافة رابط")],
+            [KeyboardButton(text="➖ حذف رابط"), KeyboardButton(text="🗑 حذف المحتوى")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 class MState(StatesGroup):
@@ -292,61 +292,55 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
     logger.info(f"Forwarded {len(links)} links for content item {item_id} to user {user_id}")
 
 
-# ─── Edit content (InlineKeyboard) ───
+# ─── Edit content (ReplyKeyboard with inline cancel) ───
 
 def cancel_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ إلغاء", callback_data="edit:cancel")]])
 
 
-@router.callback_query(MState.edit_menu, AdminFilter(), F.data.startswith("edit:"))
-async def edit_menu_cb(callback: CallbackQuery, state: FSMContext) -> None:
+@router.message(MState.edit_menu, AdminFilter())
+async def edit_menu_handler(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
     if not item_id:
         await state.set_state(MState.browsing)
-        await render_admin(callback.message, data.get("folder_id"))
-        await callback.answer()
+        await render_admin(message, data.get("folder_id"))
         return
-    action = callback.data.split(":")[1]
+    text = message.text.strip()
 
-    if action == "title":
+    if text == "✏️ تغيير الاسم":
         await state.set_state(EditContentState.edit_title)
-        await callback.message.answer("✏️ أرسل الاسم الجديد:", reply_markup=cancel_inline_kb())
-        await callback.answer()
+        await message.answer("✏️ أرسل الاسم الجديد:", reply_markup=cancel_inline_kb())
 
-    elif action == "addlink":
+    elif text == "➕ إضافة رابط":
         await state.set_state(EditContentState.add_link)
-        await callback.message.answer("🔗 أرسل رابط المنشور:", reply_markup=cancel_inline_kb())
-        await callback.answer()
+        await message.answer("🔗 أرسل رابط المنشور:", reply_markup=cancel_inline_kb())
 
-    elif action == "dellink":
+    elif text == "➖ حذف رابط":
         links = await get_content_links(item_id)
         if not links:
-            await callback.answer("❌ لا توجد روابط للحذف.", show_alert=True)
+            await message.answer("❌ لا توجد روابط للحذف.", reply_markup=content_edit_kb())
             return
         t = "📋 الروابط:\n"
         for idx, lnk in enumerate(links, 1):
             t += f"{idx}. {lnk.link}\n"
         t += "\nأرسل رقم الرابط لحذفه:"
         await state.set_state(EditContentState.delete_link)
-        await callback.message.answer(t, reply_markup=cancel_inline_kb())
-        await callback.answer()
+        await message.answer(t, reply_markup=cancel_inline_kb())
 
-    elif action == "delete":
+    elif text == "🗑 حذف المحتوى":
         await remove_content_item(item_id)
-        await save_admin_action(callback.from_user.id, callback.from_user.full_name or "", "remove_content", f"🗑 محتوى #{item_id}")
-        await callback.message.answer("✅ تم حذف المحتوى.")
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_content", f"🗑 محتوى #{item_id}")
+        await message.answer("✅ تم حذف المحتوى.")
         await state.set_state(MState.browsing)
-        await render_admin(callback.message, data.get("folder_id"))
-        await callback.answer()
+        await render_admin(message, data.get("folder_id"))
 
-    elif action == "back":
+    elif text == "🔙 رجوع":
         await state.set_state(MState.browsing)
-        await render_admin(callback.message, data.get("folder_id"))
-        await callback.answer()
+        await render_admin(message, data.get("folder_id"))
 
     else:
-        await callback.answer()
+        await message.answer("❌ اختر من الأزرار.", reply_markup=content_edit_kb())
 
 
 @router.callback_query(AdminFilter(), F.data == "edit:cancel")
@@ -357,15 +351,8 @@ async def edit_cancel_cb(callback: CallbackQuery, state: FSMContext) -> None:
         await state.set_state(MState.browsing)
         await render_admin(callback.message, data.get("folder_id"))
     else:
-        links = await get_content_links(item_id)
-        header = f"📄 {(await state.get_data()).get('edit_item_title', '')}\n{'═' * 15}\n"
-        if links:
-            for idx, lnk in enumerate(links, 1):
-                header += f"{idx}. {lnk.link}\n"
-        else:
-            header += "لا توجد روابط.\n"
         await state.set_state(MState.edit_menu)
-        await callback.message.answer(header, reply_markup=content_edit_kb())
+        await callback.message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
     await callback.answer()
 
 
