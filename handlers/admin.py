@@ -1031,6 +1031,12 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
 
 # ─── تخصيص قوالب الأخبار ───
 
+@router.message(SuperAdminFilter(), F.text == "📡 إدارة القنوات")
+async def channels_menu_admin(message: Message, state: FSMContext) -> None:
+    from handlers.channels import channels_menu
+    await channels_menu(message, state)
+
+
 @router.message(SuperAdminFilter(), F.text == "📡 تخصيص الأخبار")
 async def customize_news_button(message: Message, state: FSMContext) -> None:
     await state.clear()
