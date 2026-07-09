@@ -314,5 +314,3 @@ async def confirm_send_no(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await callback.answer()
-
-@router.callback_query(AdminFilter(), F.data.startswith("confirm_send:no:"))
