@@ -452,7 +452,7 @@ class SState(StatesGroup):
     browsing = State()
 
 
-@router.message(F.text == "📚 المواد")
+@router.message(F.text == "نَافِذَة الـمَوَادّ")
 async def student_browse(message: Message, state: FSMContext) -> None:
     if not is_materials_active():
         await message.answer("❌ ميزة المواد متوقفة.")
@@ -463,7 +463,7 @@ async def student_browse(message: Message, state: FSMContext) -> None:
         return
     await state.set_state(SState.browsing)
     await state.update_data(folder_id=None)
-    await message.answer("📚 المواد:", reply_markup=student_kb(folders, []))
+    await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
 
 
 @router.message(SState.browsing, F.text == "🔙 رجوع")
@@ -481,7 +481,7 @@ async def student_back(message: Message, state: FSMContext) -> None:
             await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
         else:
             folders = await get_folders()
-            await message.answer("📚 المواد:", reply_markup=student_kb(folders, []))
+            await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
     else:
         await state.clear()
         from keyboards.reply import main_keyboard
