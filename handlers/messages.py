@@ -171,12 +171,21 @@ async def contact_prompt(message: Message) -> None:
         from keyboards.reply import admin_panel_keyboard
         await message.answer("🔧 لوحة التحكم:", reply_markup=admin_panel_keyboard())
         return
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ إلغاء", callback_data="cancel_contact")]])
     await message.answer(
         "✉️ نافذة التواصل المباشر مع إدارة القناة.\n\n"
         "يمكنك إرسال رسالتك أو ملفاتك الآن بأي صيغة تفضلها؛\n"
         "وسيتولى فريق الإشراف مراجعتها والرد عليك في أسرع وقت لخدمتك.",
-        reply_markup=main_keyboard(),
+        reply_markup=cancel_kb,
     )
+
+
+@router.callback_query(F.data == "cancel_contact")
+async def cancel_contact_cb(callback: CallbackQuery) -> None:
+    await callback.message.delete()
+    await callback.message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
+    await callback.answer()
 
 
 @router.message()
