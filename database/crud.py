@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -80,13 +80,23 @@ async def unban_all_users() -> int:
 
 
 async def mute_user_notifications(user_id: int, muted: bool = True) -> bool:
-    user = await update_user(user_id, notifications_muted=muted)
-    return user is not None
+    async with async_session() as session:
+        if muted:
+            exists = await session.execute(select(MutedUser).where(MutedUser.user_id == user_id))
+            if not exists.scalar_one_or_none():
+                session.add(MutedUser(user_id=user_id))
+                await session.commit()
+            return True
+        else:
+            result = await session.execute(delete(MutedUser).where(MutedUser.user_id == user_id))
+            await session.commit()
+            return result.rowcount > 0
 
 
 async def is_notifications_muted(user_id: int) -> bool:
-    user = await get_user(user_id)
-    return user.notifications_muted if user else False
+    async with async_session() as session:
+        result = await session.execute(select(MutedUser).where(MutedUser.user_id == user_id))
+        return result.scalar_one_or_none() is not None
 
 
 async def get_all_users() -> list[User]:
