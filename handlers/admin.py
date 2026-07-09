@@ -860,7 +860,7 @@ async def admins_button(message: Message) -> None:
     await message.answer("👥 إدارة المشرفين:", reply_markup=admins_management_keyboard())
 
 
-@router.message(PermissionFilter("can_ban"), F.text == "📋 المستخدمين")
+@router.message(SuperAdminFilter(), F.text == "📋 المستخدمين")
 async def users_button(message: Message) -> None:
     await list_users(message)
     await message.answer("📋 إدارة المستخدمين:", reply_markup=users_management_keyboard())
