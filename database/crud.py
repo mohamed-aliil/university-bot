@@ -420,6 +420,16 @@ async def get_folder(folder_id: int) -> Folder | None:
         return await session.get(Folder, folder_id)
 
 
+async def rename_folder(folder_id: int, new_name: str) -> bool:
+    async with async_session() as session:
+        f = await session.get(Folder, folder_id)
+        if not f:
+            return False
+        f.name = new_name
+        await session.commit()
+        return True
+
+
 async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
     async with async_session() as session:
         ci = ContentItem(folder_id=folder_id, title=title)

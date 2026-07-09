@@ -10,7 +10,7 @@ from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
     add_content_item, remove_content_item, get_content_items,
     add_content_link, get_content_links, remove_content_link,
-    update_content_item_title,
+    update_content_item_title, rename_folder,
     is_materials_active,
     save_admin_action,
 )
@@ -38,6 +38,7 @@ class MState(StatesGroup):
     add_item_title = State()
     deleting = State()
     edit_menu = State()
+    rename_folder = State()
 
 
 class EditContentState(StatesGroup):
@@ -103,7 +104,9 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
         msg = f"📍 {name}\n"
         if items:
             msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
+        rename_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}")]])
         await message.answer(msg, reply_markup=build_kb(folders, items))
+        await message.answer("⚙️", reply_markup=rename_kb)
     else:
         await message.answer("📚 المواد:", reply_markup=build_kb(folders, items))
 
@@ -250,6 +253,37 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         await state.update_data(edit_item_id=item.id, edit_item_title=item.title, folder_id=pid)
         await state.set_state(MState.edit_menu)
         await message.answer(header, reply_markup=content_edit_kb())
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("rename_folder:"))
+async def rename_folder_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    folder_id = int(callback.data.split(":")[1])
+    await state.update_data(rename_folder_id=folder_id)
+    await state.set_state(MState.rename_folder)
+    await callback.message.answer("✏️ أرسل الاسم الجديد للمجلد:", reply_markup=cancel_inline_kb())
+    await callback.answer()
+
+
+@router.message(MState.rename_folder, AdminFilter())
+async def rename_folder_save(message: Message, state: FSMContext) -> None:
+    new_name = message.text.strip()
+    if not new_name:
+        await message.answer("❌ الاسم فارغ.")
+        return
+    data = await state.get_data()
+    folder_id = data.get("rename_folder_id")
+    if not folder_id:
+        await state.set_state(MState.browsing)
+        await render_admin(message)
+        return
+    ok = await rename_folder(folder_id, new_name)
+    if ok:
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "rename_folder", f"✏️ مجلد #{folder_id} ← {new_name}")
+        await message.answer(f"✅ تم تغيير الاسم إلى: {new_name}")
+    else:
+        await message.answer("❌ المجلد غير موجود.")
+    await state.set_state(MState.browsing)
+    await render_admin(message, folder_id)
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
