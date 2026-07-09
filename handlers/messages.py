@@ -38,10 +38,16 @@ def get_message_type_text(msg_type: str) -> str:
 async def forward_to_admins(message: Message, msg_type: str, db_message_id: int) -> None:
     user = message.from_user
 
+    content_preview = (
+        message.text or message.caption or
+        (f"[{msg_type_map().get(msg_type, 'وسائط')}]" if msg_type != "text" else "")
+    )
     short_notification = (
         f"💬 محادثة جديدة\n"
         f"👤 {user.full_name}\n"
-        f"🆔 {user.id}"
+        f"🆔 {user.id}\n"
+        f"──────────\n"
+        f"{content_preview[:200]}"
     )
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)

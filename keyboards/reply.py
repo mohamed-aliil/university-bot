@@ -294,10 +294,11 @@ def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_i
     if current_idx > 0:
         builder.button(text="⬅️ السابق", callback_data="review_prev")
     builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{user_name}")
+    builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
     if current_idx < total - 1:
         builder.button(text="➡️ التالي", callback_data="review_next")
     builder.button(text="✅ إنهاء", callback_data="review_done")
-    builder.adjust(3 if (current_idx > 0 or current_idx < total - 1) else 2)
+    builder.adjust(2, 2)
     return builder.as_markup()
 
 

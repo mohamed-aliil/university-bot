@@ -1599,6 +1599,8 @@ async def show_next_unread(target, state: FSMContext) -> None:
                 "audio": "🎵", "voice": "🎤", "sticker": "😊"}
     msg_type_icon = type_map.get(msg.message_type, "📎")
 
+    text_content = msg.content or msg.caption or ""
+
     caption = (
         f"📩 الرسالة {current_idx + 1}/{len(messages)}\n"
         f"{'═' * 15}\n"
@@ -1606,6 +1608,9 @@ async def show_next_unread(target, state: FSMContext) -> None:
         f"🆔 {msg.user_id}\n"
         f"🔗 {username_part}"
     )
+    if text_content:
+        caption += f"\n{'─' * 10}\n{text_content[:400]}"
+    caption += f"\n{'═' * 15}"
 
     await state.update_data(queue_index=current_idx, queue_total=len(messages))
     reply_markup = message_review_keyboard(msg.id, msg.user_id, user_name, current_idx, len(messages))
@@ -1704,6 +1709,18 @@ async def reset_data_command(message: Message) -> None:
         f"• المشرفين الأساسيين المحتفظ بهم: {counts['users_kept']}",
         reply_markup=await admin_main_keyboard(message.from_user.id),
     )
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("review_delete:"))
+async def review_delete_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split(":")
+    msg_id = int(parts[1])
+    await mark_message_read(msg_id)
+    await callback.message.delete()
+    data = await state.get_data()
+    current_idx = data.get("queue_index", 0)
+    await callback.answer("✅ تم حذف الرسالة.", show_alert=True)
+    await show_next_unread(callback.message, state)
 
 
 @router.callback_query(AdminFilter(), F.data == "review_done")
