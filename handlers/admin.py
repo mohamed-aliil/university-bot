@@ -191,12 +191,23 @@ async def show_users_panel(callback: CallbackQuery) -> None:
     )
     if not users:
         text += "لا يوجد مستخدمين بعد."
-    else:
-        for u in users:
-            status = "🚫" if u.is_banned else "✅"
-            role = "👑" if u.user_id in settings.admin_ids else "👤"
-            text += f"{role} {u.full_name} - {u.user_id} {status}\n"
-    await callback.message.answer(text, reply_markup=users_panel_keyboard())
+        await callback.message.answer(text, reply_markup=users_panel_keyboard())
+        return
+    lines = []
+    for u in users:
+        status = "🚫" if u.is_banned else "✅"
+        role = "👑" if u.user_id in settings.admin_ids else "👤"
+        lines.append(f"{role} {u.full_name} - {u.user_id} {status}")
+    total = len(lines)
+    chunk = text + f"({total} مستخدم)\n"
+    for line in lines:
+        if len(chunk) + len(line) + 1 > 4000:
+            await callback.message.answer(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk:
+        await callback.message.answer(chunk)
+    await callback.message.answer("👥 اختر:", reply_markup=users_panel_keyboard())
 
 
 # ─── الرد على المستخدمين مع التحقق من الصلاحية ───
@@ -675,16 +686,25 @@ async def show_users_list(target, search: str = "") -> None:
         users = [u for u in all_users if search.lower() in u.full_name.lower() or str(u.user_id) == search or (u.username and search.lower() in u.username.lower())]
     else:
         users = all_users
-    out = "📋 قائمة المستخدمين:\n"
     if not users:
-        out += "لا يوجد مستخدمين."
-    else:
-        for u in users:
-            status = "🚫" if u.is_banned else "✅"
-            role = "👑" if u.user_id in settings.admin_ids else "👤"
-            username_part = f" (@{u.username})" if u.username else ""
-            out += f"{role} {u.full_name}{username_part} - {u.user_id} {status}\n"
-    await target.answer(out)
+        await target.answer("📋 لا يوجد مستخدمين.")
+        return
+    lines = []
+    for u in users:
+        status = "🚫" if u.is_banned else "✅"
+        role = "👑" if u.user_id in settings.admin_ids else "👤"
+        username_part = f" (@{u.username})" if u.username else ""
+        lines.append(f"{role} {u.full_name}{username_part} - {u.user_id} {status}")
+    total = len(lines)
+    header = f"📋 قائمة المستخدمين ({total}):\n"
+    chunk = header
+    for line in lines:
+        if len(chunk) + len(line) + 1 > 4000:
+            await target.answer(chunk)
+            chunk = ""
+        chunk += line + "\n"
+    if chunk:
+        await target.answer(chunk)
 
 
 # ─── رجوع للقائمة الرئيسية ───
@@ -860,7 +880,8 @@ async def replies_button(message: Message) -> None:
 
 
 @router.message(SuperAdminFilter(), F.text == "👥 الإدارة")
-async def admin_management_button(message: Message) -> None:
+async def admin_management_button(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer("👥 اختر ما تريد:", reply_markup=admin_management_keyboard())
 
 
