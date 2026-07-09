@@ -139,7 +139,9 @@ async def add_channel_mode(message: Message, state: FSMContext) -> None:
             f"الوضع: 🤖 تلقائي\n"
             f"أول هاشتاق في المنشور = اسم المجلد\n"
             f"ثاني هاشتاق = عنوان المحتوى\n"
-            f"بدون هاشتاقات = يتجاهله",
+            f"بدون هاشتاقات = يتجاهله\n\n"
+            f"⚠️ تأكد من إضافة البوت (@itjobTripoli_bot) "
+            f"كمشرف في القناة حتى يستقبل المنشورات.",
             reply_markup=channels_keyboard(),
         )
         await state.clear()
