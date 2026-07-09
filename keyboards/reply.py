@@ -6,7 +6,7 @@ from config import settings
 def main_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="✉️ تواصل معنا")],
+            [KeyboardButton(text="تواصل معنا")],
             [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
         ],
         resize_keyboard=True,

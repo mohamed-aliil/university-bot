@@ -159,7 +159,7 @@ def extract_message_content(message: Message) -> dict:
     return data
 
 
-@router.message(F.text == "✉️ تواصل معنا")
+@router.message(F.text == "تواصل معنا")
 async def contact_prompt(message: Message) -> None:
     user = message.from_user
     if user.id in settings.admin_ids:
