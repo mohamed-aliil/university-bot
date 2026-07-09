@@ -39,6 +39,10 @@ def get_message_type_text(msg_type: str) -> str:
 async def forward_to_admins(message: Message, msg_type: str, db_message_id: int) -> None:
     user = message.from_user
 
+    from database.crud import is_notifications_muted
+    if await is_notifications_muted(user.id):
+        return
+
     content_preview = (
         message.text or message.caption or
         (f"[{msg_type_map().get(msg_type, 'وسائط')}]" if msg_type != "text" else "")
@@ -311,8 +315,4 @@ async def confirm_send_no(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.answer()
 
-
-@router.callback_query(AdminFilter(), F.data == "dismiss_notification")
-async def dismiss_notification_cb(callback: CallbackQuery) -> None:
-    await callback.message.delete()
-    await callback.answer("✅ تم إلغاء الإشعار.")
+@router.callback_query(AdminFilter(), F.data.startswith("confirm_send:no:"))

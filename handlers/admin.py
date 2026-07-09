@@ -275,6 +275,19 @@ async def ignore_user_handler(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
+@router.callback_query(AdminFilter(), F.data.startswith("mute:"))
+async def mute_user_notifications_handler(callback: CallbackQuery) -> None:
+    from database.crud import mute_user_notifications as mute_fn
+    _, user_id = callback.data.split(":", 1)
+    user_id = int(user_id)
+    await mute_fn(user_id, muted=True)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.answer("✅ تم كتم إشعارات هذا المستخدم.", show_alert=True)
+
+
 @router.callback_query(AdminFilter(), F.data.startswith("forward:"))
 async def forward_to_channel_handler(callback: CallbackQuery) -> None:
     from database.crud import get_user_messages

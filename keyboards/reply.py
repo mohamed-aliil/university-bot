@@ -193,7 +193,7 @@ def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMar
     builder.button(text="🚫 حظر", callback_data=f"ban:{user_id}")
     builder.button(text="⏭ عدم الرد", callback_data=f"ignore:{user_id}")
     builder.button(text="📢 للقناة", callback_data=f"forward:{user_id}:{user_full_name}")
-    builder.button(text="❌ إلغاء", callback_data="dismiss_notification")
+    builder.button(text="🔇 كتم الإشعارات", callback_data=f"mute:{user_id}")
     builder.adjust(1, 2, 1, 1)
     return builder.as_markup()
 

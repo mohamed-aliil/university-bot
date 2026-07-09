@@ -22,6 +22,7 @@ class User(Base):
     can_manage = Column(Boolean, default=False)
     can_view_logs = Column(Boolean, default=False)
     can_control_bot = Column(Boolean, default=False)
+    notifications_muted = Column(Boolean, default=False)
     created_at = Column(DateTime, default=_utcnow)
 
     messages = relationship("Message", back_populates="user", cascade="all, delete-orphan")

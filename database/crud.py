@@ -79,6 +79,16 @@ async def unban_all_users() -> int:
         return count
 
 
+async def mute_user_notifications(user_id: int, muted: bool = True) -> bool:
+    user = await update_user(user_id, notifications_muted=muted)
+    return user is not None
+
+
+async def is_notifications_muted(user_id: int) -> bool:
+    user = await get_user(user_id)
+    return user.notifications_muted if user else False
+
+
 async def get_all_users() -> list[User]:
     async with async_session() as session:
         result = await session.execute(select(User))
