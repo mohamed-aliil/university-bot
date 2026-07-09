@@ -2,13 +2,14 @@ import asyncio
 import logging
 import re
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
     add_content_item, remove_content_item, get_content_items,
-    add_content_link, get_content_links,
+    add_content_link, get_content_links, remove_content_link,
+    update_content_item_title,
     is_materials_active,
     get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
 )
@@ -19,6 +20,21 @@ router = Router()
 
 LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+
+def content_edit_keyboard(item_id: int, has_links: bool = True) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✏️ تغيير الاسم", callback_data=f"cedit_title:{item_id}")
+    builder.button(text="➕ إضافة رابط", callback_data=f"cedit_addlink:{item_id}")
+    if has_links:
+        builder.button(text="➖ حذف رابط", callback_data=f"cedit_dellink:{item_id}")
+    builder.button(text="🗑 حذف المحتوى", callback_data=f"cedit_delete:{item_id}")
+    builder.button(text="🔙 رجوع", callback_data=f"cedit_back:{item_id}")
+    builder.adjust(2)
+    return builder.as_markup()
+
 
 class MState(StatesGroup):
     browsing = State()
@@ -27,6 +43,13 @@ class MState(StatesGroup):
     add_item_title = State()
     add_item_link_extra = State()
     deleting = State()
+
+
+class EditContentState(StatesGroup):
+    edit_title = State()
+    add_link = State()
+    add_link_extra = State()
+    delete_link = State()
 
 
 def build_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
@@ -272,7 +295,19 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         await state.update_data(folder_id=fid)
         await render_admin(message, fid)
     elif item_match:
-        await forward_item(message.from_user.id, item_match[0].id, message.bot)
+        item = item_match[0]
+        links = await get_content_links(item.id)
+        header = f"📄 {item.title or 'بدون عنوان'}\n{'═' * 15}\n"
+        if links:
+            for idx, lnk in enumerate(links, 1):
+                header += f"{idx}. <a href='{lnk.link}'>رابط</a>\n"
+        else:
+            header += "لا توجد روابط.\n"
+        await state.update_data(edit_item_id=item.id, folder_id=pid)
+        await message.answer(
+            header,
+            reply_markup=content_edit_keyboard(item.id, has_links=bool(links)),
+        )
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
@@ -315,6 +350,129 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
 
     await asyncio.gather(*[forward_one(l) for l in links])
     logger.info(f"Forwarded {len(links)} links for content item {item_id} to user {user_id}")
+
+
+# ─── Edit content callbacks ───
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_title:"))
+async def cedit_title_start(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    await state.update_data(edit_item_id=item_id)
+    await state.set_state(EditContentState.edit_title)
+    await callback.message.answer("✏️ أرسل الاسم الجديد:")
+    await callback.answer()
+
+
+@router.message(EditContentState.edit_title, AdminFilter())
+async def cedit_title_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    await update_content_item_title(item_id, message.text.strip())
+    links = await get_content_links(item_id)
+    await message.answer(
+        f"✅ تم تحديث الاسم.\n📄 {message.text.strip()}",
+        reply_markup=content_edit_keyboard(item_id, has_links=bool(links)),
+    )
+    await state.update_data(edit_item_id=item_id)
+    await state.set_state(MState.browsing)
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_addlink:"))
+async def cedit_addlink_start(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    await state.update_data(edit_item_id=item_id)
+    await state.set_state(EditContentState.add_link)
+    await callback.message.answer("🔗 أرسل رابط المنشور:")
+    await callback.answer()
+
+
+@router.message(EditContentState.add_link, AdminFilter())
+async def cedit_addlink_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    text = message.text.strip()
+    match = LINK_REGEX.search(text)
+    if not match:
+        await message.answer("❌ رابط غير صالح.")
+        return
+    ch, msg = match.group(1), int(match.group(2))
+    chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+    await add_content_link(item_id, text, str(chat_id), msg)
+    links = await get_content_links(item_id)
+    await message.answer("✅ تم إضافة الرابط.")
+    header = f"📄 الروابط الحالية:\n"
+    for idx, lnk in enumerate(links, 1):
+        header += f"{idx}. <a href='{lnk.link}'>رابط</a>\n"
+    await message.answer(header, reply_markup=content_edit_keyboard(item_id, has_links=bool(links)))
+    await state.set_state(MState.browsing)
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_dellink:"))
+async def cedit_dellink_start(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    links = await get_content_links(item_id)
+    text = "📋 الروابط:\n"
+    for idx, lnk in enumerate(links, 1):
+        text += f"{idx}. {lnk.link}\n"
+    text += "\nأرسل رقم الرابط لحذفه:"
+    await state.update_data(edit_item_id=item_id)
+    await state.set_state(EditContentState.delete_link)
+    await callback.message.answer(text)
+    await callback.answer()
+
+
+@router.message(EditContentState.delete_link, AdminFilter())
+async def cedit_dellink_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    links = await get_content_links(item_id)
+    try:
+        idx = int(message.text.strip()) - 1
+        if idx < 0 or idx >= len(links):
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ رقم غير صالح.")
+        return
+    await remove_content_link(links[idx].id)
+    links = await get_content_links(item_id)
+    await message.answer("✅ تم حذف الرابط.", reply_markup=content_edit_keyboard(item_id, has_links=bool(links)))
+    await state.set_state(MState.browsing)
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_delete:"))
+async def cedit_delete_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ نعم", callback_data=f"cedit_delok:{item_id}"),
+         InlineKeyboardButton(text="❌ لا", callback_data=f"cedit_delno:{item_id}")]
+    ])
+    await callback.message.answer("🗑 هل أنت متأكد من حذف المحتوى؟", reply_markup=kb)
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_delok:"))
+async def cedit_delete_ok(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    await remove_content_item(item_id)
+    await callback.message.edit_text("✅ تم حذف المحتوى.")
+    await state.set_state(MState.browsing)
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_delno:"))
+async def cedit_delete_no(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text("❌ تم الإلغاء.")
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("cedit_back:"))
+async def cedit_back(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    fid = data.get("folder_id")
+    await state.set_state(MState.browsing)
+    await callback.message.delete()
+    await render_admin(callback.message, fid)
+    await callback.answer()
 
 
 # ─── Back ───

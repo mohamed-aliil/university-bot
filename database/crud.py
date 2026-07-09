@@ -444,6 +444,26 @@ async def get_content_links(content_item_id: int) -> list[ContentLink]:
         return list(result.scalars().all())
 
 
+async def remove_content_link(link_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(ContentLink, link_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
+
+
+async def update_content_item_title(item_id: int, title: str) -> bool:
+    async with async_session() as session:
+        obj = await session.get(ContentItem, item_id)
+        if not obj:
+            return False
+        obj.title = title
+        await session.commit()
+        return True
+
+
 MATERIALS_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".materials_active"
 
 
