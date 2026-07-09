@@ -1,4 +1,5 @@
 import logging
+import html as html_mod
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup
 from aiogram.fsm.context import FSMContext
@@ -201,7 +202,8 @@ async def show_users_panel(callback: CallbackQuery) -> None:
     for u in users:
         status = "🚫" if u.is_banned else "✅"
         role = "👑" if u.user_id in settings.admin_ids else "👤"
-        lines.append(f"{role} {u.full_name} - {u.user_id} {status}")
+        safe_name = html_mod.escape(u.full_name)
+        lines.append(f"{role} {safe_name} - {u.user_id} {status}")
     total = len(lines)
     chunk = text + f"({total} مستخدم)\n"
     for line in lines:
@@ -710,8 +712,9 @@ async def show_users_list(target, search: str = "") -> None:
     for u in users:
         status = "🚫" if u.is_banned else "✅"
         role = "👑" if u.user_id in settings.admin_ids else "👤"
-        username_part = f" (@{u.username})" if u.username else ""
-        lines.append(f"{role} {u.full_name}{username_part} - {u.user_id} {status}")
+        safe_name = html_mod.escape(u.full_name or "غير معروف")
+        username_part = f" (@{html_mod.escape(u.username)})" if u.username else ""
+        lines.append(f"{role} {safe_name}{username_part} - {u.user_id} {status}")
     total = len(lines)
     header = f"📋 قائمة المستخدمين ({total}):\n"
     chunk = header
