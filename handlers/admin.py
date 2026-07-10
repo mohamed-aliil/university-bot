@@ -1244,12 +1244,30 @@ async def logs_messages_start(message: Message, state: FSMContext) -> None:
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
 async def cleanup_db_prompt(message: Message) -> None:
     stats = await get_db_table_stats()
-    total = _fmt_size(stats["db_total_bytes"])
+    total_bytes = stats["db_total_bytes"]
+    total = _fmt_size(total_bytes)
     rows, sizes = stats["rows"], stats["sizes"]
+
+    MAX_DB_BYTES = 1073741824  # 1 GB
+    pct = total_bytes / MAX_DB_BYTES * 100
+    bar_len = 10
+    filled = int(pct / 100 * bar_len)
+    bar = "█" * filled + "░" * (bar_len - filled)
+
     msg_parts = [
-        f"📊 **حجم قاعدة البيانات: {total}**\n",
+        f"📊 **حجم قاعدة البيانات: {total}**",
+        f"⚡ السعة القصوى: **1.0 GB**",
+        f"📈 الاستخدام: {pct:.1f}%",
+        f"`{bar}`",
     ]
-    for label, key in [("الرسائل", "messages"), ("المرفقات", "attachments"), ("سجلات الردود", "reply_logs"), ("إشعارات", "admin_notifications"), ("المستخدمين", "users")]:
+
+    if pct >= 90:
+        msg_parts.append("⚠️ **تحذير: قاعدة البيانات أوشكت على الامتلاء! نظف فورًا.**")
+    elif pct >= 75:
+        msg_parts.append("⚡ تنبيه: اقتربت من الحد الأقصى، يُنصح بالتنظيف قريبًا.")
+
+    msg_parts.append("")
+    for label, key in [("الرسائل", "messages"), ("المرفقات", "attachments"), ("سجلات الردود", "reply_logs"), ("الإشعارات", "admin_notifications"), ("المستخدمين", "users")]:
         row_count = rows.get(key, 0)
         size = _fmt_size(sizes.get(key, 0))
         msg_parts.append(f"• {label}: {row_count} ({size})")

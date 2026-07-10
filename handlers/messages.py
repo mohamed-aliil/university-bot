@@ -221,6 +221,41 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
         return
 
     if message.text and message.text.strip() in ("🔙 رجوع",):
+        await state.clear()
+        await message.answer("تم الرجوع.", reply_markup=main_keyboard())
+        return
+
+    if message.text and message.text.strip() == "/start":
+        await state.clear()
+        from handlers.start import _admin_kb
+        from database.crud import get_or_create_user
+        user_d = message.from_user
+        await get_or_create_user(
+            user_id=user_d.id,
+            full_name=user_d.full_name or "بدون اسم",
+            username=user_d.username,
+        )
+        is_super = user_d.id in settings.admin_ids
+        if is_super:
+            await message.answer(
+                f"أهلاً بك {user_d.full_name} 🙋‍♂️\n\n🔧 لوحة التحكم الخاصة بك:",
+                reply_markup=await _admin_kb(user_d.id),
+            )
+        else:
+            is_admin_db = await is_admin_user(user_d.id)
+            if is_admin_db:
+                await message.answer(
+                    f"أهلاً بك {user_d.full_name} 🙋‍♂️\n\nأنت مشرف في البوت.\nاستخدم الأزرار أدناه للتحكم.",
+                    reply_markup=await _admin_kb(user_d.id),
+                )
+            else:
+                await message.answer(
+                    f"مرحباً {user_d.first_name} 🙋‍♂️\n"
+                    "بوابتك الرسمية للحصول على الشيتات والملخصات وتبادل العون الأكاديمي؛\n"
+                    "أرسل استفسارك أو مساهمتك لنشرها ومساعدة زملائك الآن،\n"
+                    "وسيتولى فريق الإشراف الرد عليك فوراً.",
+                    reply_markup=main_keyboard(),
+                )
         return
 
     from database.crud import is_bot_active
@@ -354,3 +389,19 @@ async def confirm_send_no(callback: CallbackQuery, state: FSMContext) -> None:
     )
     await state.clear()
     await callback.answer()
+
+
+@router.message(PendingUserMessage.waiting_confirmation)
+async def handle_during_confirmation(message: Message, state: FSMContext) -> None:
+    if message.text and message.text.strip() in ("🔙 رجوع", "/start"):
+        await state.clear()
+        user = message.from_user
+        from handlers.start import _admin_kb
+        is_super = user.id in settings.admin_ids
+        is_admin_db = await is_admin_user(user.id)
+        if is_super or is_admin_db:
+            await message.answer("تم الإلغاء.", reply_markup=await _admin_kb(user.id))
+        else:
+            await message.answer("تم الإلغاء.", reply_markup=main_keyboard())
+        return
+    await message.answer("⚠️ الرجاء استخدام الأزرار أسفل الرسالة السابقة للتأكيد أو الإلغاء.")

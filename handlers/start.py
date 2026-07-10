@@ -26,37 +26,41 @@ async def _admin_kb(user_id: int = 0):
 
 @router.message(CommandStart())
 async def start_handler(message: Message) -> None:
-    user = message.from_user
-    await get_or_create_user(
-        user_id=user.id,
-        full_name=user.full_name or "بدون اسم",
-        username=user.username,
-    )
-
-    is_super = user.id in settings.admin_ids
-
-    if is_super:
-        welcome_text = (
-            f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
-            "🔧 لوحة التحكم الخاصة بك:"
+    try:
+        user = message.from_user
+        await get_or_create_user(
+            user_id=user.id,
+            full_name=user.full_name or "بدون اسم",
+            username=user.username,
         )
-        await message.answer(welcome_text, reply_markup=await _admin_kb(user.id))
-        return
 
-    is_admin_db = await is_admin_user(user.id)
-    if is_admin_db:
+        is_super = user.id in settings.admin_ids
+
+        if is_super:
+            welcome_text = (
+                f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
+                "🔧 لوحة التحكم الخاصة بك:"
+            )
+            await message.answer(welcome_text, reply_markup=await _admin_kb(user.id))
+            return
+
+        is_admin_db = await is_admin_user(user.id)
+        if is_admin_db:
+            await message.answer(
+                f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
+                "أنت مشرف في البوت.\n"
+                "استخدم الأزرار أدناه للتحكم.",
+                reply_markup=await _admin_kb(user.id),
+            )
+            return
+
         await message.answer(
-            f"أهلاً بك {user.full_name} 🙋‍♂️\n\n"
-            "أنت مشرف في البوت.\n"
-            "استخدم الأزرار أدناه للتحكم.",
-            reply_markup=await _admin_kb(user.id),
+            f"مرحباً {user.first_name} 🙋‍♂️\n"
+            "بوابتك الرسمية للحصول على الشيتات والملخصات وتبادل العون الأكاديمي؛\n"
+            "أرسل استفسارك أو مساهمتك لنشرها ومساعدة زملائك الآن،\n"
+            "وسيتولى فريق الإشراف الرد عليك فوراً.",
+            reply_markup=main_keyboard(),
         )
-        return
-
-    await message.answer(
-        f"مرحباً {user.first_name} 🙋‍♂️\n"
-        "بوابتك الرسمية للحصول على الشيتات والملخصات وتبادل العون الأكاديمي؛\n"
-        "أرسل استفسارك أو مساهمتك لنشرها ومساعدة زملائك الآن،\n"
-        "وسيتولى فريق الإشراف الرد عليك فوراً.",
-        reply_markup=main_keyboard(),
-    )
+    except Exception as e:
+        logger.exception("Error in start_handler: %s", e)
+        await message.answer("⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.", reply_markup=main_keyboard())

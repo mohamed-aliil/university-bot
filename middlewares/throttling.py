@@ -1,11 +1,11 @@
 import asyncio
-from aiogram import BaseMiddleware
+from aiogram import BaseMiddleware, Bot
 from aiogram.types import Message
 from typing import Callable, Awaitable, Dict, Any
 
 
 class ThrottlingMiddleware(BaseMiddleware):
-    def __init__(self, rate_limit: float = 1.0):
+    def __init__(self, rate_limit: float = 0.5):
         self.rate_limit = rate_limit
         self.users: Dict[int, float] = {}
 

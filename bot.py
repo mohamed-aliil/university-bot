@@ -49,9 +49,12 @@ async def health(request: web.Request) -> web.Response:
 async def webhook_handler(request: web.Request) -> web.Response:
     bot = request.app["bot"]
     dp = request.app["dp"]
-    body = await request.read()
-    update = Update.model_validate(json.loads(body))
-    await dp.feed_update(bot, update)
+    try:
+        body = await request.read()
+        update = Update.model_validate(json.loads(body))
+        await dp.feed_update(bot, update)
+    except Exception as e:
+        logger.exception("Webhook error: %s", e)
     return web.Response(status=200)
 
 
@@ -74,6 +77,13 @@ async def main() -> None:
     @dp.errors()
     async def global_error(event: ErrorEvent) -> None:
         logger.exception("Unhandled error: %s", event.exception)
+        try:
+            if event.update and event.update.message:
+                await event.update.message.answer("⚠️ عذراً، حدث خطأ داخلي. يرجى المحاولة لاحقاً.")
+            elif event.update and event.update.callback_query:
+                await event.update.callback_query.message.answer("⚠️ عذراً، حدث خطأ داخلي. يرجى المحاولة لاحقاً.")
+        except Exception:
+            pass
 
     app = web.Application()
     app["bot"] = bot

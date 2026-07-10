@@ -564,6 +564,25 @@ async def student_back(message: Message, state: FSMContext) -> None:
 @router.message(SState.browsing)
 async def student_navigate(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
+
+    if text in ("/start",):
+        await state.clear()
+        from handlers.start import _admin_kb
+        from database.crud import get_or_create_user, is_admin_user
+        user = message.from_user
+        await get_or_create_user(
+            user_id=user.id,
+            full_name=user.full_name or "بدون اسم",
+            username=user.username,
+        )
+        is_super = user.id in settings.admin_ids
+        if is_super or await is_admin_user(user.id):
+            await message.answer("مرحباً.", reply_markup=await _admin_kb(user.id))
+        else:
+            from keyboards.reply import main_keyboard
+            await message.answer("مرحباً.", reply_markup=main_keyboard())
+        return
+
     pid = (await state.get_data()).get("folder_id")
     folders = await get_folders(pid)
     items = await get_content_items(pid) if pid is not None else []
