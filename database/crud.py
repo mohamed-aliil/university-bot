@@ -621,3 +621,21 @@ async def delete_admin_notifications(db_message_id: int) -> None:
             delete(AdminNotification).where(AdminNotification.db_message_id == db_message_id)
         )
         await session.commit()
+
+
+async def cleanup_old_data(days: int = 60) -> dict:
+    """حذف الرسائل والسجلات الأقدم من 60 يوم."""
+    from datetime import datetime, timedelta, timezone
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    counts = {}
+    async with async_session() as session:
+        for model, name in [(Message, "messages"), (ReplyLog, "reply_logs")]:
+            result = await session.execute(
+                select(func.count(model.id)).where(model.created_at < cutoff)
+            )
+            counts[name] = result.scalar() or 0
+            await session.execute(
+                delete(model).where(model.created_at < cutoff)
+            )
+        await session.commit()
+    return counts

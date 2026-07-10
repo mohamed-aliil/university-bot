@@ -112,6 +112,7 @@ def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="📚 إعدادات المواد")],
         [KeyboardButton(text="📋 السجلات")],
         [KeyboardButton(text="📡 تخصيص الأخبار"), KeyboardButton(text="📡 إدارة القنوات")],
+        [KeyboardButton(text="🧹 تنظيف قاعدة البيانات")],
         [KeyboardButton(text="🔄 تحديث البوت")],
         [KeyboardButton(text="🔙 رجوع")],
     ]
@@ -212,6 +213,13 @@ def logs_type_keyboard() -> ReplyKeyboardMarkup:
 def cancel_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="❌ إلغاء", callback_data="cancel_reply")
+    return builder.as_markup()
+
+
+def confirm_cleanup_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ تأكيد التنظيف", callback_data="confirm_cleanup")
+    builder.button(text="❌ إلغاء", callback_data="cancel_cleanup")
     return builder.as_markup()
 
 

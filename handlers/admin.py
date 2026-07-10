@@ -11,8 +11,9 @@ from database.crud import (
     set_permission, get_admin_permissions, get_all_users, get_stats,
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
+    cleanup_old_data,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -1238,6 +1239,33 @@ async def logs_messages_start(message: Message, state: FSMContext) -> None:
         "📋 أرسل معرف المشرف (ID) أو اسم المستخدم (@username):",
         reply_markup=cancel_keyboard(),
     )
+
+
+@router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
+async def cleanup_db_prompt(message: Message) -> None:
+    await message.answer(
+        "🧹 سيتم حذف جميع الرسائل وسجلات الردود الأقدم من 60 يومًا.\n"
+        "هل تريد المتابعة؟",
+        reply_markup=confirm_cleanup_keyboard(),
+    )
+
+
+@router.callback_query(F.data == "confirm_cleanup")
+async def confirm_cleanup_cb(callback: CallbackQuery) -> None:
+    await callback.answer()
+    msg = await callback.message.edit_text("🧹 جاري تنظيف قاعدة البيانات...")
+    counts = await cleanup_old_data(days=60)
+    await msg.edit_text(
+        f"✅ تم التنظيف بنجاح!\n"
+        f"• الرسائل: {counts.get('messages', 0)} رسالة\n"
+        f"• سجلات الردود: {counts.get('reply_logs', 0)} سجل"
+    )
+
+
+@router.callback_query(F.data == "cancel_cleanup")
+async def cancel_cleanup_cb(callback: CallbackQuery) -> None:
+    await callback.answer()
+    await callback.message.edit_text("❌ تم إلغاء التنظيف.")
 
 
 @router.message(SuperAdminFilter(), F.text == "🔄 تحديث البوت")
