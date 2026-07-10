@@ -258,6 +258,19 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
                 )
         return
 
+    if message.text and message.text.strip() in ("نَافِذَة الـمَوَادّ",):
+        await state.clear()
+        from database.crud import is_materials_active
+        if not is_materials_active():
+            await message.answer("المواد غير متاحة حاليًا.", reply_markup=main_keyboard())
+            return
+        from handlers.materials import SState, student_kb, get_folders
+        top_folders = await get_folders(None)
+        await state.set_state(SState.browsing)
+        await state.update_data(folder_id=None)
+        await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(top_folders, []))
+        return
+
     from database.crud import is_bot_active
     if not is_bot_active():
         await message.answer(

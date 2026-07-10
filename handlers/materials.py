@@ -13,6 +13,7 @@ from database.crud import (
     save_admin_action,
 )
 from filters import AdminFilter
+from keyboards.reply import main_keyboard, communication_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -583,7 +584,8 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
             await message.answer("مرحباً.", reply_markup=main_keyboard())
         return
 
-    pid = (await state.get_data()).get("folder_id")
+    data = await state.get_data()
+    pid = data.get("folder_id")
     folders = await get_folders(pid)
     items = await get_content_items(pid) if pid is not None else []
     folder_match = [f for f in folders if f.name == text]
@@ -597,3 +599,35 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
         await message.answer(f"📍 {f.name}", reply_markup=student_kb(subs, content))
     elif item_match:
         await forward_item(message.from_user.id, item_match[0].id, message.bot)
+    else:
+        from keyboards.reply import main_keyboard
+        from handlers.messages import ContactState
+        if text in ("نَافِذَة التَّوَاصُل", "نَافِذَة الـمَوَادّ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة"):
+            await state.clear()
+            if text == "نَافِذَة التَّوَاصُل":
+                await state.set_state(ContactState.waiting_for_message)
+                await message.answer(
+                    "📬 نَافِذَة التَّوَاصُل\nأرسل رسالتك الآن وسيتم الرد عليك في أقرب وقت.",
+                    reply_markup=communication_keyboard(),
+                )
+                return
+            if text == "نَافِذَة الـمَوَادّ":
+                from database.crud import is_materials_active
+                if not is_materials_active():
+                    await message.answer("المواد غير متاحة حاليًا.", reply_markup=main_keyboard())
+                    return
+                top_folders = await get_folders(None)
+                await state.set_state(SState.browsing)
+                await state.update_data(folder_id=None)
+                await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(top_folders, []))
+                return
+            if await is_admin_user(message.from_user.id) or message.from_user.id in settings.admin_ids:
+                from handlers.admin import settings_button, admin_main_keyboard
+                await message.answer("القائمة الرئيسية", reply_markup=await admin_main_keyboard(message.from_user.id))
+            else:
+                await message.answer("القائمة الرئيسية", reply_markup=main_keyboard())
+            return
+        await message.answer(
+            f"⚠️ '{text}' غير موجود. تم تحديث القائمة:",
+            reply_markup=student_kb(folders, items),
+        )
