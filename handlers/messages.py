@@ -13,6 +13,27 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 
+# In-memory lock: {db_message_id: admin_id}
+_locked_messages: dict[int, int] = {}
+
+
+async def _save_notif(db_message_id: int, admin_id: int, sent_msg) -> None:
+    from database.crud import save_admin_notification
+    await save_admin_notification(
+        db_message_id=db_message_id,
+        admin_id=admin_id,
+        chat_id=sent_msg.chat.id,
+        notification_message_id=sent_msg.message_id,
+    )
+
+
+async def _release_message_lock(db_message_id: int, callback=None) -> None:
+    """Release a locked message and re-notify other admins."""
+    _locked_messages.pop(db_message_id, None)
+    from database.crud import delete_admin_notifications
+    await delete_admin_notifications(db_message_id)
+
+
 class ReplyState(StatesGroup):
     waiting_for_reply = State()
 
@@ -291,25 +312,34 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
             file_id = content_data.get("file_id")
             bot = callback.bot
             if msg_type == "photo" and file_id:
-                await bot.send_photo(chat_id=admin_id, photo=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_photo(chat_id=admin_id, photo=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "video" and file_id:
-                await bot.send_video(chat_id=admin_id, video=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_video(chat_id=admin_id, video=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "document" and file_id:
-                await bot.send_document(chat_id=admin_id, document=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_document(chat_id=admin_id, document=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "audio" and file_id:
-                await bot.send_audio(chat_id=admin_id, audio=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_audio(chat_id=admin_id, audio=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "voice" and file_id:
-                await bot.send_voice(chat_id=admin_id, voice=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_voice(chat_id=admin_id, voice=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "sticker" and file_id:
                 await bot.send_sticker(chat_id=admin_id, sticker=file_id)
-                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "animation" and file_id:
-                await bot.send_animation(chat_id=admin_id, animation=file_id, caption=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_animation(chat_id=admin_id, animation=file_id, caption=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             elif msg_type == "video_note" and file_id:
                 await bot.send_video_note(chat_id=admin_id, video_note=file_id)
-                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
             else:
-                await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                sent = await bot.send_message(chat_id=admin_id, text=caption_text, reply_markup=reply_markup)
+                await _save_notif(db_msg.id, admin_id, sent)
         except Exception as e:
             logger.error(f"Failed to send notification to admin {admin_id}: {e}")
 

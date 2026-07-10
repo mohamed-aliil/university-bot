@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -596,3 +596,28 @@ async def delete_sent_news(news_id: int) -> bool:
         await session.delete(obj)
         await session.commit()
         return True
+
+
+async def save_admin_notification(db_message_id: int, admin_id: int, chat_id: int, notification_message_id: int) -> AdminNotification:
+    async with async_session() as session:
+        an = AdminNotification(db_message_id=db_message_id, admin_id=admin_id, chat_id=chat_id, notification_message_id=notification_message_id)
+        session.add(an)
+        await session.commit()
+        await session.refresh(an)
+        return an
+
+
+async def get_admin_notifications(db_message_id: int) -> list[AdminNotification]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(AdminNotification).where(AdminNotification.db_message_id == db_message_id)
+        )
+        return list(result.scalars().all())
+
+
+async def delete_admin_notifications(db_message_id: int) -> None:
+    async with async_session() as session:
+        await session.execute(
+            delete(AdminNotification).where(AdminNotification.db_message_id == db_message_id)
+        )
+        await session.commit()

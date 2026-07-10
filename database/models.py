@@ -143,3 +143,14 @@ class MonitoredChannel(Base):
     monitor_mode = Column(String, default="manual")  # "manual" or "auto"
     target_folder_id = Column(Integer, ForeignKey("folders.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class AdminNotification(Base):
+    __tablename__ = "admin_notifications"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    db_message_id = Column(BigInteger, nullable=False, index=True)
+    admin_id = Column(BigInteger, nullable=False)
+    chat_id = Column(BigInteger, nullable=False)
+    notification_message_id = Column(BigInteger, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)

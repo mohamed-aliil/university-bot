@@ -453,6 +453,12 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
         return
 
     if message.text == "❌ إلغاء":
+        # Release lock and re-notify other admins
+        data2 = await state.get_data()
+        rmid = data2.get("reply_msg_id")
+        if rmid:
+            from handlers.messages import _release_message_lock
+            await _release_message_lock(rmid)
         kb = await admin_main_keyboard(message.from_user.id)
         await message.answer("✅ تم الإلغاء.", reply_markup=kb)
         await state.clear()
@@ -500,6 +506,12 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
 
         await message.answer(f"✅ تم إرسال ردك إلى {reply_user_name} بنجاح.", reply_markup=await admin_main_keyboard(message.from_user.id))
 
+        # Release lock
+        rmid = data.get("reply_msg_id")
+        if rmid:
+            from handlers.messages import _release_message_lock
+            await _release_message_lock(rmid)
+
         # Save reply log
         user_msgs = await get_user_messages(reply_user_id)
         last_msg = user_msgs[0] if user_msgs else None
@@ -518,6 +530,10 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
     except Exception as e:
         logger.error(f"Failed to send reply to user {reply_user_id}: {e}")
         await message.answer("❌ فشل إرسال الرد. قد يكون المستخدم أوقف البوت.", reply_markup=await admin_main_keyboard(message.from_user.id))
+        rmid = data.get("reply_msg_id")
+        if rmid:
+            from handlers.messages import _release_message_lock
+            await _release_message_lock(rmid)
 
     after_action = data.get("after_reply_action")
     await state.clear()
@@ -1827,12 +1843,32 @@ async def review_next_cb(callback: CallbackQuery, state: FSMContext) -> None:
 
 @router.callback_query(AdminFilter(), F.data.startswith("review_reply:"))
 async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    from database.crud import get_admin_notifications, delete_admin_notifications
+    from handlers.messages import _locked_messages
     parts = callback.data.split(":")
-    msg_id = int(parts[1])
+    msg_id = int(parts[1])  # db_message_id
     user_id = int(parts[2])
     user_name = ":".join(parts[3:])
 
+    # Check if another admin is already replying
+    if msg_id in _locked_messages:
+        await callback.answer("🔒 مشرف آخر يرد على هذه الرسالة حالياً.", show_alert=True)
+        return
+
+    # Lock the message
+    _locked_messages[msg_id] = callback.from_user.id
+
+    # Hide notification from other admins
+    notifs = await get_admin_notifications(msg_id)
+    for n in notifs:
+        if n.admin_id != callback.from_user.id:
+            try:
+                await callback.bot.delete_message(chat_id=n.chat_id, message_id=n.notification_message_id)
+            except Exception:
+                pass
+
     await mark_message_read(msg_id)
+    await state.update_data(reply_msg_id=msg_id)
     await state.set_state(ReplyState.waiting_for_reply)
     await state.update_data(
         reply_user_id=user_id,
