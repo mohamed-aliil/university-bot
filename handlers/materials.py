@@ -2,12 +2,11 @@ import logging
 import re
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
-    add_content_item, remove_content_item, get_content_items, get_content_item,
+    add_content_item, remove_content_item, get_content_items,
     add_content_link, get_content_links, remove_content_link,
     update_content_item_title, rename_folder,
     is_materials_active,
@@ -94,21 +93,6 @@ def student_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
-def build_admin_folder_kb(folder_id: int, folders: list, items: list) -> InlineKeyboardMarkup:
-    kb = InlineKeyboardBuilder()
-    kb.button(text="تعديل الاسم", callback_data=f"rename_folder:{folder_id}")
-    for f in folders:
-        kb.button(text=f.name, callback_data=f"mf:{f.id}")
-    for i in items:
-        kb.button(text=i.title or "محتوى", callback_data=f"mi:{i.id}")
-    kb.button(text="➕ إضافة مجلد", callback_data=f"af:{folder_id}")
-    kb.button(text="📄 إضافة محتوى", callback_data=f"ai:{folder_id}")
-    kb.button(text="➖ حذف", callback_data=f"delm:{folder_id}")
-    kb.button(text="🔙 رجوع", callback_data=f"mb:{folder_id}")
-    kb.adjust(1, 2, 1, 2, 2)
-    return kb.as_markup()
-
-
 async def render_admin(message: Message, folder_id: int = None) -> None:
     folders = await get_folders(folder_id)
     items = await get_content_items(folder_id) if folder_id else []
@@ -118,7 +102,9 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
         msg = f"📍 {name}\n"
         if items:
             msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
-        await message.answer(msg, reply_markup=build_admin_folder_kb(folder_id, folders, items))
+        rename_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تعديل الاسم", callback_data=f"rename_folder:{folder_id}")]])
+        await message.answer(msg, reply_markup=build_kb(folders, items))
+        await message.answer("⚙️", reply_markup=rename_kb)
     else:
         await message.answer("📚 المواد:", reply_markup=build_kb(folders, items))
 
@@ -239,80 +225,6 @@ async def delete_by_name(message: Message, state: FSMContext) -> None:
     await render_admin(message, fid)
 
 
-# ─── Admin folder navigation (inline) ───
-
-@router.callback_query(AdminFilter(), F.data.startswith("mf:"))
-async def admin_navigate_folder(callback: CallbackQuery, state: FSMContext) -> None:
-    folder_id = int(callback.data.split(":")[1])
-    await state.set_state(MState.browsing)
-    await state.update_data(folder_id=folder_id)
-    await render_admin(callback.message, folder_id)
-    await callback.answer()
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("mi:"))
-async def admin_navigate_item(callback: CallbackQuery, state: FSMContext) -> None:
-    item_id = int(callback.data.split(":")[1])
-    item = await get_content_item(item_id)
-    if not item:
-        await callback.answer("❌ المحتوى غير موجود.")
-        return
-    links = await get_content_links(item.id)
-    header = f"📄 {item.title or 'بدون عنوان'}\n{'═' * 15}\n"
-    if links:
-        for idx, lnk in enumerate(links, 1):
-            header += f"{idx}. {lnk.link}\n"
-    else:
-        header += "لا توجد روابط.\n"
-    await state.update_data(edit_item_id=item.id, edit_item_title=item.title, folder_id=item.folder_id)
-    await state.set_state(MState.edit_menu)
-    await callback.message.answer(header, reply_markup=content_edit_kb())
-    await callback.answer()
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("mb:"))
-async def admin_navigate_back(callback: CallbackQuery, state: FSMContext) -> None:
-    await handle_back(callback.message, state)
-    await callback.answer()
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("af:"))
-async def admin_add_folder_inline(callback: CallbackQuery, state: FSMContext) -> None:
-    folder_id = int(callback.data.split(":")[1])
-    await state.update_data(parent_id=folder_id)
-    await state.set_state(MState.add_folder)
-    await callback.message.answer("✏️ أرسل اسم المجلد الجديد:")
-    await callback.answer()
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("ai:"))
-async def admin_add_item_inline(callback: CallbackQuery, state: FSMContext) -> None:
-    folder_id = int(callback.data.split(":")[1])
-    if not folder_id:
-        await callback.answer("❌ ادخل مجلد أولاً.")
-        return
-    await state.set_state(MState.add_item_title)
-    await callback.message.answer("✏️ أرسل اسم المحتوى:")
-    await callback.answer()
-
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("delm:"))
-async def admin_delete_mode_inline(callback: CallbackQuery, state: FSMContext) -> None:
-    folder_id = int(callback.data.split(":")[1])
-    folders = await get_folders(folder_id)
-    items = await get_content_items(folder_id) if folder_id else []
-    if not folders and not items:
-        await callback.answer("❌ لا يوجد شيء لحذفه هنا.")
-        return
-    await state.set_state(MState.deleting)
-    msg = "🔻 أرسل اسم المجلد أو المحتوى الذي تريد حذفه:\n\n"
-    if folders:
-        msg += "📂 المجلدات:\n" + "\n".join(f"  • {f.name}" for f in folders) + "\n\n"
-    if items:
-        msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
-    await callback.message.answer(msg)
-    await callback.answer()
 
 
 @router.message(MState.browsing, AdminFilter())
