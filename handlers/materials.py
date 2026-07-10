@@ -103,8 +103,8 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
         if items:
             msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
         rename_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تعديل الاسم", callback_data=f"rename_folder:{folder_id}")]])
-        await message.answer(msg, reply_markup=build_kb(folders, items))
-        await message.answer("⚙️", reply_markup=rename_kb)
+        await message.answer(msg, reply_markup=rename_kb)
+        await message.answer("─" * 5, reply_markup=build_kb(folders, items))
     else:
         await message.answer("📚 المواد:", reply_markup=build_kb(folders, items))
 
