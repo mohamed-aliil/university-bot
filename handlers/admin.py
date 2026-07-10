@@ -487,6 +487,14 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
             )
         elif message.voice:
             await message.bot.send_voice(chat_id=reply_user_id, voice=message.voice.file_id)
+        elif message.audio:
+            await message.bot.send_audio(chat_id=reply_user_id, audio=message.audio.file_id, caption=message.caption or "")
+        elif message.animation:
+            await message.bot.send_animation(chat_id=reply_user_id, animation=message.animation.file_id, caption=message.caption or "")
+        elif message.video_note:
+            await message.bot.send_video_note(chat_id=reply_user_id, video_note=message.video_note.file_id)
+        elif message.sticker:
+            await message.bot.send_sticker(chat_id=reply_user_id, sticker=message.sticker.file_id)
         else:
             await message.bot.send_message(chat_id=reply_user_id, text=reply_text or " ")
 
@@ -1509,6 +1517,14 @@ async def sendmsg_send(message: Message, state: FSMContext) -> None:
             )
         elif message.voice:
             await message.bot.send_voice(chat_id=target_id, voice=message.voice.file_id)
+        elif message.audio:
+            await message.bot.send_audio(chat_id=target_id, audio=message.audio.file_id, caption=message.caption or "")
+        elif message.animation:
+            await message.bot.send_animation(chat_id=target_id, animation=message.animation.file_id, caption=message.caption or "")
+        elif message.video_note:
+            await message.bot.send_video_note(chat_id=target_id, video_note=message.video_note.file_id)
+        elif message.sticker:
+            await message.bot.send_sticker(chat_id=target_id, sticker=message.sticker.file_id)
         else:
             await message.bot.send_message(chat_id=target_id, text="📩 رسالة من الإدارة.")
 
@@ -1633,7 +1649,9 @@ async def logs_show(message: Message, state: FSMContext) -> None:
         out += f"{action} "
         if log.action_type in ("reply", "quick_reply"):
             out += f"للمستخدم {log.user_name or log.user_id}\n"
-            out += f"💬 {log.admin_reply or 'رسالة'}\n"
+            if log.user_message:
+                out += f"👤 المستخدم: {log.user_message[:200]}\n"
+            out += f"💬 الرد: {log.admin_reply or 'رسالة'}\n"
         else:
             out += f"{log.details or ''}\n"
         out += f"🕐 {log.replied_at.strftime('%Y-%m-%d %H:%M')}\n\n"
