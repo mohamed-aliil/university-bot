@@ -258,9 +258,13 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
 @router.callback_query(AdminFilter(), F.data.startswith("rename_folder:"))
 async def rename_folder_cb(callback: CallbackQuery, state: FSMContext) -> None:
     folder_id = int(callback.data.split(":")[1])
+    f = await get_folder(folder_id)
+    if not f:
+        await callback.answer("❌ المجلد غير موجود.")
+        return
     await state.update_data(rename_folder_id=folder_id)
     await state.set_state(MState.rename_folder)
-    await callback.message.answer("✏️ أرسل الاسم الجديد للمجلد:", reply_markup=cancel_inline_kb())
+    await callback.message.answer(f"✏️ تغيير اسم المجلد: {f.name}\nأرسل الاسم الجديد:", reply_markup=cancel_inline_kb())
     await callback.answer()
 
 
