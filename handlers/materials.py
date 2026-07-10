@@ -90,7 +90,7 @@ def student_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
             row = []
     if row:
         kb.append(row)
-    kb.append([KeyboardButton(text="🔙 رجوع")])
+    kb.append([KeyboardButton(text="🔄 تحديث"), KeyboardButton(text="🔙 رجوع")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
@@ -588,6 +588,13 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
     pid = data.get("folder_id")
     folders = await get_folders(pid)
     items = await get_content_items(pid) if pid is not None else []
+    
+    if text == "🔄 تحديث":
+        f = await get_folder(pid) if pid else None
+        label = f"📍 {f.name}" if f else "نَافِذَة الـمَوَادّ"
+        await message.answer(f"✅ تم التحديث.\n{label}", reply_markup=student_kb(folders, items))
+        return
+
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
     if folder_match:

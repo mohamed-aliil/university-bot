@@ -74,6 +74,22 @@ async def main() -> None:
     dp.include_router(channels.channel_router)
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
 
+    @dp.message(F.text == "🔙 رجوع")
+    async def universal_back(message: Message, state: FSMContext) -> None:
+        from aiogram.fsm.context import FSMContext
+        current_state = await state.get_state()
+        if current_state:
+            await state.clear()
+        from keyboards.reply import main_keyboard, admin_kb
+        from database.crud import is_admin_user
+        user = message.from_user
+        if user.id in settings.admin_ids or await is_admin_user(user.id):
+            from handlers.admin import admin_main_keyboard
+            kb = await admin_main_keyboard(user.id)
+        else:
+            kb = main_keyboard()
+        await message.answer("🔝 القائمة الرئيسية", reply_markup=kb)
+
     @dp.errors()
     async def global_error(event: ErrorEvent) -> None:
         logger.exception("Unhandled error: %s", event.exception)
