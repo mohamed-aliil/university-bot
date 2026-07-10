@@ -732,7 +732,7 @@ async def show_users_list(target, search: str = "") -> None:
 @router.message(AdminFilter(), F.text == "🔙 رجوع")
 async def back_to_main(message: Message, state: FSMContext) -> None:
     cur = await state.get_state()
-    if cur and cur.startswith("MState"):
+    if cur and (cur.startswith("MState") or cur.startswith("EditContentState")):
         from handlers.materials import handle_back
         await handle_back(message, state)
         return

@@ -487,6 +487,7 @@ async def edit_dellink_save(message: Message, state: FSMContext) -> None:
 async def handle_back(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     fid = data.get("folder_id")
+    await state.set_state(MState.browsing)
     if fid:
         f = await get_folder(fid)
         pid = f.parent_id if f else None
