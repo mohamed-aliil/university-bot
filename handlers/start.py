@@ -1,3 +1,4 @@
+import logging
 from aiogram import Router, F
 from aiogram.types import Message
 from aiogram.filters import CommandStart
@@ -5,6 +6,7 @@ from keyboards.reply import main_keyboard, moderator_keyboard, super_admin_keybo
 from database.crud import get_or_create_user, is_admin_user, get_admin_permissions, get_stats
 from config import settings
 
+logger = logging.getLogger(__name__)
 router = Router()
 
 

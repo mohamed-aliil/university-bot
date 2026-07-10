@@ -6,7 +6,8 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import ErrorEvent, Update
+from aiogram.fsm.context import FSMContext
+from aiogram.types import ErrorEvent, Message, Update
 from aiohttp import web
 
 from config import settings
@@ -76,7 +77,6 @@ async def main() -> None:
 
     @dp.message(F.text == "🔙 رجوع")
     async def universal_back(message: Message, state: FSMContext) -> None:
-        from aiogram.fsm.context import FSMContext
         current_state = await state.get_state()
         if current_state:
             await state.clear()
