@@ -452,9 +452,14 @@ async def remove_content_item(item_id: int) -> bool:
 async def get_content_items(folder_id: int) -> list[ContentItem]:
     async with async_session() as session:
         result = await session.execute(
-            select(ContentItem).where(ContentItem.folder_id == folder_id).order_by(ContentItem.created_at.desc())
+            select(ContentItem).where(ContentItem.folder_id == folder_id).order_by(ContentItem.id)
         )
         return list(result.scalars().all())
+
+
+async def get_content_item(item_id: int) -> ContentItem | None:
+    async with async_session() as session:
+        return await session.get(ContentItem, item_id)
 
 
 async def add_content_link(content_item_id: int, link: str, channel_username: str = None, channel_message_id: int = None) -> ContentLink:

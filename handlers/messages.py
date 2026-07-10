@@ -17,6 +17,10 @@ class ReplyState(StatesGroup):
     waiting_for_reply = State()
 
 
+class ContactState(StatesGroup):
+    waiting_for_message = State()
+
+
 class PendingUserMessage(StatesGroup):
     waiting_confirmation = State()
 
@@ -165,7 +169,7 @@ def extract_message_content(message: Message) -> dict:
 
 
 @router.message(F.text == "نَافِذَة التَّوَاصُل")
-async def contact_prompt(message: Message) -> None:
+async def contact_prompt(message: Message, state: FSMContext) -> None:
     user = message.from_user
     if user.id in settings.admin_ids:
         from keyboards.reply import admin_panel_keyboard
@@ -173,6 +177,7 @@ async def contact_prompt(message: Message) -> None:
         return
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ إلغاء", callback_data="cancel_contact")]])
+    await state.set_state(ContactState.waiting_for_message)
     await message.answer(
         "✉️ نافذة التواصل المباشر مع إدارة القناة.\n\n"
         "يمكنك إرسال رسالتك أو ملفاتك الآن بأي صيغة تفضلها؛\n"
@@ -182,7 +187,8 @@ async def contact_prompt(message: Message) -> None:
 
 
 @router.callback_query(F.data == "cancel_contact")
-async def cancel_contact_cb(callback: CallbackQuery) -> None:
+async def cancel_contact_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    await state.clear()
     try:
         await callback.message.delete()
     except Exception:
@@ -191,7 +197,7 @@ async def cancel_contact_cb(callback: CallbackQuery) -> None:
     await callback.answer()
 
 
-@router.message()
+@router.message(ContactState.waiting_for_message)
 async def handle_all_messages(message: Message, state: FSMContext) -> None:
     user = message.from_user
 
