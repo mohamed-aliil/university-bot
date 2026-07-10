@@ -394,6 +394,10 @@ async def edit_title_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
     new_title = message.text.strip()
+    if new_title == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        return
     await update_content_item_title(item_id, new_title)
     await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_title", f"✏️ محتوى #{item_id} ← {new_title}")
     await state.update_data(edit_item_title=new_title)
@@ -410,6 +414,10 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
     text = message.text.strip()
+    if text == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        return
     match = LINK_REGEX.search(text)
     if not match:
         await message.answer("❌ رابط غير صالح.")
@@ -445,6 +453,11 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
 async def edit_dellink_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
+    text = message.text.strip()
+    if text == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        return
     links = await get_content_links(item_id)
     try:
         idx = int(message.text.strip()) - 1
