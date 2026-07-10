@@ -11,7 +11,7 @@ from database.crud import (
     set_permission, get_admin_permissions, get_all_users, get_stats,
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
-    cleanup_old_data,
+    cleanup_old_data, get_db_table_stats,
 )
 from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard
 from handlers.messages import ReplyState
@@ -1243,9 +1243,16 @@ async def logs_messages_start(message: Message, state: FSMContext) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
 async def cleanup_db_prompt(message: Message) -> None:
+    stats = await get_db_table_stats()
     await message.answer(
-        "🧹 سيتم حذف جميع الرسائل وسجلات الردود الأقدم من 60 يومًا.\n"
-        "هل تريد المتابعة؟",
+        f"📊 **حجم البيانات الحالي:**\n"
+        f"• الرسائل: {stats.get('messages', 0)}\n"
+        f"• المرفقات: {stats.get('attachments', 0)}\n"
+        f"• سجلات الردود: {stats.get('reply_logs', 0)}\n"
+        f"• إشعارات المشرفين: {stats.get('admin_notifications', 0)}\n"
+        f"• المستخدمين: {stats.get('users', 0)}\n\n"
+        f"🧹 سيتم حذف الرسائل وسجلات الردود الأقدم من 60 يومًا.\n"
+        f"هل تريد المتابعة؟",
         reply_markup=confirm_cleanup_keyboard(),
     )
 

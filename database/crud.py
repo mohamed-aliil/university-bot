@@ -639,3 +639,19 @@ async def cleanup_old_data(days: int = 60) -> dict:
             )
         await session.commit()
     return counts
+
+
+async def get_db_table_stats() -> dict:
+    """إحصائيات حجم الجداول الأساسية."""
+    stats = {}
+    async with async_session() as session:
+        for model, name in [
+            (Message, "messages"),
+            (ReplyLog, "reply_logs"),
+            (Attachment, "attachments"),
+            (User, "users"),
+            (AdminNotification, "admin_notifications"),
+        ]:
+            result = await session.execute(select(func.count(model.id)))
+            stats[name] = result.scalar() or 0
+    return stats
