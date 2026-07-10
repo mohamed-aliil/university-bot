@@ -99,7 +99,7 @@ def customize_news_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="➕ إضافة قالب"), KeyboardButton(text="➖ حذف قالب")],
-            [KeyboardButton(text="📋 عرض القوالب")],
+            [KeyboardButton(text="📋 عرض القوالب"), KeyboardButton(text="🗑 آخر الأخبار")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

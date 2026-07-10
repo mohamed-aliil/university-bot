@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -569,3 +569,30 @@ async def get_monitored_channel_by_channel_id(channel_id: str) -> MonitoredChann
             select(MonitoredChannel).where(MonitoredChannel.channel_id == channel_id)
         )
         return result.scalar_one_or_none()
+
+
+async def save_sent_news(channel_message_id: int, template: str = None, content: str = None) -> SentNews:
+    async with async_session() as session:
+        sn = SentNews(channel_message_id=channel_message_id, template=template, content=content)
+        session.add(sn)
+        await session.commit()
+        await session.refresh(sn)
+        return sn
+
+
+async def get_recent_sent_news(limit: int = 10) -> list[SentNews]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(SentNews).order_by(SentNews.sent_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
+
+async def delete_sent_news(news_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(SentNews, news_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True

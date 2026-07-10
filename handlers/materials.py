@@ -6,7 +6,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
-    add_content_item, remove_content_item, get_content_items,
+    add_content_item, remove_content_item, get_content_items, get_content_item,
     add_content_link, get_content_links, remove_content_link,
     update_content_item_title, rename_folder,
     is_materials_active,
@@ -290,6 +290,22 @@ async def rename_folder_save(message: Message, state: FSMContext) -> None:
     await render_admin(message, folder_id)
 
 
+@router.callback_query(AdminFilter(), F.data.startswith("confirm_delete_item:"))
+async def confirm_delete_item_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    item_id = int(callback.data.split(":")[1])
+    item = await get_content_item(item_id)
+    if not item:
+        await callback.answer("❌ المحتوى غير موجود.", show_alert=True)
+        return
+    await remove_content_item(item_id)
+    data = await state.get_data()
+    await save_admin_action(callback.from_user.id, callback.from_user.full_name or "", "remove_content", f"🗑 محتوى #{item_id} ({item.title or 'بدون عنوان'})")
+    await callback.message.edit_text(f"✅ تم حذف «{item.title or 'بدون عنوان'}».")
+    await state.set_state(MState.browsing)
+    await render_admin(callback.message, data.get("folder_id"))
+    await callback.answer()
+
+
 async def forward_item(user_id: int, item_id: int, bot) -> None:
     from database.crud import get_content_links
     from database.database import async_session
@@ -368,11 +384,13 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         await message.answer(t, reply_markup=cancel_inline_kb())
 
     elif text == "🗑 حذف المحتوى":
-        await remove_content_item(item_id)
-        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "remove_content", f"🗑 محتوى #{item_id}")
-        await message.answer("✅ تم حذف المحتوى.")
-        await state.set_state(MState.browsing)
-        await render_admin(message, data.get("folder_id"))
+        item = await get_content_item(item_id)
+        name = item.title if item else "المحتوى"
+        confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✅ نعم، احذف", callback_data=f"confirm_delete_item:{item_id}"),
+             InlineKeyboardButton(text="❌ إلغاء", callback_data="edit:cancel")]
+        ])
+        await message.answer(f"🗑 هل أنت متأكد من حذف «{name}»؟", reply_markup=confirm_kb)
 
     elif text == "🔙 رجوع":
         await state.set_state(MState.browsing)

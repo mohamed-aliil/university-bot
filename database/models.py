@@ -81,6 +81,16 @@ class NewsTemplate(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class SentNews(Base):
+    __tablename__ = "sent_news"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    channel_message_id = Column(BigInteger, nullable=False)
+    template = Column(String(255), nullable=True)
+    content = Column(Text, nullable=True)
+    sent_at = Column(DateTime, default=_utcnow)
+
+
 class ReplyLog(Base):
     __tablename__ = "reply_logs"
 

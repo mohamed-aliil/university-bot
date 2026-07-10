@@ -1009,6 +1009,7 @@ async def quick_news_start(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickNewsState.waiting_content, AdminFilter())
 async def quick_news_send(message: Message, state: FSMContext) -> None:
+    from database.crud import save_sent_news
     text = message.text.strip()
     if not text:
         await message.answer("❌ المحتوى لا يمكن أن يكون فارغًا.")
@@ -1018,7 +1019,8 @@ async def quick_news_send(message: Message, state: FSMContext) -> None:
         await state.clear()
         return
     try:
-        await message.bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
+        sent = await message.bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
+        await save_sent_news(channel_message_id=sent.message_id, content=f"📰 {text}")
         await message.answer("✅ تم نشر الخبر في القناة.", reply_markup=await news_keyboard())
     except Exception as e:
         logging.exception("quick_news_send")
@@ -1044,6 +1046,7 @@ async def news_template_chosen(message: Message, state: FSMContext) -> None:
 async def news_content_sent(message: Message, state: FSMContext) -> None:
     from aiogram.enums import ParseMode
     from config import settings
+    from database.crud import save_sent_news
     data = await state.get_data()
     template = data.get("news_template", "")
     channel = settings.NEWS_CHANNEL_ID
@@ -1054,24 +1057,25 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
     try:
         channel_id = int(channel) if channel.lstrip("-").isdigit() else channel
         if message.text:
-            await message.bot.send_message(chat_id=channel_id, text=full_text, parse_mode=ParseMode.HTML)
+            sent = await message.bot.send_message(chat_id=channel_id, text=full_text, parse_mode=ParseMode.HTML)
         elif message.photo:
-            await message.bot.send_photo(
+            sent = await message.bot.send_photo(
                 chat_id=channel_id, photo=message.photo[-1].file_id,
                 caption=full_text, parse_mode=ParseMode.HTML,
             )
         elif message.video:
-            await message.bot.send_video(
+            sent = await message.bot.send_video(
                 chat_id=channel_id, video=message.video.file_id,
                 caption=full_text, parse_mode=ParseMode.HTML,
             )
         elif message.document:
-            await message.bot.send_document(
+            sent = await message.bot.send_document(
                 chat_id=channel_id, document=message.document.file_id,
                 caption=full_text, parse_mode=ParseMode.HTML,
             )
         else:
-            await message.bot.send_message(chat_id=channel_id, text=full_text)
+            sent = await message.bot.send_message(chat_id=channel_id, text=full_text)
+        await save_sent_news(channel_message_id=sent.message_id, template=template, content=content)
         await message.answer("✅ تم نشر الخبر في القناة!", reply_markup=await news_keyboard())
     except Exception as e:
         logger.error(f"Failed to send news to channel: {e}")
@@ -1100,6 +1104,69 @@ async def customize_news_button(message: Message, state: FSMContext) -> None:
     for i, t in enumerate(templates, 1):
         text += f"{i}. {t}\n"
     await message.answer(text, reply_markup=customize_news_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "🗑 آخر الأخبار")
+async def delete_news_list(message: Message, state: FSMContext) -> None:
+    from database.crud import get_recent_sent_news
+    news_list = await get_recent_sent_news(limit=10)
+    if not news_list:
+        await message.answer("📋 لا توجد أخبار منشورة.", reply_markup=customize_news_keyboard())
+        return
+    kb = InlineKeyboardBuilder()
+    for n in news_list:
+        preview = (n.template or "") + ": " + (n.content or "")[:30]
+        kb.button(text=preview, callback_data=f"delnews:{n.id}")
+    kb.adjust(1)
+    await message.answer("📋 آخر الأخبار المنشورة (اختر لحذف):", reply_markup=kb.as_markup())
+
+
+@router.callback_query(SuperAdminFilter(), F.data.startswith("delnews:"))
+async def delete_news_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    from config import settings
+    from database.crud import get_recent_sent_news, delete_sent_news
+    news_id = int(callback.data.split(":")[1])
+    news_list = await get_recent_sent_news(limit=10)
+    news = next((n for n in news_list if n.id == news_id), None)
+    if not news:
+        await callback.answer("❌ الخبر غير موجود.", show_alert=True)
+        return
+    confirm_kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ تأكيد الحذف", callback_data=f"confirm_delnews:{news_id}"),
+         InlineKeyboardButton(text="❌ إلغاء", callback_data="cancel_delnews")]
+    ])
+    await callback.message.edit_text(
+        f"🗑 هل أنت متأكد من حذف هذا الخبر من القناة؟\n\n{news.template or ''}: {news.content or ''}",
+        reply_markup=confirm_kb,
+    )
+    await callback.answer()
+
+
+@router.callback_query(SuperAdminFilter(), F.data.startswith("confirm_delnews:"))
+async def delete_news_execute(callback: CallbackQuery, state: FSMContext) -> None:
+    from config import settings
+    from database.crud import get_recent_sent_news, delete_sent_news
+    news_id = int(callback.data.split(":")[1])
+    news_list = await get_recent_sent_news(limit=10)
+    news = next((n for n in news_list if n.id == news_id), None)
+    if not news:
+        await callback.answer("❌ الخبر غير موجود.", show_alert=True)
+        return
+    try:
+        channel_id = int(settings.NEWS_CHANNEL_ID) if settings.NEWS_CHANNEL_ID.lstrip("-").isdigit() else settings.NEWS_CHANNEL_ID
+        await callback.bot.delete_message(chat_id=channel_id, message_id=news.channel_message_id)
+        await delete_sent_news(news_id)
+        await callback.message.edit_text("✅ تم حذف الخبر من القناة.")
+    except Exception as e:
+        logger.error(f"Failed to delete news message: {e}")
+        await callback.message.edit_text("❌ فشل حذف الخبر. تأكد من صلاحيات البوت في القناة.")
+    await callback.answer()
+
+
+@router.callback_query(SuperAdminFilter(), F.data == "cancel_delnews")
+async def delete_news_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_text("✅ تم الإلغاء.")
+    await callback.answer()
 
 
 @router.message(SuperAdminFilter(), F.text == "⚙️ الإعدادات")
