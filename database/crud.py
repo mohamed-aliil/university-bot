@@ -1,5 +1,5 @@
 from pathlib import Path
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, text
 from .database import async_session
 from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification
 
@@ -643,15 +643,33 @@ async def cleanup_old_data(days: int = 60) -> dict:
 
 async def get_db_table_stats() -> dict:
     """إحصائيات حجم الجداول الأساسية."""
-    stats = {}
+    stats = {"rows": {}, "sizes": {}}
     async with async_session() as session:
-        for model, name in [
-            (Message, "messages"),
-            (ReplyLog, "reply_logs"),
-            (Attachment, "attachments"),
-            (User, "users"),
-            (AdminNotification, "admin_notifications"),
+        result = await session.execute(text("SELECT pg_database_size(current_database())"))
+        stats["db_total_bytes"] = result.scalar() or 0
+
+        for model, name, table in [
+            (Message, "messages", "messages"),
+            (ReplyLog, "reply_logs", "reply_logs"),
+            (Attachment, "attachments", "attachments"),
+            (User, "users", "users"),
+            (AdminNotification, "admin_notifications", "admin_notifications"),
         ]:
             result = await session.execute(select(func.count(model.id)))
-            stats[name] = result.scalar() or 0
+            stats["rows"][name] = result.scalar() or 0
+
+            result = await session.execute(text(f"SELECT pg_total_relation_size('{table}')"))
+            stats["sizes"][name] = result.scalar() or 0
+
     return stats
+
+
+def _fmt_size(bytes_val: int) -> str:
+    """تحويل البايت إلى وحدة مناسبة."""
+    if bytes_val >= 1073741824:
+        return f"{bytes_val / 1073741824:.1f} GB"
+    elif bytes_val >= 1048576:
+        return f"{bytes_val / 1048576:.1f} MB"
+    elif bytes_val >= 1024:
+        return f"{bytes_val / 1024:.1f} KB"
+    return f"{bytes_val} B"
