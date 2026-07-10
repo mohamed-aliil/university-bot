@@ -68,16 +68,12 @@ async def forward_to_admins(message: Message, msg_type: str, db_message_id: int)
     if await is_notifications_muted(user.id):
         return
 
-    content_preview = (
-        message.text or message.caption or
-        (f"[{msg_type_map().get(msg_type, 'وسائط')}]" if msg_type != "text" else "")
-    )
-    short_notification = (
+    caption = (
         f"💬 محادثة جديدة\n"
         f"👤 {user.full_name}\n"
         f"🆔 {user.id}\n"
         f"──────────\n"
-        f"{content_preview[:200]}"
+        f"{message.text or message.caption or ''}"
     )
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)
@@ -90,11 +86,7 @@ async def forward_to_admins(message: Message, msg_type: str, db_message_id: int)
 
     for admin_id in all_admin_ids:
         try:
-            await message.bot.send_message(
-                chat_id=admin_id,
-                text=short_notification,
-                reply_markup=reply_markup,
-            )
+            await forward_message_copy(message, admin_id, caption, reply_markup)
         except Exception as e:
             logger.error(f"Failed to send notification to admin {admin_id}: {e}")
 
