@@ -251,6 +251,8 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         await state.update_data(edit_item_id=item.id, edit_item_title=item.title, folder_id=pid)
         await state.set_state(MState.edit_menu)
         await message.answer(header, reply_markup=content_edit_kb())
+    elif text == "🔙 رجوع":
+        await handle_back(message, state)
 
 
 @router.callback_query(AdminFilter(), F.data.startswith("rename_folder:"))
