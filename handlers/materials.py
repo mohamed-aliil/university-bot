@@ -442,33 +442,35 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
         await state.set_state(MState.edit_menu)
         await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
         return
-    match = LINK_REGEX.search(text)
-    if not match:
-        await message.answer("❌ رابط غير صالح.")
-        return
-    ch, msg = match.group(1), int(match.group(2))
-    chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
 
-    try:
-        fwd = await message.bot.forward_message(
-            chat_id=message.chat.id,
-            from_chat_id=chat_id,
-            message_id=msg,
-        )
-        if fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation:
-            await message.answer("✅ تم جلب الملف من القناة.")
-        else:
-            await fwd.delete()
-            await message.answer("🔗 تم التعرف على القناة.")
-    except Exception as e:
-        logger.warning(f"Could not forward {chat_id}/{msg}: {e}")
+    urls = [u.strip() for u in text.split("\n") if u.strip()]
+    added = 0
+    failed = 0
+    for url in urls:
+        match = LINK_REGEX.search(url)
+        if not match:
+            failed += 1
+            continue
+        ch, msg_id = match.group(1), int(match.group(2))
+        chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+        try:
+            fwd = await message.bot.forward_message(
+                chat_id=message.chat.id,
+                from_chat_id=chat_id,
+                message_id=msg_id,
+            )
+            if not (fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation):
+                await fwd.delete()
+        except Exception:
+            pass
+        await add_content_link(item_id, url, str(chat_id), msg_id)
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_link_content", f"🔗 محتوى #{item_id}: {url[:80]}")
+        added += 1
 
-    await add_content_link(item_id, text, str(chat_id), msg)
-    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_link_content", f"🔗 محتوى #{item_id}: {text[:80]}")
-    links = await get_content_links(item_id)
-    t = "✅ تم إضافة الرابط.\n"
-    for idx, lnk in enumerate(links, 1):
-        t += f"{idx}. {lnk.link}\n"
+    t = f"✅ تمت إضافة {added} رابط" + ("." if not failed else f"، فشل {failed} رابط غير صالح.")
+    if added:
+        links = await get_content_links(item_id)
+        t += "\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
     await state.set_state(MState.edit_menu)
     await message.answer(t, reply_markup=content_edit_kb())
 
