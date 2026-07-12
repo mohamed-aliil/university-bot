@@ -762,8 +762,25 @@ async def back_to_main(message: Message, state: FSMContext) -> None:
         await handle_back(message, state)
         return
     if cur and cur.startswith("SState"):
-        from handlers.materials import student_back
-        await student_back(message, state)
+        from handlers.materials import get_folders, get_folder, get_content_items, student_kb
+        data = await state.get_data()
+        fid = data.get("folder_id")
+        if fid:
+            f = await get_folder(fid)
+            pid = f.parent_id if f else None
+            await state.update_data(folder_id=pid)
+            if pid:
+                subs = await get_folders(pid)
+                items = await get_content_items(pid)
+                pf = await get_folder(pid)
+                await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
+            else:
+                folders = await get_folders()
+                await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
+        else:
+            await state.clear()
+            from keyboards.reply import main_keyboard
+            await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
         return
     await state.clear()
     await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
