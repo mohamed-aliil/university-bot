@@ -1684,35 +1684,72 @@ async def broadcast_start(message: Message, state: FSMContext) -> None:
 
 
 @router.message(BroadcastState.waiting_for_msg, PermissionFilter("can_manage"))
-async def broadcast_send(message: Message, state: FSMContext) -> None:
+async def broadcast_preview(message: Message, state: FSMContext) -> None:
+    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+    preview_text = message.text or message.caption or "📢 رسالة"
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data="broadcast:confirm"),
+         InlineKeyboardButton(text="❌ إلغاء", callback_data="broadcast:cancel")]
+    ])
+    content_data = {
+        "type": "text",
+        "text": message.text,
+        "caption": message.caption,
+        "photo": message.photo[-1].file_id if message.photo else None,
+        "video": message.video.file_id if message.video else None,
+        "document": message.document.file_id if message.document else None,
+        "voice": message.voice.file_id if message.voice else None,
+    }
+    await state.update_data(broadcast_content=content_data)
+    await message.answer(
+        f"📢 معاينة الرسالة:\n\n{preview_text[:200]}\n\nهل أنت متأكد من إرسالها لكل المستخدمين؟",
+        reply_markup=kb,
+    )
+    await state.set_state(BroadcastState.waiting_for_msg)
+
+
+@router.callback_query(PermissionFilter("can_manage"), F.data == "broadcast:confirm")
+async def broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    data = await state.get_data()
+    content = data.get("broadcast_content", {})
     from database.crud import get_all_users
     users = await get_all_users()
     sent = 0
     failed = 0
-    status_msg = await message.answer("📢 جاري الإرسال...")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    status_msg = await callback.message.answer("📢 جاري الإرسال...")
     for u in users:
         try:
-            if message.text:
-                await message.bot.send_message(chat_id=u.user_id, text=message.text)
-            elif message.photo:
-                await message.bot.send_photo(chat_id=u.user_id, photo=message.photo[-1].file_id, caption=message.caption or "")
-            elif message.video:
-                await message.bot.send_video(chat_id=u.user_id, video=message.video.file_id, caption=message.caption or "")
-            elif message.document:
-                await message.bot.send_document(chat_id=u.user_id, document=message.document.file_id, caption=message.caption or "")
-            elif message.voice:
-                await message.bot.send_voice(chat_id=u.user_id, voice=message.voice.file_id)
+            if content.get("text"):
+                await callback.bot.send_message(chat_id=u.user_id, text=content["text"])
+            elif content.get("photo"):
+                await callback.bot.send_photo(chat_id=u.user_id, photo=content["photo"], caption=content.get("caption") or "")
+            elif content.get("video"):
+                await callback.bot.send_video(chat_id=u.user_id, video=content["video"], caption=content.get("caption") or "")
+            elif content.get("document"):
+                await callback.bot.send_document(chat_id=u.user_id, document=content["document"], caption=content.get("caption") or "")
+            elif content.get("voice"):
+                await callback.bot.send_voice(chat_id=u.user_id, voice=content["voice"])
             else:
-                await message.bot.send_message(chat_id=u.user_id, text="📢 رسالة إدارية.")
+                await callback.bot.send_message(chat_id=u.user_id, text="📢 رسالة إدارية.")
             sent += 1
         except Exception:
             failed += 1
     await status_msg.delete()
-    await message.answer(
+    await callback.message.answer(
         f"📢 تم الإرسال!\n✅ نجح: {sent}\n❌ فشل: {failed}",
-        reply_markup=await admin_main_keyboard(message.from_user.id),
+        reply_markup=await admin_main_keyboard(callback.from_user.id),
     )
     await state.clear()
+    await callback.answer()
+
+
+@router.callback_query(PermissionFilter("can_manage"), F.data == "broadcast:cancel")
+async def broadcast_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer("❌ تم إلغاء الإرسال.", reply_markup=await admin_main_keyboard(callback.from_user.id))
+    await state.clear()
+    await callback.answer()
 
 
 # ─── عرض سجلات الردود ───
