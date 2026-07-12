@@ -542,23 +542,27 @@ async def student_browse(message: Message, state: FSMContext) -> None:
 
 @router.message(SState.browsing, F.text == "🔙 رجوع")
 async def student_back(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    fid = data.get("folder_id")
-    if fid:
-        f = await get_folder(fid)
-        pid = f.parent_id if f else None
-        await state.update_data(folder_id=pid)
-        if pid:
-            subs = await get_folders(pid)
-            items = await get_content_items(pid)
-            pf = await get_folder(pid)
-            await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
-        else:
+    try:
+        data = await state.get_data()
+        fid = data.get("folder_id")
+        if fid:
+            f = await get_folder(fid)
+            pid = f.parent_id if f else None
+            await state.update_data(folder_id=pid)
+            if pid:
+                subs = await get_folders(pid)
+                items = await get_content_items(pid)
+                pf = await get_folder(pid)
+                await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
+                return
             folders = await get_folders()
             await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
-    else:
+            return
         await state.clear()
-        from keyboards.reply import main_keyboard
+        await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
+    except Exception as e:
+        logger.exception("student_back error: %s", e)
+        await state.clear()
         await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
 
 
