@@ -625,8 +625,9 @@ async def delete_admin_notifications(db_message_id: int) -> None:
 
 async def cleanup_old_data(days: int = 60) -> dict:
     """حذف الرسائل والسجلات الأقدم من 60 يوم."""
-    from datetime import datetime, timedelta, timezone
-    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    from datetime import datetime, timedelta
+    from database.models import LIBYA_TZ
+    cutoff = datetime.now(LIBYA_TZ).replace(tzinfo=None) - timedelta(days=days)
     counts = {}
     async with async_session() as session:
         for model, name in [(Message, "messages"), (ReplyLog, "reply_logs")]:

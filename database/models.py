@@ -1,10 +1,12 @@
 from sqlalchemy import Column, Integer, String, BigInteger, Boolean, Text, DateTime, ForeignKey
 from sqlalchemy.orm import relationship
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from .database import Base
 
+LIBYA_TZ = timezone(timedelta(hours=2))
+
 def _utcnow():
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(LIBYA_TZ).replace(tzinfo=None)
 
 
 class User(Base):
