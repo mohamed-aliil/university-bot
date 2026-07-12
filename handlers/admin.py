@@ -761,6 +761,10 @@ async def back_to_main(message: Message, state: FSMContext) -> None:
         from handlers.materials import handle_back
         await handle_back(message, state)
         return
+    if cur and cur.startswith("SState"):
+        from handlers.materials import student_back
+        await student_back(message, state)
+        return
     await state.clear()
     await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
 
