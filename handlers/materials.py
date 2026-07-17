@@ -613,6 +613,21 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
 
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
+
+    # Log user interaction
+    try:
+        from database.crud import save_message
+        user_id = message.from_user.id
+        await save_message(
+            user_id=user_id,
+            message_type="text",
+            content=text,
+            file_id=None,
+            file_unique_id=None,
+            caption=None,
+        )
+    except Exception:
+        pass
     if folder_match:
         fid = folder_match[0].id
         await state.update_data(folder_id=fid)
