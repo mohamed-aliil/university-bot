@@ -299,7 +299,7 @@ def confirm_send_keyboard(unique_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_idx: int = 0, total: int = 1) -> InlineKeyboardMarkup:
+def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_idx: int = 0, total: int = 1, muted: bool = False) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     if current_idx > 0:
         builder.button(text="⬅️ السابق", callback_data="review_prev")
@@ -308,7 +308,9 @@ def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_i
     if current_idx < total - 1:
         builder.button(text="➡️ التالي", callback_data="review_next")
     builder.button(text="✅ إنهاء", callback_data="review_done")
-    builder.adjust(2, 2)
+    mute_text = "🔔 تشغيل الإشعارات" if muted else "🔇 إيقاف الإشعارات"
+    builder.button(text=mute_text, callback_data="toggle_mute")
+    builder.adjust(2, 2, 1)
     return builder.as_markup()
 
 

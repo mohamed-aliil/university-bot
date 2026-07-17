@@ -15,6 +15,8 @@ router = Router()
 
 # In-memory lock: {db_message_id: admin_id}
 _locked_messages: dict[int, int] = {}
+# In-memory set of admin IDs who have muted their notifications
+_muted_admins: set[int] = set()
 
 
 async def _save_notif(db_message_id: int, admin_id: int, sent_msg) -> None:
@@ -85,6 +87,8 @@ async def forward_to_admins(message: Message, msg_type: str, db_message_id: int)
             all_admin_ids.append(a.user_id)
 
     for admin_id in all_admin_ids:
+        if admin_id in _muted_admins:
+            continue
         try:
             await forward_message_copy(message, admin_id, caption, reply_markup)
         except Exception as e:

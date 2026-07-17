@@ -1874,7 +1874,9 @@ async def show_next_unread(target, state: FSMContext) -> None:
     caption += f"\n{'═' * 15}"
 
     await state.update_data(queue_index=current_idx, queue_total=len(messages))
-    reply_markup = message_review_keyboard(msg.id, msg.user_id, user_name, current_idx, len(messages))
+    from handlers.messages import _muted_admins
+    muted = target.from_user.id in _muted_admins
+    reply_markup = message_review_keyboard(msg.id, msg.user_id, user_name, current_idx, len(messages), muted=muted)
 
     bot = target.bot if hasattr(target, "bot") else target.message.bot
     chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
@@ -2009,3 +2011,21 @@ async def review_done_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.answer("✅ تم إنهاء المراجعة.", reply_markup=await admin_main_keyboard(callback.from_user.id))
     await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data == "toggle_mute")
+async def toggle_mute_cb(callback: CallbackQuery) -> None:
+    admin_id = callback.from_user.id
+    from handlers.messages import _muted_admins
+    if admin_id in _muted_admins:
+        _muted_admins.discard(admin_id)
+        status = "🔔 تم تشغيل الإشعارات"
+    else:
+        _muted_admins.add(admin_id)
+        status = "🔇 تم إيقاف الإشعارات"
+    await callback.answer(status, show_alert=True)
+    # Delete the current message — the next button press will re-show with new state
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
