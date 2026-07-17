@@ -1871,9 +1871,6 @@ async def show_next_unread(target, state: FSMContext) -> None:
     user = await get_user(msg.user_id)
     user_name = user.full_name if user else "غير معروف"
     username_part = f"@{user.username}" if user and user.username else "لا يوجد"
-    type_map = {"text": "📝", "photo": "🖼", "video": "🎥", "document": "📄",
-                "audio": "🎵", "voice": "🎤", "sticker": "😊"}
-    msg_type_icon = type_map.get(msg.message_type, "📎")
 
     text_content = msg.content or msg.caption or ""
 
@@ -1897,7 +1894,6 @@ async def show_next_unread(target, state: FSMContext) -> None:
     chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
     mtype = msg.message_type
     fid = msg.file_id
-    text_content = msg.content or msg.caption or "بدون محتوى"
 
     if mtype == "photo" and fid:
         await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=reply_markup)
@@ -1918,13 +1914,7 @@ async def show_next_unread(target, state: FSMContext) -> None:
         await bot.send_video_note(chat_id=chat_id, video_note=fid)
         await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
     else:
-        text = (
-            f"{caption}\n"
-            f"{'─' * 10}\n"
-            f"{text_content}\n"
-            f"{'═' * 15}"
-        )
-        await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
 
 
 @router.callback_query(AdminFilter(), F.data == "review_prev")

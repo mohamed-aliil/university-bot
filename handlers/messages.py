@@ -345,8 +345,10 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
         f"👤 {user.full_name}\n"
         f"🆔 {user.id}\n"
     )
-    if content_data.get("caption"):
-        caption_text += f"\n📝 {content_data['caption']}"
+    msg_content = content_data.get("content") or content_data.get("caption")
+    if msg_content:
+        caption_text += f"\n📝 {msg_content}"
+    caption_text += f"\n{'─' * 10}"
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)
 
