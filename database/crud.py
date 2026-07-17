@@ -137,7 +137,7 @@ async def save_message(
 async def save_or_replace_user_message(
     user_id: int,
     content: str,
-    message_type: str = "text",
+    message_type: str = "materials_action",
 ) -> Message:
     async with async_session() as session:
         existing = (
@@ -324,7 +324,7 @@ async def get_user_messages(user_id: int) -> list[Message]:
 async def get_all_user_messages(limit: int = 20) -> list[Message]:
     async with async_session() as session:
         result = await session.execute(
-            select(Message).order_by(Message.created_at.desc()).limit(limit)
+            select(Message).where(Message.message_type == "materials_action").order_by(Message.created_at.desc()).limit(limit)
         )
         return list(result.scalars().all())
 

@@ -613,13 +613,6 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
 
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
-
-    # Log user interaction — one entry per user (last action)
-    try:
-        from database.crud import save_or_replace_user_message
-        await save_or_replace_user_message(user_id=message.from_user.id, content=text)
-    except Exception:
-        pass
     if folder_match:
         fid = folder_match[0].id
         await state.update_data(folder_id=fid)
@@ -628,6 +621,11 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
         f = await get_folder(fid)
         await message.answer(f"📍 {f.name}", reply_markup=student_kb(subs, content))
     elif item_match:
+        try:
+            from database.crud import save_or_replace_user_message
+            await save_or_replace_user_message(user_id=message.from_user.id, content=text)
+        except Exception:
+            pass
         await forward_item(message.from_user.id, item_match[0].id, message.bot)
     else:
         user_obj = message.from_user
