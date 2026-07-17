@@ -614,18 +614,10 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
 
-    # Log user interaction
+    # Log user interaction — one entry per user (last action)
     try:
-        from database.crud import save_message
-        user_id = message.from_user.id
-        await save_message(
-            user_id=user_id,
-            message_type="text",
-            content=text,
-            file_id=None,
-            file_unique_id=None,
-            caption=None,
-        )
+        from database.crud import save_or_replace_user_message
+        await save_or_replace_user_message(user_id=message.from_user.id, content=text)
     except Exception:
         pass
     if folder_match:

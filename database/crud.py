@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -127,6 +127,39 @@ async def save_message(
             file_id=file_id,
             file_unique_id=file_unique_id,
             caption=caption,
+        )
+        session.add(msg)
+        await session.commit()
+        await session.refresh(msg)
+        return msg
+
+
+async def save_or_replace_user_message(
+    user_id: int,
+    content: str,
+    message_type: str = "text",
+) -> Message:
+    async with async_session() as session:
+        existing = (
+            await session.execute(
+                select(Message).where(Message.user_id == user_id).order_by(Message.created_at.desc()).limit(1)
+            )
+        ).scalar_one_or_none()
+        if existing:
+            existing.content = content
+            existing.caption = None
+            existing.file_id = None
+            existing.file_unique_id = None
+            existing.message_type = message_type
+            existing.is_read = False
+            existing.created_at = _utcnow()
+            await session.commit()
+            await session.refresh(existing)
+            return existing
+        msg = Message(
+            user_id=user_id,
+            message_type=message_type,
+            content=content,
         )
         session.add(msg)
         await session.commit()
