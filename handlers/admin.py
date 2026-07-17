@@ -901,7 +901,15 @@ async def start_bot_kb(message: Message) -> None:
 
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
 async def messages_queue_button(message: Message, state: FSMContext) -> None:
-    await show_next_unread(message, state)
+    try:
+        await show_next_unread(message, state)
+    except Exception as e:
+        logger.exception("Error in messages_queue_button")
+        await message.answer(
+            f"⚠️ حدث خطأ أثناء فتح الطلبات:\n<code>{e!s:.200}</code>\n"
+            "حاول مرة أخرى أو استخدم /start.",
+            reply_markup=await admin_main_keyboard(message.from_user.id),
+        )
 
 
 @router.message(SuperAdminFilter(), F.text == "👥 المشرفين")
@@ -1908,26 +1916,30 @@ async def show_next_unread(target, state: FSMContext) -> None:
     mtype = msg.message_type
     fid = msg.file_id
 
-    if mtype == "photo" and fid:
-        await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "video" and fid:
-        await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "document" and fid:
-        await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "audio" and fid:
-        await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "voice" and fid:
-        await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "sticker" and fid:
-        await bot.send_sticker(chat_id=chat_id, sticker=fid)
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
-    elif mtype == "animation" and fid:
-        await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=inline_kb)
-    elif mtype == "video_note" and fid:
-        await bot.send_video_note(chat_id=chat_id, video_note=fid)
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
-    else:
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+    try:
+        if mtype == "photo" and fid:
+            await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "video" and fid:
+            await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "document" and fid:
+            await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "audio" and fid:
+            await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "voice" and fid:
+            await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "sticker" and fid:
+            await bot.send_sticker(chat_id=chat_id, sticker=fid)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+        elif mtype == "animation" and fid:
+            await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=inline_kb)
+        elif mtype == "video_note" and fid:
+            await bot.send_video_note(chat_id=chat_id, video_note=fid)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+        else:
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+    except Exception:
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None)
+        await bot.send_message(chat_id=chat_id, text="⚠️ تعذر إرسال الأزرار مع الرسالة.", reply_markup=inline_kb)
 
     await bot.send_message(chat_id=chat_id, text=".", reply_markup=reply_kb)
 
