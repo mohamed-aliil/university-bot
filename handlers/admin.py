@@ -1946,12 +1946,6 @@ async def review_next(message: Message, state: FSMContext) -> None:
     await show_next_unread(message, state)
 
 
-@router.message(ReviewState.browsing, F.text == "✅ إنهاء")
-async def review_done(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await message.answer("✅ تم إنهاء المراجعة.", reply_markup=await admin_main_keyboard(message.from_user.id))
-
-
 @router.message(ReviewState.browsing, F.text == "🔙 رجوع")
 async def review_back(message: Message, state: FSMContext) -> None:
     await state.clear()
