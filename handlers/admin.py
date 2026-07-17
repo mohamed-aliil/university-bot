@@ -411,7 +411,7 @@ async def quick_reply_handler(callback: CallbackQuery, state: FSMContext) -> Non
         after_action = data.get("after_reply_action")
         await state.clear()
         if after_action == "next_unread":
-            await show_next_unread(callback.message, state)
+            await show_next_unread(callback, state)
     except Exception:
         await callback.message.answer("❌ فشل الإرسال. قد يكون المستخدم أوقف البوت.")
     await callback.answer()
@@ -1858,9 +1858,16 @@ async def logs_show(message: Message, state: FSMContext) -> None:
 # ─── مراجعة الطلبات المرسلة (Messages Queue) ───
 
 async def show_next_unread(target, state: FSMContext) -> None:
+    bot = target.bot if hasattr(target, "bot") else target.message.bot
+    chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
+
+    admin_id = target.from_user.id if hasattr(target, 'from_user') and target.from_user else (target.message.from_user.id if hasattr(target, 'message') and target.message.from_user else None)
+    if not admin_id:
+        admin_id = (await state.get_data()).get("admin_id")
+
     messages = await get_unread_messages()
     if not messages:
-        await target.answer("✅ لا يوجد مرسلات.")
+        await bot.send_message(chat_id=chat_id, text="✅ لا يوجد مرسلات.", reply_markup=await admin_main_keyboard(admin_id))
         await state.clear()
         return
 
@@ -1868,7 +1875,7 @@ async def show_next_unread(target, state: FSMContext) -> None:
     current_idx = data.get("queue_index", 0)
 
     if current_idx >= len(messages):
-        await target.answer("✅ انتهت المراجعة!\nلا يوجد مرسلات جدد.")
+        await bot.send_message(chat_id=chat_id, text="✅ انتهت المراجعة!\nلا يوجد مرسلات جدد.", reply_markup=await admin_main_keyboard(admin_id))
         await state.clear()
         return
 
@@ -1894,12 +1901,10 @@ async def show_next_unread(target, state: FSMContext) -> None:
     await state.set_state(ReviewState.browsing)
 
     from handlers.messages import _muted_admins
-    muted = target.from_user.id in _muted_admins
+    muted = target.from_user.id in _muted_admins if hasattr(target, 'from_user') and target.from_user else False
     inline_kb = message_review_keyboard(msg.id, msg.user_id, user_name)
     reply_kb = review_reply_keyboard(muted=muted, has_prev=current_idx > 0, has_next=current_idx < len(messages) - 1)
 
-    bot = target.bot if hasattr(target, "bot") else target.message.bot
-    chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
     mtype = msg.message_type
     fid = msg.file_id
 
