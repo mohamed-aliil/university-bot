@@ -142,7 +142,7 @@ async def save_or_replace_user_message(
     async with async_session() as session:
         existing = (
             await session.execute(
-                select(Message).where(Message.user_id == user_id).order_by(Message.created_at.desc()).limit(1)
+                select(Message).where(Message.user_id == user_id, Message.message_type == "materials_action").order_by(Message.created_at.desc()).limit(1)
             )
         ).scalar_one_or_none()
         if existing:
@@ -151,7 +151,6 @@ async def save_or_replace_user_message(
             existing.file_id = None
             existing.file_unique_id = None
             existing.message_type = message_type
-            existing.is_read = False
             existing.created_at = _utcnow()
             await session.commit()
             await session.refresh(existing)
@@ -271,8 +270,8 @@ async def get_stats() -> dict:
     async with async_session() as session:
         users_count = (await session.execute(select(func.count(User.id)))).scalar()
         banned_count = (await session.execute(select(func.count(User.id)).where(User.is_banned == True))).scalar()
-        msgs_count = (await session.execute(select(func.count(Message.id)))).scalar()
-        unread_count = (await session.execute(select(func.count(Message.id)).where(Message.is_read == False))).scalar()
+        msgs_count = (await session.execute(select(func.count(Message.id)).where(Message.message_type != "materials_action"))).scalar()
+        unread_count = (await session.execute(select(func.count(Message.id)).where(Message.is_read == False, Message.message_type != "materials_action"))).scalar()
         admins_count = (await session.execute(select(func.count(User.id)).where(User.is_admin == True))).scalar()
         replies_count = (await session.execute(select(func.count(AutoReply.id)))).scalar()
         return {
@@ -288,7 +287,7 @@ async def get_stats() -> dict:
 async def get_unread_messages() -> list[Message]:
     async with async_session() as session:
         result = await session.execute(
-            select(Message).where(Message.is_read == False).order_by(Message.created_at.asc())
+            select(Message).where(Message.is_read == False, Message.message_type != "materials_action").order_by(Message.created_at.asc())
         )
         return list(result.scalars().all())
 
