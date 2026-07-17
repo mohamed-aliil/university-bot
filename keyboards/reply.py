@@ -189,8 +189,13 @@ def replies_management_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def _truncate_cb_name(name: str, max_bytes: int = 25) -> str:
+    encoded = name.encode("utf-8")[:max_bytes]
+    return encoded.decode("utf-8", errors="ignore")
+
+
 def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMarkup:
-    name = user_full_name[:30]
+    name = _truncate_cb_name(user_full_name, 40)
     builder = InlineKeyboardBuilder()
     builder.button(text="💬 رد", callback_data=f"reply:{user_id}:{name}")
     builder.button(text="🚫 حظر", callback_data=f"ban:{user_id}")
@@ -317,8 +322,8 @@ def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next:
 
 
 def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> InlineKeyboardMarkup:
+    name = _truncate_cb_name(user_name, 25)
     builder = InlineKeyboardBuilder()
-    name = user_name[:30]
     builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{name}")
     builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
     builder.adjust(2)
@@ -328,7 +333,7 @@ def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> Inline
 async def quick_reply_inline_keyboard(user_id: int, user_name: str) -> InlineKeyboardMarkup:
     from database.crud import get_all_autoreplies
     replies = await get_all_autoreplies()
-    name = user_name[:30]
+    name = _truncate_cb_name(user_name, 35)
     builder = InlineKeyboardBuilder()
     for ar in replies[:8]:
         label = ar.trigger if len(ar.trigger) <= 25 else ar.trigger[:22] + "..."
