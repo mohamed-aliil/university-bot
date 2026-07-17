@@ -1242,7 +1242,22 @@ async def logs_messages_start(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
+@router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجلات المستخدمين")
+async def logs_users(message: Message) -> None:
+    from database.crud import get_all_user_messages
+    msgs = await get_all_user_messages(limit=20)
+    if not msgs:
+        await message.answer("📋 لا توجد رسائل من المستخدمين بعد.")
+        return
+    lines = []
+    for m in msgs:
+        user = await get_user(m.user_id)
+        user_name = user.full_name if user else "غير معروف"
+        content = (m.content or m.caption or "")[:100]
+        time = m.created_at.strftime("%m-%d %H:%M")
+        lines.append(f"👤 {user_name} (🆔 {m.user_id})\n💬 {content}\n🕐 {time}")
+    out = "📋 **آخر 20 رسالة من المستخدمين:**\n\n" + "\n─────\n".join(lines)
+    await message.answer(out)
 async def cleanup_db_prompt(message: Message) -> None:
     stats = await get_db_table_stats()
     total_bytes = stats["db_total_bytes"]

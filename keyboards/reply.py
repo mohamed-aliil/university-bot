@@ -204,6 +204,7 @@ def logs_type_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📦 سجلات المواد"), KeyboardButton(text="💬 سجلات الطلبات")],
+            [KeyboardButton(text="📋 سجلات المستخدمين")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

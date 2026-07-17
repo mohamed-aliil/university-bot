@@ -288,6 +288,14 @@ async def get_user_messages(user_id: int) -> list[Message]:
         return list(result.scalars().all())
 
 
+async def get_all_user_messages(limit: int = 20) -> list[Message]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(Message).order_by(Message.created_at.desc()).limit(limit)
+        )
+        return list(result.scalars().all())
+
+
 async def save_reply_log(
     user_id: int,
     user_name: str,
