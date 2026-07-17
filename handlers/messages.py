@@ -359,6 +359,8 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
             all_admin_ids.append(a.user_id)
 
     for admin_id in all_admin_ids:
+        if admin_id in _muted_admins:
+            continue
         try:
             msg_type = content_data.get("type", "text")
             file_id = content_data.get("file_id")
