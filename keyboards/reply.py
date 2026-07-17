@@ -303,10 +303,10 @@ def confirm_send_keyboard(unique_id: int) -> InlineKeyboardMarkup:
 def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next: bool = False) -> ReplyKeyboardMarkup:
     kb = []
     nav_row = []
-    if has_prev:
-        nav_row.append(KeyboardButton(text="⬅️ السابق"))
     if has_next:
         nav_row.append(KeyboardButton(text="➡️ التالي"))
+    if has_prev:
+        nav_row.append(KeyboardButton(text="⬅️ السابق"))
     if nav_row:
         kb.append(nav_row)
     mute_text = "🔔 تشغيل الإشعارات" if muted else "🔇 إيقاف الإشعارات"
