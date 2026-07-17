@@ -321,10 +321,9 @@ def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next:
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
-def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> InlineKeyboardMarkup:
-    name = _truncate_cb_name(user_name, 25)
+def message_review_keyboard(msg_id: int, user_id: int, user_name: str = "") -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{name}")
+    builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}")
     builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
     builder.adjust(2)
     return builder.as_markup()

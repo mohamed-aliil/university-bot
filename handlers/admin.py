@@ -1911,7 +1911,7 @@ async def show_next_unread(target, state: FSMContext) -> None:
 
     from handlers.messages import _muted_admins
     muted = target.from_user.id in _muted_admins if hasattr(target, 'from_user') and target.from_user else False
-    inline_kb = message_review_keyboard(msg.id, msg.user_id, user_name)
+    inline_kb = message_review_keyboard(msg.id, msg.user_id)
     reply_kb = review_reply_keyboard(muted=muted, has_prev=current_idx > 0, has_next=current_idx < len(messages) - 1)
 
     mtype = msg.message_type
@@ -1988,12 +1988,13 @@ async def review_mute(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(AdminFilter(), F.data.startswith("review_reply:"))
 async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
-    from database.crud import get_admin_notifications, delete_admin_notifications
+    from database.crud import get_admin_notifications, delete_admin_notifications, get_user
     from handlers.messages import _locked_messages
     parts = callback.data.split(":")
     msg_id = int(parts[1])
     user_id = int(parts[2])
-    user_name = ":".join(parts[3:])
+    user_info = await get_user(user_id)
+    user_name = user_info.full_name if user_info else "غير معروف"
 
     if msg_id in _locked_messages:
         await callback.answer("🔒 مشرف آخر يرد على هذه الرسالة حالياً.", show_alert=True)
