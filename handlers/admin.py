@@ -1,5 +1,6 @@
 import logging
 import html as html_mod
+import traceback
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup
 from aiogram.fsm.context import FSMContext
@@ -904,10 +905,10 @@ async def messages_queue_button(message: Message, state: FSMContext) -> None:
     try:
         await show_next_unread(message, state)
     except Exception as e:
+        tb = traceback.format_exc()
         logger.exception("Error in messages_queue_button")
         await message.answer(
-            f"⚠️ حدث خطأ أثناء فتح الطلبات:\n<code>{e!s:.200}</code>\n"
-            "حاول مرة أخرى أو استخدم /start.",
+            f"⚠️ خطأ:\n<code>{tb[-1500:]}</code>",
             reply_markup=await admin_main_keyboard(message.from_user.id),
         )
 
@@ -1938,8 +1939,10 @@ async def show_next_unread(target, state: FSMContext) -> None:
         else:
             await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
     except Exception:
+        import traceback as tb_mod
+        tb_str = tb_mod.format_exc()
         await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None)
-        await bot.send_message(chat_id=chat_id, text="⚠️ تعذر إرسال الأزرار مع الرسالة.", reply_markup=inline_kb)
+        await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{tb_str[-1500:]}</code>")
 
     await bot.send_message(chat_id=chat_id, text=".", reply_markup=reply_kb)
 
