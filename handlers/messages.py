@@ -187,7 +187,7 @@ async def contact_prompt(message: Message, state: FSMContext) -> None:
     if user.id in settings.admin_ids or await is_admin_user(user.id):
         await state.clear()
         from handlers.admin import admin_main_keyboard
-        await message.answer("🔧 لوحة التحكم:", reply_markup=await admin_main_keyboard(user.id))
+        await message.answer("القائمة الرئيسية", reply_markup=await admin_main_keyboard(user.id))
         return
     from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
     cancel_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ إلغاء", callback_data="cancel_contact")]])
