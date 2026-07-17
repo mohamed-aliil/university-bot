@@ -190,11 +190,12 @@ def replies_management_keyboard() -> ReplyKeyboardMarkup:
 
 
 def admin_reply_keyboard(user_id: int, user_full_name: str) -> InlineKeyboardMarkup:
+    name = user_full_name[:30]
     builder = InlineKeyboardBuilder()
-    builder.button(text="💬 رد", callback_data=f"reply:{user_id}:{user_full_name}")
+    builder.button(text="💬 رد", callback_data=f"reply:{user_id}:{name}")
     builder.button(text="🚫 حظر", callback_data=f"ban:{user_id}")
     builder.button(text="⏭ عدم الرد", callback_data=f"ignore:{user_id}")
-    builder.button(text="📢 للقناة", callback_data=f"forward:{user_id}:{user_full_name}")
+    builder.button(text="📢 للقناة", callback_data=f"forward:{user_id}:{name}")
     builder.button(text="🔇 كتم الإشعارات", callback_data=f"mute:{user_id}")
     builder.adjust(1, 2, 1, 1)
     return builder.as_markup()
@@ -317,7 +318,8 @@ def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next:
 
 def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{user_name}")
+    name = user_name[:30]
+    builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{name}")
     builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
     builder.adjust(2)
     return builder.as_markup()
@@ -326,11 +328,12 @@ def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> Inline
 async def quick_reply_inline_keyboard(user_id: int, user_name: str) -> InlineKeyboardMarkup:
     from database.crud import get_all_autoreplies
     replies = await get_all_autoreplies()
+    name = user_name[:30]
     builder = InlineKeyboardBuilder()
     for ar in replies[:8]:
         label = ar.trigger if len(ar.trigger) <= 25 else ar.trigger[:22] + "..."
-        builder.button(text=label, callback_data=f"quick_reply:{ar.id}:{user_id}:{user_name}")
-    builder.button(text="✏️ رد مخصص", callback_data=f"custom_reply:{user_id}:{user_name}")
+        builder.button(text=label, callback_data=f"quick_reply:{ar.id}:{user_id}:{name}")
+    builder.button(text="✏️ رد مخصص", callback_data=f"custom_reply:{user_id}:{name}")
     builder.adjust(1)
     return builder.as_markup()
 
