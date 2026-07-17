@@ -315,7 +315,7 @@ async def mark_user_messages_read(user_id: int) -> None:
 async def get_user_messages(user_id: int) -> list[Message]:
     async with async_session() as session:
         result = await session.execute(
-            select(Message).where(Message.user_id == user_id).order_by(Message.created_at.desc())
+            select(Message).where(Message.user_id == user_id, Message.message_type != "materials_action").order_by(Message.created_at.desc())
         )
         return list(result.scalars().all())
 
