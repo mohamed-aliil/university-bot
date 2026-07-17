@@ -311,6 +311,7 @@ def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next:
         kb.append(nav_row)
     mute_text = "🔔 تشغيل الإشعارات" if muted else "🔇 إيقاف الإشعارات"
     kb.append([KeyboardButton(text=mute_text), KeyboardButton(text="✅ إنهاء")])
+    kb.append([KeyboardButton(text="🔙 رجوع")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 

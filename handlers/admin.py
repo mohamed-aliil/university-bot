@@ -1952,6 +1952,12 @@ async def review_done(message: Message, state: FSMContext) -> None:
     await message.answer("✅ تم إنهاء المراجعة.", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 
+@router.message(ReviewState.browsing, F.text == "🔙 رجوع")
+async def review_back(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("🔝 القائمة الرئيسية", reply_markup=await admin_main_keyboard(message.from_user.id))
+
+
 @router.message(ReviewState.browsing, F.text.in_(["🔇 إيقاف الإشعارات", "🔔 تشغيل الإشعارات"]))
 async def review_mute(message: Message, state: FSMContext) -> None:
     admin_id = message.from_user.id
