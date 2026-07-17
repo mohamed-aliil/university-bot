@@ -618,6 +618,7 @@ async def select_rank(callback: CallbackQuery, state: FSMContext) -> None:
 
 
 
+
 @router.message(PermissionFilter("can_manage"), F.text == "/removeadmin")
 async def remove_admin_start(message: Message, state: FSMContext) -> None:
     await state.set_state(RemoveAdminState.waiting_for_id)

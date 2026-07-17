@@ -13,7 +13,10 @@ class AdminFilter(BaseFilter):
 
 class SuperAdminFilter(BaseFilter):
     async def __call__(self, obj: Message | CallbackQuery) -> bool:
-        return obj.from_user.id in settings.admin_ids
+        if obj.from_user.id in settings.admin_ids:
+            return True
+        perms = await get_admin_permissions(obj.from_user.id)
+        return perms is not None and perms.get("rank") == "super_admin"
 
 
 class PermissionFilter(BaseFilter):

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import traceback
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
@@ -11,7 +12,7 @@ from aiohttp import web
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active
+from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user
 from handlers import start, messages, admin, materials, channels
 from middlewares import ThrottlingMiddleware
 from utils.logger import setup_logger
@@ -76,12 +77,23 @@ async def main() -> None:
 
     @dp.errors()
     async def global_error(event: ErrorEvent) -> None:
+        tb = traceback.format_exception(type(event.exception), event.exception, event.exception.__traceback__)
+        tb_str = "".join(tb[-5:])
         logger.exception("Unhandled error: %s", event.exception)
         try:
+            user_id = None
             if event.update and event.update.message:
-                await event.update.message.answer("⚠️ عذراً، حدث خطأ داخلي. يرجى المحاولة لاحقاً.")
+                user_id = event.update.message.from_user.id
             elif event.update and event.update.callback_query:
-                await event.update.callback_query.message.answer("⚠️ عذراً، حدث خطأ داخلي. يرجى المحاولة لاحقاً.")
+                user_id = event.update.callback_query.from_user.id
+            if user_id and (user_id in settings.admin_ids or await is_admin_user(user_id)):
+                msg = f"⚠️ خطأ:\n\n<code>{tb_str[:2000]}</code>"
+            else:
+                msg = "⚠️ عذراً، حدث خطأ داخلي. يرجى المحاولة لاحقاً."
+            if event.update and event.update.message:
+                await event.update.message.answer(msg)
+            elif event.update and event.update.callback_query:
+                await event.update.callback_query.message.answer(msg)
         except Exception:
             pass
 

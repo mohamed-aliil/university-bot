@@ -11,6 +11,7 @@ from database.crud import (
     update_content_item_title, rename_folder,
     is_materials_active,
     save_admin_action,
+    is_admin_user,
 )
 from filters import AdminFilter
 from keyboards.reply import main_keyboard, communication_keyboard
@@ -528,6 +529,12 @@ class SState(StatesGroup):
 
 @router.message(F.text == "نَافِذَة الـمَوَادّ")
 async def student_browse(message: Message, state: FSMContext) -> None:
+    user = message.from_user
+    if user.id in settings.admin_ids or await is_admin_user(user.id):
+        from handlers.admin import admin_main_keyboard
+        await state.clear()
+        await message.answer("القائمة الرئيسية", reply_markup=await admin_main_keyboard(user.id))
+        return
     if not is_materials_active():
         await message.answer("❌ ميزة المواد متوقفة.")
         return
@@ -559,11 +566,21 @@ async def student_back(message: Message, state: FSMContext) -> None:
             await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
             return
         await state.clear()
-        await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
+        user_obj = message.from_user
+        if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):
+            from handlers.admin import admin_main_keyboard
+            await message.answer("🔝 القائمة الرئيسية", reply_markup=await admin_main_keyboard(user_obj.id))
+        else:
+            await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
     except Exception as e:
         logger.exception("student_back error: %s", e)
         await state.clear()
-        await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
+        user_obj = message.from_user
+        if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):
+            from handlers.admin import admin_main_keyboard
+            await message.answer("🔝 القائمة الرئيسية", reply_markup=await admin_main_keyboard(user_obj.id))
+        else:
+            await message.answer("🔝 القائمة الرئيسية", reply_markup=main_keyboard())
 
 
 @router.message(SState.browsing)
@@ -605,6 +622,12 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
     elif item_match:
         await forward_item(message.from_user.id, item_match[0].id, message.bot)
     else:
+        user_obj = message.from_user
+        if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):
+            await state.clear()
+            from handlers.admin import admin_main_keyboard
+            await message.answer("القائمة الرئيسية", reply_markup=await admin_main_keyboard(user_obj.id))
+            return
         from keyboards.reply import main_keyboard
         from handlers.messages import ContactState
         if text in ("نَافِذَة التَّوَاصُل", "نَافِذَة الـمَوَادّ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة"):

@@ -184,7 +184,7 @@ def extract_message_content(message: Message) -> dict:
 @router.message(F.text == "نَافِذَة التَّوَاصُل")
 async def contact_prompt(message: Message, state: FSMContext) -> None:
     user = message.from_user
-    if user.id in settings.admin_ids:
+    if user.id in settings.admin_ids or await is_admin_user(user.id):
         from keyboards.reply import admin_panel_keyboard
         await message.answer("🔧 لوحة التحكم:", reply_markup=admin_panel_keyboard())
         return
@@ -418,3 +418,22 @@ async def handle_during_confirmation(message: Message, state: FSMContext) -> Non
             await message.answer("تم الإلغاء.", reply_markup=main_keyboard())
         return
     await message.answer("⚠️ الرجاء استخدام الأزرار أسفل الرسالة السابقة للتأكيد أو الإلغاء.")
+
+
+@router.message(F.text)
+async def catch_all(message: Message, state: FSMContext) -> None:
+    user = message.from_user
+    if user.id in settings.admin_ids or await is_admin_user(user.id):
+        from handlers.admin import admin_main_keyboard
+        kb = await admin_main_keyboard(user.id)
+        await message.answer("🔧 مرحباً بك في لوحة التحكم.", reply_markup=kb)
+        return
+    if await is_banned(user.id):
+        return
+    cur = await state.get_state()
+    if cur:
+        return
+    await message.answer(
+        "👋 الرجاء استخدام الأزرار أدناه للتواصل.",
+        reply_markup=main_keyboard(),
+    )
