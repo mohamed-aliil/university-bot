@@ -300,18 +300,25 @@ def confirm_send_keyboard(unique_id: int) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def message_review_keyboard(msg_id: int, user_id: int, user_name: str, current_idx: int = 0, total: int = 1, muted: bool = False) -> InlineKeyboardMarkup:
+def review_reply_keyboard(muted: bool = False, has_prev: bool = False, has_next: bool = False) -> ReplyKeyboardMarkup:
+    kb = []
+    nav_row = []
+    if has_prev:
+        nav_row.append(KeyboardButton(text="⬅️ السابق"))
+    if has_next:
+        nav_row.append(KeyboardButton(text="➡️ التالي"))
+    if nav_row:
+        kb.append(nav_row)
+    mute_text = "🔔 تشغيل الإشعارات" if muted else "🔇 إيقاف الإشعارات"
+    kb.append([KeyboardButton(text=mute_text), KeyboardButton(text="✅ إنهاء")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def message_review_keyboard(msg_id: int, user_id: int, user_name: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if current_idx > 0:
-        builder.button(text="⬅️ السابق", callback_data="review_prev")
     builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}:{user_name}")
     builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
-    if current_idx < total - 1:
-        builder.button(text="➡️ التالي", callback_data="review_next")
-    builder.button(text="✅ إنهاء", callback_data="review_done")
-    mute_text = "🔔 تشغيل الإشعارات" if muted else "🔇 إيقاف الإشعارات"
-    builder.button(text=mute_text, callback_data="toggle_mute")
-    builder.adjust(2, 2, 1)
+    builder.adjust(2)
     return builder.as_markup()
 
 

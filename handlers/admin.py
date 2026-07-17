@@ -13,7 +13,7 @@ from database.crud import (
     save_reply_log, save_admin_action,
     cleanup_old_data, get_db_table_stats, _fmt_size,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -103,6 +103,10 @@ class RemoveNewsTemplateState(StatesGroup):
 
 class QuickNewsState(StatesGroup):
     waiting_content = State()
+
+
+class ReviewState(StatesGroup):
+    browsing = State()
 
 
 # ─── لوحة التحكم الرئيسية ───
@@ -1857,6 +1861,7 @@ async def show_next_unread(target, state: FSMContext) -> None:
     messages = await get_unread_messages()
     if not messages:
         await target.answer("✅ لا يوجد مرسلات.")
+        await state.clear()
         return
 
     data = await state.get_data()
@@ -1886,9 +1891,12 @@ async def show_next_unread(target, state: FSMContext) -> None:
     caption += f"\n{'═' * 15}"
 
     await state.update_data(queue_index=current_idx, queue_total=len(messages))
+    await state.set_state(ReviewState.browsing)
+
     from handlers.messages import _muted_admins
     muted = target.from_user.id in _muted_admins
-    reply_markup = message_review_keyboard(msg.id, msg.user_id, user_name, current_idx, len(messages), muted=muted)
+    inline_kb = message_review_keyboard(msg.id, msg.user_id, user_name)
+    reply_kb = review_reply_keyboard(muted=muted, has_prev=current_idx > 0, has_next=current_idx < len(messages) - 1)
 
     bot = target.bot if hasattr(target, "bot") else target.message.bot
     chat_id = target.message.chat.id if hasattr(target, "message") else target.chat.id
@@ -1896,48 +1904,66 @@ async def show_next_unread(target, state: FSMContext) -> None:
     fid = msg.file_id
 
     if mtype == "photo" and fid:
-        await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "video" and fid:
-        await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "document" and fid:
-        await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "audio" and fid:
-        await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "voice" and fid:
-        await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "sticker" and fid:
         await bot.send_sticker(chat_id=chat_id, sticker=fid)
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
     elif mtype == "animation" and fid:
-        await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=reply_markup)
+        await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=inline_kb)
     elif mtype == "video_note" and fid:
         await bot.send_video_note(chat_id=chat_id, video_note=fid)
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
     else:
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=reply_markup)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+
+    await bot.send_message(chat_id=chat_id, text=".", reply_markup=reply_kb)
 
 
-@router.callback_query(AdminFilter(), F.data == "review_prev")
-async def review_prev_cb(callback: CallbackQuery, state: FSMContext) -> None:
+@router.message(ReviewState.browsing, F.text == "⬅️ السابق")
+async def review_prev(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     current_idx = data.get("queue_index", 0)
     if current_idx > 0:
         current_idx -= 1
         await state.update_data(queue_index=current_idx)
-    await callback.message.delete()
-    await show_next_unread(callback.message, state)
-    await callback.answer()
+    await show_next_unread(message, state)
 
 
-@router.callback_query(AdminFilter(), F.data == "review_next")
-async def review_next_cb(callback: CallbackQuery, state: FSMContext) -> None:
+@router.message(ReviewState.browsing, F.text == "➡️ التالي")
+async def review_next(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     current_idx = data.get("queue_index", 0)
     current_idx += 1
     await state.update_data(queue_index=current_idx)
-    await callback.message.delete()
-    await show_next_unread(callback.message, state)
-    await callback.answer()
+    await show_next_unread(message, state)
+
+
+@router.message(ReviewState.browsing, F.text == "✅ إنهاء")
+async def review_done(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("✅ تم إنهاء المراجعة.", reply_markup=await admin_main_keyboard(message.from_user.id))
+
+
+@router.message(ReviewState.browsing, F.text.in_(["🔇 إيقاف الإشعارات", "🔔 تشغيل الإشعارات"]))
+async def review_mute(message: Message, state: FSMContext) -> None:
+    admin_id = message.from_user.id
+    from handlers.messages import _muted_admins
+    if admin_id in _muted_admins:
+        _muted_admins.discard(admin_id)
+        status = "🔔 تم تشغيل الإشعارات"
+    else:
+        _muted_admins.add(admin_id)
+        status = "🔇 تم إيقاف الإشعارات"
+    await message.answer(status)
+    await show_next_unread(message, state)
 
 
 @router.callback_query(AdminFilter(), F.data.startswith("review_reply:"))
@@ -1945,19 +1971,16 @@ async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
     from database.crud import get_admin_notifications, delete_admin_notifications
     from handlers.messages import _locked_messages
     parts = callback.data.split(":")
-    msg_id = int(parts[1])  # db_message_id
+    msg_id = int(parts[1])
     user_id = int(parts[2])
     user_name = ":".join(parts[3:])
 
-    # Check if another admin is already replying
     if msg_id in _locked_messages:
         await callback.answer("🔒 مشرف آخر يرد على هذه الرسالة حالياً.", show_alert=True)
         return
 
-    # Lock the message
     _locked_messages[msg_id] = callback.from_user.id
 
-    # Hide notification from other admins
     notifs = await get_admin_notifications(msg_id)
     for n in notifs:
         if n.admin_id != callback.from_user.id:
@@ -1982,6 +2005,18 @@ async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+@router.callback_query(AdminFilter(), F.data.startswith("review_delete:"))
+async def review_delete_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    parts = callback.data.split(":")
+    msg_id = int(parts[1])
+    await mark_message_read(msg_id)
+    await callback.message.delete()
+    data = await state.get_data()
+    current_idx = data.get("queue_index", 0)
+    await callback.answer("✅ تم حذف الرسالة.", show_alert=True)
+    await show_next_unread(callback.message, state)
+
+
 @router.message(SuperAdminFilter(), F.text == "/resetdata")
 async def reset_data_command(message: Message) -> None:
     from database.crud import reset_all_data
@@ -1997,40 +2032,3 @@ async def reset_data_command(message: Message) -> None:
         f"• المشرفين الأساسيين المحتفظ بهم: {counts['users_kept']}",
         reply_markup=await admin_main_keyboard(message.from_user.id),
     )
-
-
-@router.callback_query(AdminFilter(), F.data.startswith("review_delete:"))
-async def review_delete_cb(callback: CallbackQuery, state: FSMContext) -> None:
-    parts = callback.data.split(":")
-    msg_id = int(parts[1])
-    await mark_message_read(msg_id)
-    await callback.message.delete()
-    data = await state.get_data()
-    current_idx = data.get("queue_index", 0)
-    await callback.answer("✅ تم حذف الرسالة.", show_alert=True)
-    await show_next_unread(callback.message, state)
-
-
-@router.callback_query(AdminFilter(), F.data == "review_done")
-async def review_done_cb(callback: CallbackQuery, state: FSMContext) -> None:
-    await state.clear()
-    await callback.message.answer("✅ تم إنهاء المراجعة.", reply_markup=await admin_main_keyboard(callback.from_user.id))
-    await callback.answer()
-
-
-@router.callback_query(AdminFilter(), F.data == "toggle_mute")
-async def toggle_mute_cb(callback: CallbackQuery) -> None:
-    admin_id = callback.from_user.id
-    from handlers.messages import _muted_admins
-    if admin_id in _muted_admins:
-        _muted_admins.discard(admin_id)
-        status = "🔔 تم تشغيل الإشعارات"
-    else:
-        _muted_admins.add(admin_id)
-        status = "🔇 تم إيقاف الإشعارات"
-    await callback.answer(status, show_alert=True)
-    # Delete the current message — the next button press will re-show with new state
-    try:
-        await callback.message.delete()
-    except Exception:
-        pass
