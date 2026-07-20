@@ -270,6 +270,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده.\n"
         "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
         "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
+        "- المقالات والتنويهات المحفوظة تحتوي إعلانات رسمية — اعتمد عليها بالإجابة عن المواعيد والإعلانات.\n"
         "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم أين هي بالضبط وارسل له الرابط.\n"
         "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
         "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
@@ -385,7 +386,16 @@ async def ai_admin_file_invalid(message: Message, state: FSMContext) -> None:
 async def ai_admin_chat_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIAdminState.admin_chat)
     await message.answer(
-        "🤖 محادثة ذكية مع المساعد.\nاسأل أي شيء أو استخدم 🔙 رجوع للخروج.",
+        "🤖 محادثة ذكية مع المساعد.\n\n"
+        "تقدر تتكلم معاه عادي، أو تعطيه أوامر مثل:\n"
+        "- ضيف سؤال: السؤال | الجواب\n"
+        "- حذف سؤال 3\n"
+        "- ضيف مقال: العنوان | المحتوى\n"
+        "- حذف مقال 5\n"
+        "- عرض الأسئلة\n"
+        "- عرض المقالات\n"
+        "- مسح المتطلبات\n\n"
+        "أو استخدم 🔙 رجوع للخروج.",
         reply_markup=cancel_keyboard(),
     )
 
@@ -401,11 +411,105 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     q = message.text or message.caption or ""
     if not q:
         return
-    answer = await call_gemini(q)
-    if answer:
-        await message.answer(answer, reply_markup=cancel_keyboard())
-    else:
+
+    qa_list = await get_all_qa()
+    qa_context = "\n".join(
+        f"{qa.id}: س: {qa.question[:60]} → ج: {qa.answer[:60]}"
+        for qa in qa_list[-20:]
+    ) if qa_list else "لا يوجد"
+
+    articles_list = await get_all_articles()
+    art_context = "\n".join(
+        f"{a.id}: {a.title[:50]} ({len(a.content)} حرف)"
+        for a in articles_list[-10:]
+    ) if articles_list else "لا يوجد"
+
+    prereqs_list = await get_all_prerequisites()
+    prereq_count = len(prereqs_list)
+
+    admin_system_prompt = (
+        "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
+        "تحدث بالعربية.\n\n"
+        "⚡ يمكنك تنفيذ الأوامر التالية إذا طلبها المشرف:\n"
+        "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
+        "- [DEL_QA] الرقم ← حذف سؤال/جواب برقمه\n"
+        "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال\n"
+        "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
+        "- [LIST_QA] ← عرض كل الأسئلة\n"
+        "- [LIST_ARTICLES] ← عرض كل المقالات\n"
+        "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية\n\n"
+        "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
+        "استخدم الأمر المناسب من فوق.\n"
+        "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n\n"
+        f"الأسئلة المحفوظة: {qa_context}\n"
+        f"المقالات: {art_context}\n"
+        f"المتطلبات الدراسية: {prereq_count} علاقة"
+    )
+
+    answer = await call_gemini(q, system_prompt=admin_system_prompt)
+    if not answer:
         await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
+        return
+
+    if answer.startswith("[ADD_QA]"):
+        parts = answer.replace("[ADD_QA]", "", 1).strip().split("|")
+        if len(parts) >= 2:
+            qq, aa = parts[0].strip(), "|".join(parts[1:]).strip()
+            qa = await add_qa(qq, aa)
+            await message.answer(f"✅ تم إضافة سؤال/جواب (رقم {qa.id})", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق خطأ. استخدم: السؤال | الجواب", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[DEL_QA]"):
+        parts = answer.replace("[DEL_QA]", "", 1).strip()
+        try:
+            qa_id = int(parts)
+            ok = await delete_qa(qa_id)
+            await message.answer(f"✅ تم حذف السؤال {qa_id}" if ok else "❌ الرقم غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم السؤال.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_ARTICLE]"):
+        parts = answer.replace("[ADD_ARTICLE]", "", 1).strip().split("|")
+        if len(parts) >= 2:
+            title, content = parts[0].strip(), "|".join(parts[1:]).strip()
+            art = await add_article(title, content)
+            await message.answer(f"✅ تم إضافة مقال: {art.title}", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق خطأ. استخدم: العنوان | المحتوى", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[DEL_ARTICLE]"):
+        parts = answer.replace("[DEL_ARTICLE]", "", 1).strip()
+        try:
+            art_id = int(parts)
+            ok = await delete_article(art_id)
+            await message.answer(f"✅ تم حذف المقال {art_id}" if ok else "❌ الرقم غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم المقال.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[LIST_QA]"):
+        qa_list = await get_all_qa()
+        if qa_list:
+            for i in range(0, len(qa_list), 10):
+                chunk = "\n".join(f"{qa.id}: 📌 {qa.question[:50]}" for qa in qa_list[i:i+10])
+                await message.answer(f"📋 الأسئلة:\n{chunk}", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ لا توجد أسئلة.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[LIST_ARTICLES]"):
+        arts = await get_all_articles()
+        if arts:
+            for art in arts:
+                await message.answer(f"🔹 {art.id}: {art.title} ({len(art.content)} حرف)", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ لا توجد مقالات.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[CLEAR_PREREQS]"):
+        await clear_prerequisites()
+        await message.answer("✅ تم مسح المتطلبات الدراسية.", reply_markup=cancel_keyboard())
+
+    else:
+        await message.answer(answer, reply_markup=cancel_keyboard())
 
 
 # ─── Admin: إضافة مقال/إعلان ───
