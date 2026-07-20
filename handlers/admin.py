@@ -1271,6 +1271,9 @@ async def logs_users(message: Message) -> None:
         lines.append(f"👤 {user_name} (🆔 {m.user_id})\n💬 {content}\n🕐 {time}")
     out = "📋 **آخر 20 رسالة من المستخدمين:**\n\n" + "\n─────\n".join(lines)
     await message.answer(out)
+
+
+@router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
 async def cleanup_db_prompt(message: Message) -> None:
     stats = await get_db_table_stats()
     total_bytes = stats["db_total_bytes"]
@@ -1308,9 +1311,9 @@ async def cleanup_db_prompt(message: Message) -> None:
 @router.callback_query(F.data == "confirm_cleanup")
 async def confirm_cleanup_cb(callback: CallbackQuery) -> None:
     await callback.answer()
-    msg = await callback.message.edit_text("🧹 جاري تنظيف قاعدة البيانات...")
+    await callback.message.edit_text("🧹 جاري تنظيف قاعدة البيانات...")
     counts = await cleanup_old_data(days=60)
-    await msg.edit_text(
+    await callback.message.edit_text(
         f"✅ تم التنظيف بنجاح!\n"
         f"• الرسائل: {counts.get('messages', 0)} رسالة\n"
         f"• سجلات الردود: {counts.get('reply_logs', 0)} سجل"
