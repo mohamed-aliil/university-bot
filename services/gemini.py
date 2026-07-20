@@ -27,37 +27,49 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
         messages.append({"role": "system", "content": system_prompt})
     messages.append({"role": "user", "content": prompt})
 
-    payload = {
-        "model": "llama-3.1-70b-versatile",
-        "messages": messages,
-        "temperature": 0.7,
-        "max_tokens": 1024,
-    }
+    MODELS = [
+        "openai/gpt-oss-120b",
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-20b",
+        "gpt-oss-120b",
+        "gpt-oss-20b",
+    ]
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                json=payload,
-                headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    logger.warning("Groq error %s: %s", resp.status, body[:200])
-                    return None
-                data = await resp.json()
-                choices = data.get("choices", [])
-                if choices:
-                    text = choices[0].get("message", {}).get("content", "")
-                    if text:
-                        return text.strip()
-    except Exception as e:
-        logger.exception("Groq request failed: %s", e)
+    for model in MODELS:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1024,
+        }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    json=payload,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as resp:
+                    if resp.status != 200:
+                        body = await resp.text()
+                        if "decommissioned" in body or "deprecated" in body:
+                            logger.warning("Groq model %s deprecated, trying next", model)
+                            continue
+                        logger.warning("Groq %s error %s: %s", model, resp.status, body[:200])
+                        continue
+                    data = await resp.json()
+                    choices = data.get("choices", [])
+                    if choices:
+                        text = choices[0].get("message", {}).get("content", "")
+                        if text:
+                            return text.strip()
+        except Exception as e:
+            logger.exception("Groq %s failed: %s", model, e)
+            continue
     return None
 
 
