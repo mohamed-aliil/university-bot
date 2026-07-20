@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites
+from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, get_content_links, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -187,19 +187,37 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
-    folder_parts = []
-    top_folders = await get_folders(None)
-    for f in top_folders:
-        subs = await get_folders(f.id)
-        items = await get_content_items(f.id)
-        names = [s.name for s in subs] + [(i.title or "محتوى") for i in items]
-        folder_parts.append(f"{f.name}: {', '.join(names[:15])}")
-    materials_context = "\n".join(folder_parts) if folder_parts else "لا توجد مواد بعد."
+    # Build full materials tree recursively with links
+    async def build_tree(parent_id: int | None, indent: int = 0) -> str:
+        prefix = "  " * indent + "• "
+        lines = []
+        folders = await get_folders(parent_id)
+        for f in folders:
+            lines.append(f"{prefix}📁 {f.name}")
+            child = await build_tree(f.id, indent + 1)
+            if child:
+                lines.append(child)
+            items = await get_content_items(f.id)
+            for item in items:
+                links = await get_content_links(item.id)
+                link_str = ""
+                if links:
+                    link_str = " → ".join(l.link[:50] for l in links[:3])
+                    if len(links) > 3:
+                        link_str += f" (+{len(links)-3})"
+                title = item.title or "محتوى"
+                lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
+        return "\n".join(lines)
+
+    materials_context = (await build_tree(None)) if await get_folders(None) else "لا توجد مواد بعد."
+    if len(materials_context) > 3000:
+        materials_context = materials_context[:3000] + "\n... (يوجد المزيد)"
 
     articles_list = await get_all_articles()
-    articles_context = "\n\n".join(
-        f"عنوان: {a.title}\nمحتوى: {a.content[:500]}" for a in articles_list
-    ) if articles_list else ""
+    articles_context = ""
+    for a in articles_list:
+        c = a.content[:1000]
+        articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
 
     prereqs_list = await get_all_prerequisites()
 
@@ -250,8 +268,10 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         f"🔗 شجرة المتطلبات الدراسية:\n{prereqs_context}\n\n"
         "📌 تعليمات:\n"
         "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده.\n"
-        "- أي سؤال عن مواد كلية، متطلبات، تسلسل، شيتات، امتحانات — استخدم السياق أعلاه للإجابة.\n"
-        "- ابحث بنفسك في قاعدة المعرفة والمواد والمقالات والمتطلبات عن الإجابة.\n"
+        "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
+        "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
+        "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم أين هي بالضبط:\n"
+        "  مثال: 'هذه المادة موجودة في مجلد الرياضيات ← شيتات ← اضغط على الرابط التالي'\n"
         "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
         "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
         "- إذا ما لقيت الإجابة في السياق، قل 'سأبلغ المشرفين'."
