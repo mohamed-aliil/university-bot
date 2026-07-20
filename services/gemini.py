@@ -28,7 +28,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
     messages.append({"role": "user", "content": prompt})
 
     payload = {
-        "model": "llama3-70b-8192",
+        "model": "llama-3.1-70b-versatile",
         "messages": messages,
         "temperature": 0.7,
         "max_tokens": 1024,
