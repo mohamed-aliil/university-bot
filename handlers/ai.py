@@ -202,10 +202,35 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     ) if articles_list else ""
 
     prereqs_list = await get_all_prerequisites()
-    prereqs_context = "\n".join(
-        f"{p.course_name} ({p.course_code}) ← يحتاج: {p.prerequisite_name} ({p.prerequisite_code})"
-        for p in prereqs_list
-    ) if prereqs_list else ""
+
+    # Build two views: forward (what a course opens) and backward (what a course needs)
+    forward_map: dict[str, list[tuple[str, str]]] = {}
+    backward_map: dict[str, list[tuple[str, str]]] = {}
+    for p in prereqs_list:
+        key = f"{p.prerequisite_name} ({p.prerequisite_code})"
+        val = (p.course_name, p.course_code)
+        forward_map.setdefault(key, []).append(val)
+        key2 = f"{p.course_name} ({p.course_code})"
+        val2 = (p.prerequisite_name, p.prerequisite_code)
+        backward_map.setdefault(key2, []).append(val2)
+
+    forward_lines = []
+    for course, opens in forward_map.items():
+        names = [f"{n} ({c})" for n, c in opens]
+        forward_lines.append(f"{course} ← تفتح → {', '.join(names)}")
+    backward_lines = []
+    for course, needs in backward_map.items():
+        names = [f"{n} ({c})" for n, c in needs]
+        backward_lines.append(f"{course} ← تحتاج → {', '.join(names)}")
+
+    prereqs_context = ""
+    if forward_lines:
+        prereqs_context += "📌 المواد والمواد التي تفتحها:\n" + "\n".join(forward_lines)
+        prereqs_context += "\n\n"
+    if backward_lines:
+        prereqs_context += "📌 المواد ومتطلباتها القبلية:\n" + "\n".join(backward_lines)
+    if not prereqs_context:
+        prereqs_context = "لا توجد متطلبات دراسية محفوظة."
 
     # Build conversation history
     history_lines = []
@@ -219,20 +244,18 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
         "تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
         "هذه محادثة مستمرة — تذكر السياق والرسائل السابقة.\n\n"
-        "تعليمات:\n"
-        "1. رحب بالمستخدم وتحدث معه بشكل طبيعي (مرحبا، كيف حالك، إلخ).\n"
-        "2. للأسئلة الخاصة بالكلية (مواعيد، مواد، شيتات، إلخ)، استخدم المعلومات الموجودة في السياق أدناه.\n"
-        "3. إذا سأل عن شيء موجود في قاعدة الأسئلة، أجب بالإجابة الموجودة.\n"
-        "4. المقالات والتنويهات المحفوظة (أسفل) تحتوي على إعلانات وتنويهات رسمية — ابحث فيها عن إجابة السؤال.\n"
-        "5. المتطلبات الدراسية (أسفل) توضح أي مادة تفتح أي مادة أخرى (prerequisite chain).\n"
-        "6. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
-        "7. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
-        "8. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n"
-        "9. تذكر المحادثة السابقة — استمر في نفس الموضوع.\n\n"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
         f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
-        f"🔗 المتطلبات الدراسية:\n{prereqs_context}"
+        f"🔗 شجرة المتطلبات الدراسية — مهم جداً:\n{prereqs_context}\n\n"
+        "⚡⚡⚡ تعليمات مهمة جداً للرد على الأسئلة ⚡⚡⚡\n"
+        "- أي سؤال عن 'تفتح', 'تفتح ايش', 'شنو تفتح', 'ايش المواد اللي تفتحها', 'what does X open' → "
+        "ابحث في قسم 'المواد والمواد التي تفتحها' عن المادة المطلوبة وأجب بكل المواد المكتوبة بعد ← تفتح →.\n"
+        "- أي سؤال عن 'يحتاج', 'متطلبات', 'prerequisite', 'المتطلبات القبلية', 'شنو المطلوب قبل', 'what do I need before' → "
+        "ابحث في قسم 'المواد ومتطلباتها القبلية' عن المادة المطلوبة وأجب بكل المواد المكتوبة بعد ← تحتاج →.\n"
+        "- إذا سأل عن مادة غير موجودة في السياق نهائياً، قل أنك ستبلغ المشرفين.\n"
+        "- إذا سأل عن شيء عام أو غير أكاديمي، أجب بحرية وطبيعي.\n"
+        "- لا تخترع أو تفترض متطلبات — فقط استخدم ما هو مكتوب أعلاه."
     )
 
     user_prompt = q
