@@ -29,7 +29,7 @@ async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
         return None
 
     for key in keys:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={key}"
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-1.5-flash:generateContent?key={key}"
         payload = {
             "contents": [{"parts": [{"text": prompt}]}]
         }
@@ -40,7 +40,8 @@ async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=30)) as resp:
                     if resp.status != 200:
-                        logger.warning("Gemini API error %s for key %s", resp.status, key[:8])
+                        body = await resp.text()
+                        logger.warning("Gemini API error %s for key %s: %s", resp.status, key[:8], body[:200])
                         continue
                     data = await resp.json()
                     candidates = data.get("candidates", [])
