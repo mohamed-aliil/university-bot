@@ -31,10 +31,13 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
     messages.append({"role": "user", "content": prompt})
 
     MODELS = [
+        "llama-3.3-70b-versatile",
         "qwen/qwen3.6-27b",
         "openai/gpt-oss-120b",
-        "llama-3.3-70b-versatile",
         "gpt-oss-120b",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
+        "llama3-70b-8192",
     ]
     headers = {
         "Authorization": f"Bearer {api_key}",
@@ -68,6 +71,8 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
                     if choices:
                         text = choices[0].get("message", {}).get("content", "")
                         if text:
+                            logger.info("Groq model %s used successfully (tokens: %s)", model,
+                                         choices[0].get("usage", {}).get("total_tokens", "?"))
                             return text.strip()
         except Exception as e:
             logger.exception("Groq %s failed: %s", model, e)
