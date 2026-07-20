@@ -199,16 +199,19 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         import traceback
         tb = traceback.format_exc()
         logger.exception("AI user question error")
-        await message.answer(
-            "⚠️ عذراً، حدث خطأ غير متوقع. حاول مرة أخرى أو استخدم 🔙 رجوع.",
-            reply_markup=ai_user_keyboard(),
-        )
+        try:
+            await message.answer(
+                "⚠️ عذراً، حدث خطأ غير متوقع. حاول مرة أخرى أو استخدم 🔙 رجوع.",
+                reply_markup=ai_user_keyboard(),
+            )
+        except Exception:
+            pass  # ignore if even the error message fails
         # Send traceback to admins
         for admin_id in settings.admin_ids:
             try:
-                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:2000]}</code>")
-            except Exception:
-                pass
+                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
+            except Exception as e2:
+                logger.error("Failed to send traceback to admin %s: %s", admin_id, e2)
 
 
 async def _ai_user_question(message: Message, state: FSMContext) -> None:
@@ -225,19 +228,25 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     history: list[dict] = data.get("history", [])
 
     # Build static context from Q&A, materials, articles, and prerequisites
-    qa_list = await get_all_qa()
+    try:
+        qa_list = await get_all_qa()
+    except Exception as e:
+        logger.error("AI: get_all_qa failed: %s", e)
+        qa_list = []
     qa_context = "\n".join(
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
-    # Build full materials tree recursively with links
-    async def build_tree(parent_id: int | None, indent: int = 0) -> str:
+    # Build full materials tree recursively with links (max depth 10)
+    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0) -> str:
+        if depth > 10:
+            return ""
         prefix = "  " * indent + "• "
         lines = []
         folders = await get_folders(parent_id)
         for f in folders:
             lines.append(f"{prefix}📁 {f.name}")
-            child = await build_tree(f.id, indent + 1)
+            child = await build_tree(f.id, indent + 1, depth + 1)
             if child:
                 lines.append(child)
             items = await get_content_items(f.id)
@@ -252,17 +261,32 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
         return "\n".join(lines)
 
-    materials_context = (await build_tree(None)) if await get_folders(None) else "لا توجد مواد بعد."
+    try:
+        if await get_folders(None):
+            materials_context = await build_tree(None)
+        else:
+            materials_context = "لا توجد مواد بعد."
+    except Exception as e:
+        logger.error("AI: build_tree failed: %s", e)
+        materials_context = "حدث خطأ أثناء بناء شجرة المواد."
     if len(materials_context) > 3000:
         materials_context = materials_context[:3000] + "\n... (يوجد المزيد)"
 
-    articles_list = await get_all_articles()
+    try:
+        articles_list = await get_all_articles()
+    except Exception as e:
+        logger.error("AI: get_all_articles failed: %s", e)
+        articles_list = []
     articles_context = ""
     for a in articles_list:
         c = a.content[:1000]
         articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
 
-    prereqs_list = await get_all_prerequisites()
+    try:
+        prereqs_list = await get_all_prerequisites()
+    except Exception as e:
+        logger.error("AI: get_all_prerequisites failed: %s", e)
+        prereqs_list = []
 
     # Build two views: forward (what a course opens) and backward (what a course needs)
     forward_map: dict[str, list[tuple[str, str]]] = {}

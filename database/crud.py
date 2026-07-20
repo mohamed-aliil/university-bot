@@ -21,15 +21,16 @@ def set_bot_active(active: bool) -> None:
 
 
 def is_ai_active() -> bool:
-    return AI_ACTIVE_FILE.exists()
+    # Active by default unless stop flag file exists
+    return not AI_ACTIVE_FILE.exists()
 
 
 def set_ai_active(active: bool) -> None:
     AI_ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     if active:
-        AI_ACTIVE_FILE.touch()
+        AI_ACTIVE_FILE.unlink(missing_ok=True)  # Remove stop flag = active
     else:
-        AI_ACTIVE_FILE.unlink(missing_ok=True)
+        AI_ACTIVE_FILE.touch()  # Create stop flag = stopped
 
 
 def is_ai_hidden() -> bool:
