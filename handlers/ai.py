@@ -381,7 +381,6 @@ async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
     api_key = settings.GROQ_API_KEY
     if not api_key:
         return None
-    from config import settings
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
     payload = {
         "model": "openai/gpt-oss-120b",
