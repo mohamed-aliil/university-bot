@@ -27,6 +27,7 @@ class AIAdminState(StatesGroup):
     waiting_image_analysis = State()
     waiting_file_analysis = State()
     admin_chat = State()
+    waiting_announcement = State()
 
 
 @router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
@@ -313,7 +314,68 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
 
 
-# ─── Helper: Groq Vision ───
+# ─── Admin: تحليل الإعلانات والتنويهات ───
+
+@router.message(AdminFilter(), F.text == "📰 تحليل إعلان")
+async def ai_admin_announcement_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.waiting_announcement)
+    await message.answer(
+        "📰 أرسل نص الإعلان أو التنويه وسأقوم باستخراج الأسئلة والأجوبة منه وإضافتها تلقائياً.",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(AIAdminState.waiting_announcement, AdminFilter())
+async def ai_admin_announcement_analyze(message: Message, state: FSMContext) -> None:
+    text = message.text or message.caption or ""
+    if not text or len(text) < 20:
+        await message.answer("❌ النص قصير جداً. أرسل الإعلان كاملاً.")
+        return
+
+    await message.answer("🤔 جاري تحليل الإعلان واستخراج الأسئلة...")
+
+    prompt = (
+        "اقرأ هذا الإعلان ثم استخرج منه أسئلة وأجوبة محتملة قد يسألها طالب.\n"
+        "يجب أن تكون الأسئلة متنوعة وتغطي كل المعلومات المهمة في الإعلان.\n"
+        "أعد النتيجة بهذا التنسيق بالضبط:\n"
+        "---\n"
+        "س: السؤال الأول\n"
+        "ج: الجواب الأول\n"
+        "---\n"
+        "س: السؤال الثاني\n"
+        "ج: الجواب الثاني\n"
+        "---\n\n"
+        f"الإعلان:\n{text}"
+    )
+    answer = await call_gemini(prompt)
+    if not answer or "س:" not in answer:
+        await message.answer("⚠️ فشل في استخراج الأسئلة. حاول مرة أخرى.", reply_markup=ai_admin_keyboard())
+        await state.clear()
+        return
+
+    import re
+    pairs = re.findall(r"س:\s*(.*?)\nج:\s*(.*?)(?:\n---|$)", answer, re.DOTALL)
+    if not pairs:
+        await message.answer("⚠️ لم أتمكن من استخراج أزواج أسئلة.", reply_markup=ai_admin_keyboard())
+        await state.clear()
+        return
+
+    added = 0
+    for q, a in pairs:
+        q = q.strip()
+        a = a.strip()
+        if q and a:
+            existing = await get_all_qa()
+            if not any(e.question.strip().lower() == q.lower() for e in existing):
+                await add_qa(q, a)
+                added += 1
+
+    await state.clear()
+    await message.answer(
+        f"✅ تم استخراج وإضافة {added} سؤال/جواب من الإعلان:\n\n"
+        + "\n".join(f"📌 {q[:50]}…\n💬 {a[:50]}…" for q, a in pairs[:5]),
+        reply_markup=ai_admin_keyboard(),
+    )
 
 async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
     api_key = settings.GROQ_API_KEY
