@@ -199,14 +199,14 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         import traceback
         tb = traceback.format_exc()
         logger.exception("AI user question error")
+        err_msg = str(e)[:200] or "خطأ غير معروف"
         try:
             await message.answer(
-                "⚠️ عذراً، حدث خطأ غير متوقع. حاول مرة أخرى أو استخدم 🔙 رجوع.",
+                f"⚠️ حدث خطأ: {err_msg}\n\nحاول مرة أخرى أو استخدم 🔙 رجوع.",
                 reply_markup=ai_user_keyboard(),
             )
         except Exception:
-            pass  # ignore if even the error message fails
-        # Send traceback to admins
+            pass
         for admin_id in settings.admin_ids:
             try:
                 await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
