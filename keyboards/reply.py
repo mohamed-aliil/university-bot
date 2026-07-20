@@ -8,7 +8,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="نَافِذَة التَّوَاصُل")],
             [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
-            [KeyboardButton(text="🤖 استفسار ذكي")],
+            [KeyboardButton(text="🤖 نَافِذَة الـ AI")],
         ],
         resize_keyboard=True,
     )

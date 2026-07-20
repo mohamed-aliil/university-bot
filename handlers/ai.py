@@ -168,12 +168,12 @@ async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
 
 # ─── User AI interface (conversation) ───
 
-@router.message(F.text == "🤖 استفسار ذكي")
+@router.message(F.text == "🤖 نَافِذَة الـ AI")
 async def ai_user_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await message.answer(
-        "🤖 مرحباً بك في الاستفسار الذكي!\n\n"
+        "🤖 مرحباً بك في نَافِذَة الـ AI!\n\n"
         "هذه محادثة جديدة — اسأل أي سؤال وسأحاول مساعدتك.\n"
         "مثال: موعد امتحان الرياضيات، شيتات الكلية، إلخ.\n\n"
         "أو استخدم 🔙 رجوع للعودة.",
