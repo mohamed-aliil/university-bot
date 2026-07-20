@@ -1368,10 +1368,19 @@ async def confirm_cleanup_cb(callback: CallbackQuery) -> None:
     await callback.answer()
     await callback.message.edit_text("🧹 جاري تنظيف قاعدة البيانات...")
     counts = await cleanup_old_data(days=60)
+    stats = await get_db_table_stats()
+    total = _fmt_size(stats["db_total_bytes"])
+    rows = stats["rows"]
+    sizes = stats["sizes"]
+    detail = " | ".join(
+        f"{k}: {rows[k]} ({_fmt_size(sizes[k])})" if sizes.get(k) else f"{k}: {rows[k]}"
+        for k in ["messages", "attachments", "reply_logs", "users"]
+    )
     await callback.message.edit_text(
         f"✅ تم التنظيف بنجاح!\n"
-        f"• الرسائل: {counts.get('messages', 0)} رسالة\n"
-        f"• سجلات الردود: {counts.get('reply_logs', 0)} سجل"
+        f"• تم حذف: {counts.get('messages', 0)} رسالة, {counts.get('reply_logs', 0)} سجل\n"
+        f"• الحجم الآن: {total}\n"
+        f"• {detail}"
     )
 
 
