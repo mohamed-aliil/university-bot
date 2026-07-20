@@ -193,6 +193,25 @@ async def ai_user_back(message: Message, state: FSMContext) -> None:
 
 @router.message(AIState.waiting_for_question)
 async def ai_user_question(message: Message, state: FSMContext) -> None:
+    try:
+        await _ai_user_question(message, state)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.exception("AI user question error")
+        await message.answer(
+            "⚠️ عذراً، حدث خطأ غير متوقع. حاول مرة أخرى أو استخدم 🔙 رجوع.",
+            reply_markup=ai_user_keyboard(),
+        )
+        # Send traceback to admins
+        for admin_id in settings.admin_ids:
+            try:
+                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:2000]}</code>")
+            except Exception:
+                pass
+
+
+async def _ai_user_question(message: Message, state: FSMContext) -> None:
     q = message.text.strip()
     if not q:
         return
