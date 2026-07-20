@@ -6,7 +6,7 @@ from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
 from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
-from services.gemini import call_gemini, is_college_question, find_best_qa
+from services.gemini import call_gemini
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -167,64 +167,47 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
-    await message.answer("🤔 جاري البحث عن إجابة...")
-
-    # Step 1: Search in Q&A database
+    # Build context from Q&A and materials
     qa_list = await get_all_qa()
-    best_q, best_a, score = await find_best_qa(q, qa_list)
-    if best_a and score >= 0.4:
-        await message.answer(
-            f"📌 السؤال المشابه: {best_q}\n\n💬 {best_a}",
-            reply_markup=ai_user_keyboard(),
-        )
-        return
+    qa_context = "\n".join(
+        f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
+    ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
-    # Step 2: Check if it's a college question
-    if is_college_question(q):
-        # Build context from materials
-        context_parts = []
-        top_folders = await get_folders(None)
-        for f in top_folders:
-            subs = await get_folders(f.id)
-            items = await get_content_items(f.id)
-            names = [s.name for s in subs] + [(i.title or "محتوى") for i in items]
-            context_parts.append(f"{f.name}: {', '.join(names[:10])}")
+    folder_parts = []
+    top_folders = await get_folders(None)
+    for f in top_folders:
+        subs = await get_folders(f.id)
+        items = await get_content_items(f.id)
+        names = [s.name for s in subs] + [(i.title or "محتوى") for i in items]
+        folder_parts.append(f"{f.name}: {', '.join(names[:15])}")
+    materials_context = "\n".join(folder_parts) if folder_parts else "لا توجد مواد بعد."
 
-        system_prompt = (
-            "أنت مساعد ذكي لبوابة كلية. أجب على أسئلة الطلاب بناءً على السياق المقدم فقط.\n"
-            "إذا كانت الإجابة غير موجودة في السياق، قل: 'عذراً، لا توجد معلومات كافية عندي. سأبلغ المشرفين.'\n"
-            "لا تخترع معلومات.\n\n"
-            "السياق (المواد المتاحة):\n" + "\n".join(context_parts)
-        )
-        answer = await call_gemini(q, system_prompt=system_prompt)
-        if answer:
-            if "لا توجد معلومات" in answer or "عذراً" in answer:
-                await message.answer(
-                    f"{answer}\n\n📝 سيتم إشعار المشرفين.",
-                    reply_markup=ai_user_keyboard(),
-                )
-                # Notify admins
-                from handlers.messages import forward_to_admins
-                from database.crud import save_message
-                msg = await save_message(
-                    user_id=message.from_user.id,
-                    message_type="text",
-                    content=f"[AI استفسار غير مجاب] {q}",
-                )
-                await forward_to_admins(message.bot, msg, message.from_user)
-            else:
-                await message.answer(answer, reply_markup=ai_user_keyboard())
-        else:
-            await message.answer(
-                "⚠️ عذراً، حدث خطأ في معالجة سؤالك. يرجى المحاولة لاحقاً.",
-                reply_markup=ai_user_keyboard(),
-            )
-        return
+    system_prompt = (
+        "أنت مساعد ذكي لبوابة كلية. تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
+        "تعليمات:\n"
+        "1. رحب بالمستخدم وتحدث معه بشكل طبيعي (مرحبا، كيف حالك، إلخ).\n"
+        "2. للأسئلة الخاصة بالكلية (مواعيد، مواد، شيتات، إلخ)، استخدم المعلومات الموجودة في السياق أدناه.\n"
+        "3. إذا سأل عن شيء موجود في قاعدة الأسئلة، أجب بالإجابة الموجودة.\n"
+        "4. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
+        "5. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
+        "6. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
+        f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
+        f"📁 المواد المتاحة:\n{materials_context}"
+    )
 
-    # Step 3: General question → Gemini answers freely
-    answer = await call_gemini(q)
+    answer = await call_gemini(q, system_prompt=system_prompt)
     if answer:
         await message.answer(answer, reply_markup=ai_user_keyboard())
+        # Notify admins if the answer says it doesn't know
+        if "سأبلغ المشرفين" in answer or "إشعار المشرفين" in answer:
+            from handlers.messages import forward_to_admins
+            from database.crud import save_message
+            msg = await save_message(
+                user_id=message.from_user.id,
+                message_type="text",
+                content=f"[AI استفسار غير مجاب] {q}",
+            )
+            await forward_to_admins(message.bot, msg, message.from_user)
     else:
         await message.answer(
             "⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.",
