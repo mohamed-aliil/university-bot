@@ -71,8 +71,8 @@ async def main() -> None:
     dp.include_router(channels.router)
     dp.include_router(materials.router)
     dp.include_router(admin.router)
-    dp.include_router(messages.router)
     dp.include_router(ai.router)
+    dp.include_router(messages.router)
     dp.include_router(channels.channel_router)
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
 
