@@ -373,7 +373,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 message_type="text",
                 content=f"[طلب AI]\n{q}\n\nسجل المحادثة:\n{ai_context}",
             )
-            await forward_to_admins(message.bot, msg, message.from_user)
+            await forward_to_admins(message, "text", msg.id)
     else:
         await message.answer(
             "⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.",
