@@ -1876,16 +1876,19 @@ async def show_next_unread(target, state: FSMContext) -> None:
 
     messages = await get_unread_messages()
     if not messages:
-        await bot.send_message(chat_id=chat_id, text="✅ لا يوجد مرسلات.", reply_markup=await admin_main_keyboard(admin_id))
-        await state.clear()
+        await state.set_state(ReviewState.browsing)
+        reply_kb = review_reply_keyboard(muted=False, has_prev=False, has_next=False)
+        await bot.send_message(chat_id=chat_id, text="✅ لا يوجد مرسلات.", reply_markup=reply_kb)
         return
 
     data = await state.get_data()
     current_idx = data.get("queue_index", 0)
 
     if current_idx >= len(messages):
-        await bot.send_message(chat_id=chat_id, text="✅ انتهت المراجعة!\nلا يوجد مرسلات جدد.", reply_markup=await admin_main_keyboard(admin_id))
-        await state.clear()
+        await state.set_state(ReviewState.browsing)
+        reply_kb = review_reply_keyboard(muted=False, has_prev=False, has_next=False)
+        await bot.send_message(chat_id=chat_id, text="✅ انتهت المراجعة!\nلا يوجد مرسلات جدد.", reply_markup=reply_kb)
+        return
         return
 
     msg = messages[current_idx]
