@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     CHANNEL_USERNAME: str = "@Moezabj7"
     NEWS_CHANNEL_ID: str = "-1003830457482"
     GEMINI_API_KEYS: str = ""
+    GROQ_API_KEY: str = ""
 
     @property
     def admin_ids(self) -> List[int]:
