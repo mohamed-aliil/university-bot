@@ -6,7 +6,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, get_content_links, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites
+from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, get_content_links, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites, is_ai_active
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -171,6 +171,9 @@ async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
 
 @router.message(F.text == "نَافِذَة الـ AI")
 async def ai_user_start(message: Message, state: FSMContext) -> None:
+    if not is_ai_active():
+        await message.answer("🛑 المساعد الذكي متوقف حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
+        return
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await message.answer(
@@ -192,6 +195,11 @@ async def ai_user_back(message: Message, state: FSMContext) -> None:
 async def ai_user_question(message: Message, state: FSMContext) -> None:
     q = message.text.strip()
     if not q:
+        return
+
+    if not is_ai_active():
+        await state.clear()
+        await message.answer("🛑 المساعد الذكي متوقف حالياً.", reply_markup=main_keyboard())
         return
 
     data = await state.get_data()

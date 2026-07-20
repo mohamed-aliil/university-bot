@@ -9,7 +9,7 @@ from .reply import (
     customize_news_keyboard, quick_reply_keyboard, quick_reply_inline_keyboard,
     stop_choice_keyboard, communication_keyboard, materials_settings_keyboard,
     confirm_cleanup_keyboard, review_reply_keyboard,
-    ai_admin_keyboard, ai_user_keyboard,
+    ai_admin_keyboard, ai_user_keyboard, ai_settings_keyboard,
 )
 
 __all__ = [
@@ -23,5 +23,5 @@ __all__ = [
     "customize_news_keyboard", "quick_reply_keyboard", "quick_reply_inline_keyboard",
     "stop_choice_keyboard", "communication_keyboard", "materials_settings_keyboard",
     "confirm_cleanup_keyboard", "review_reply_keyboard",
-    "ai_admin_keyboard", "ai_user_keyboard",
+    "ai_admin_keyboard", "ai_user_keyboard", "ai_settings_keyboard",
 ]

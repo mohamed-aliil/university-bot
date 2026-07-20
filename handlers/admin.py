@@ -13,8 +13,9 @@ from database.crud import (
     get_unread_messages, get_user_messages, mark_message_read,
     save_reply_log, save_admin_action,
     cleanup_old_data, get_db_table_stats, _fmt_size,
+    is_ai_active, set_ai_active, is_ai_hidden, set_ai_hidden,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard, ai_settings_keyboard, main_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -1271,6 +1272,60 @@ async def logs_users(message: Message) -> None:
         lines.append(f"👤 {user_name} (🆔 {m.user_id})\n💬 {content}\n🕐 {time}")
     out = "📋 **آخر 20 رسالة من المستخدمين:**\n\n" + "\n─────\n".join(lines)
     await message.answer(out)
+
+
+@router.message(SuperAdminFilter(), F.text == "🤖 إعدادات AI")
+async def ai_settings_panel(message: Message) -> None:
+    active = is_ai_active()
+    hidden = is_ai_hidden()
+    status = "🟢 يعمل" if active else "🔴 متوقف"
+    hidden_status = "مخفي 🙈" if hidden else "ظاهر 👁"
+    await message.answer(
+        f"🤖 إعدادات AI\nالحالة: {status}\nالزر: {hidden_status}",
+        reply_markup=ai_settings_keyboard(),
+    )
+
+
+@router.message(SuperAdminFilter(), F.text == "⏹ إيقاف AI مع إعلام")
+async def ai_stop_with_notify(message: Message) -> None:
+    set_ai_active(False)
+    from database.crud import get_all_users
+    users = await get_all_users()
+    sent = 0
+    for u in users:
+        try:
+            await message.bot.send_message(
+                u.user_id,
+                "🛑 تم إيقاف المساعد الذكي (نَافِذَة الـ AI) مؤقتاً للصيانة. سنعاود التشغيل قريباً.",
+            )
+            sent += 1
+        except Exception:
+            pass
+    await message.answer(f"✅ تم إيقاف AI وإعلام {sent} مستخدم.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "🔇 إيقاف AI صامت")
+async def ai_stop_silent(message: Message) -> None:
+    set_ai_active(False)
+    await message.answer("🔴 تم إيقاف AI بدون إعلام.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل AI")
+async def ai_start(message: Message) -> None:
+    set_ai_active(True)
+    await message.answer("🟢 تم تشغيل AI.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "🙈 إخفاء الزر")
+async def ai_hide_button(message: Message) -> None:
+    set_ai_hidden(True)
+    await message.answer("🙈 تم إخفاء زر نَافِذَة الـ AI من المستخدمين.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "👁 إظهار الزر")
+async def ai_show_button(message: Message) -> None:
+    set_ai_hidden(False)
+    await message.answer("👁 تم إظهار زر نَافِذَة الـ AI للمستخدمين.", reply_markup=ai_settings_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")

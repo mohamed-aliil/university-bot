@@ -4,6 +4,8 @@ from .database import async_session
 from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
+AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
+AI_BUTTON_HIDDEN_FILE = Path(__file__).parent.parent / "data" / ".ai_hidden"
 
 
 def is_bot_active() -> bool:
@@ -16,6 +18,30 @@ def set_bot_active(active: bool) -> None:
         BOT_ACTIVE_FILE.touch()
     else:
         BOT_ACTIVE_FILE.unlink(missing_ok=True)
+
+
+def is_ai_active() -> bool:
+    return AI_ACTIVE_FILE.exists()
+
+
+def set_ai_active(active: bool) -> None:
+    AI_ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if active:
+        AI_ACTIVE_FILE.touch()
+    else:
+        AI_ACTIVE_FILE.unlink(missing_ok=True)
+
+
+def is_ai_hidden() -> bool:
+    return AI_BUTTON_HIDDEN_FILE.exists()
+
+
+def set_ai_hidden(hidden: bool) -> None:
+    AI_BUTTON_HIDDEN_FILE.parent.mkdir(parents=True, exist_ok=True)
+    if hidden:
+        AI_BUTTON_HIDDEN_FILE.touch()
+    else:
+        AI_BUTTON_HIDDEN_FILE.unlink(missing_ok=True)
 
 async def get_user(user_id: int) -> User | None:
     async with async_session() as session:

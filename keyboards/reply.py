@@ -1,17 +1,19 @@
 from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from config import settings
+from pathlib import Path
+
+AI_BUTTON_HIDDEN_FILE = Path(__file__).parent.parent / "data" / ".ai_hidden"
 
 
 def main_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="نَافِذَة التَّوَاصُل")],
-            [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
-            [KeyboardButton(text="نَافِذَة الـ AI")],
-        ],
-        resize_keyboard=True,
-    )
+    kb = [
+        [KeyboardButton(text="نَافِذَة التَّوَاصُل")],
+        [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
+    ]
+    if not AI_BUTTON_HIDDEN_FILE.exists():
+        kb.append([KeyboardButton(text="نَافِذَة الـ AI")])
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
 def moderator_keyboard(unread_count: int = 0) -> ReplyKeyboardMarkup:
@@ -110,6 +112,7 @@ def customize_news_keyboard() -> ReplyKeyboardMarkup:
 def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text="⏹ إيقاف البوت"), KeyboardButton(text="▶️ تشغيل البوت")],
+        [KeyboardButton(text="🤖 إعدادات AI")],
         [KeyboardButton(text="📚 إعدادات المواد")],
         [KeyboardButton(text="📋 السجلات")],
         [KeyboardButton(text="📡 تخصيص الأخبار"), KeyboardButton(text="📡 إدارة القنوات")],
@@ -118,6 +121,18 @@ def settings_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
         [KeyboardButton(text="🔙 رجوع")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def ai_settings_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="⏹ إيقاف AI مع إعلام"), KeyboardButton(text="🔇 إيقاف AI صامت")],
+            [KeyboardButton(text="▶️ تشغيل AI")],
+            [KeyboardButton(text="🙈 إخفاء الزر"), KeyboardButton(text="👁 إظهار الزر")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def channels_keyboard() -> ReplyKeyboardMarkup:
