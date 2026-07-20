@@ -1,4 +1,5 @@
 import logging
+import re
 import aiohttp
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -287,7 +288,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
         "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
         "- المقالات والتنويهات المحفوظة تحتوي إعلانات رسمية — اعتمد عليها بالإجابة عن المواعيد والإعلانات.\n"
-        "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم أين هي بالضبط وارسل له الرابط.\n"
+        "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم باسم المادة فقط بدون إرسال الرابط — الرابط سيرسل تلقائياً.\n"
         "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
         "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
         "- **الأهم**: إذا ما لقيت الإجابة في السياق أو المستخدم طلب شيء يحتاج مشرف (تسجيل، تغيير، إضافة، استفسار خاص، شكوى، طلب مادة غير موجودة)، "
@@ -300,9 +301,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
 
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
-        await message.answer(answer, reply_markup=ai_user_keyboard())
         # Try to forward actual files from Telegram links in the answer
-        import re
         for tme_link in re.findall(r"https?://t\.me/([a-zA-Z0-9_]+)/(\d+)", answer):
             username, msg_id = tme_link[0], int(tme_link[1])
             try:
@@ -314,6 +313,12 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
                 )
             except Exception:
                 pass
+        # Strip Telegram links from displayed text (files already forwarded)
+        clean_answer = re.sub(r"https?://t\.me/\S+", "", answer).strip()
+        # Clean up double spaces / empty lines
+        clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
+        if clean_answer:
+            await message.answer(clean_answer, reply_markup=ai_user_keyboard())
         # Save to history
         history.append({"user": q, "assistant": answer})
         await state.update_data(history=history)
