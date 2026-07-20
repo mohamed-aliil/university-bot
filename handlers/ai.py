@@ -212,7 +212,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
 
 
 async def _ai_user_question(message: Message, state: FSMContext) -> None:
-    q = message.text.strip()
+    q = (message.text or message.caption or "").strip()
     if not q:
         return
 
