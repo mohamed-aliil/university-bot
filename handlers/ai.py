@@ -168,7 +168,7 @@ async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
 
 # ─── User AI interface (conversation) ───
 
-@router.message(F.text == "🤖 نَافِذَة الـ AI")
+@router.message(F.text == "نَافِذَة الـ AI")
 async def ai_user_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
