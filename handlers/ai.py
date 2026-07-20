@@ -5,7 +5,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
 from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders
-from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, admin_main_keyboard, main_keyboard, cancel_keyboard
+from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini, is_college_question, find_best_qa
 
 logger = logging.getLogger(__name__)
@@ -137,6 +137,7 @@ async def ai_upload_pdf_file(message: Message, state: FSMContext) -> None:
 @router.message(AdminFilter(), F.text == "🔙 رجوع")
 async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
     await state.clear()
+    from handlers.admin import admin_main_keyboard
     await message.answer("🔝 القائمة الرئيسية", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 
