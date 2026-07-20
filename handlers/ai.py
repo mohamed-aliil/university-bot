@@ -282,7 +282,8 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
         f"🔗 شجرة المتطلبات الدراسية:\n{prereqs_context}\n\n"
         "📌 تعليمات:\n"
-        "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده.\n"
+        "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده حتى لو فيه أخطاء إملائية.\n"
+        "- صحح الأخطاء الإملائية البسيطة وافهم السؤال.\n"
         "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
         "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
         "- المقالات والتنويهات المحفوظة تحتوي إعلانات رسمية — اعتمد عليها بالإجابة عن المواعيد والإعلانات.\n"
@@ -444,7 +445,7 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
     admin_system_prompt = (
         "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
-        "تحدث بالعربية.\n\n"
+        "تحدث بالعربية. افهم الأخطاء الإملائية وصححها.\n\n"
         "⚡ يمكنك تنفيذ الأوامر التالية إذا طلبها المشرف:\n"
         "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
         "- [DEL_QA] الرقم ← حذف سؤال/جواب برقمه\n"
@@ -604,23 +605,33 @@ async def ai_admin_view_articles(message: Message, state: FSMContext) -> None:
         chunk = "\n\n".join(lines[i:i+5])
         await message.answer(f"📋 المقالات:\n\n{chunk}")
     await message.answer(
-        "لحذف مقال أرسل: حذف [الرقم]\nمثال: حذف 3",
+        "لحذف مقال أرسل: حذف [الرقم]\nمثال: حذف 3\nأو لحذف عدة: حذف 3 5 7",
         reply_markup=ai_admin_keyboard(),
     )
 
 
-@router.message(AdminFilter(), F.text.regex(r"حذف\s+(\d+)"))
+@router.message(AdminFilter(), F.text.startswith("حذف "))
 async def ai_admin_delete_article(message: Message, state: FSMContext) -> None:
-    import re
-    m = re.match(r"حذف\s+(\d+)", message.text)
-    if not m:
+    text = message.text.strip()
+    parts = text.split()
+    if len(parts) < 2:
         return
-    article_id = int(m.group(1))
-    ok = await delete_article(article_id)
-    if ok:
-        await message.answer("✅ تم حذف المقال.", reply_markup=ai_admin_keyboard())
-    else:
-        await message.answer("❌ المقال غير موجود.", reply_markup=ai_admin_keyboard())
+    ids = set()
+    for p in parts[1:]:
+        try:
+            ids.add(int(p))
+        except ValueError:
+            pass
+    if not ids:
+        return
+    deleted = 0
+    for art_id in ids:
+        if await delete_article(art_id):
+            deleted += 1
+    await message.answer(
+        f"✅ تم حذف {deleted} من {len(ids)} مقال" if deleted else "❌ لم يتم حذف أي مقال",
+        reply_markup=ai_admin_keyboard(),
+    )
 
 
 # ─── Admin: المتطلبات الدراسية ───
