@@ -151,14 +151,15 @@ async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
     await message.answer("🔝 القائمة الرئيسية", reply_markup=await admin_main_keyboard(message.from_user.id))
 
 
-# ─── User AI interface ───
+# ─── User AI interface (conversation) ───
 
 @router.message(F.text == "🤖 استفسار ذكي")
 async def ai_user_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIState.waiting_for_question)
+    await state.update_data(history=[])
     await message.answer(
         "🤖 مرحباً بك في الاستفسار الذكي!\n\n"
-        "اسأل أي سؤال وسأحاول مساعدتك.\n"
+        "هذه محادثة جديدة — اسأل أي سؤال وسأحاول مساعدتك.\n"
         "مثال: موعد امتحان الرياضيات، شيتات الكلية، إلخ.\n\n"
         "أو استخدم 🔙 رجوع للعودة.",
         reply_markup=ai_user_keyboard(),
@@ -177,7 +178,10 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
-    # Build context from Q&A, materials, articles, and prerequisites
+    data = await state.get_data()
+    history: list[dict] = data.get("history", [])
+
+    # Build static context from Q&A, materials, articles, and prerequisites
     qa_list = await get_all_qa()
     qa_context = "\n".join(
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
@@ -203,10 +207,18 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         for p in prereqs_list
     ) if prereqs_list else ""
 
+    # Build conversation history
+    history_lines = []
+    for turn in history[-10:]:  # last 10 exchanges max
+        history_lines.append(f"المستخدم: {turn['user']}")
+        history_lines.append(f"المساعد: {turn['assistant']}")
+    history_context = "\n".join(history_lines)
+
     system_prompt = (
         "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
         "تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
+        "هذه محادثة مستمرة — تذكر السياق والرسائل السابقة.\n\n"
         "تعليمات:\n"
         "1. رحب بالمستخدم وتحدث معه بشكل طبيعي (مرحبا، كيف حالك، إلخ).\n"
         "2. للأسئلة الخاصة بالكلية (مواعيد، مواد، شيتات، إلخ)، استخدم المعلومات الموجودة في السياق أدناه.\n"
@@ -215,16 +227,24 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "5. المتطلبات الدراسية (أسفل) توضح أي مادة تفتح أي مادة أخرى (prerequisite chain).\n"
         "6. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
         "7. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
-        "8. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
+        "8. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n"
+        "9. تذكر المحادثة السابقة — استمر في نفس الموضوع.\n\n"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
         f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
         f"🔗 المتطلبات الدراسية:\n{prereqs_context}"
     )
 
-    answer = await call_gemini(q, system_prompt=system_prompt)
+    user_prompt = q
+    if history_context:
+        user_prompt = f"سجل المحادثة السابقة:\n{history_context}\n\nالسؤال الحالي:\n{q}"
+
+    answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
         await message.answer(answer, reply_markup=ai_user_keyboard())
+        # Save to history
+        history.append({"user": q, "assistant": answer})
+        await state.update_data(history=history)
         # Notify admins if the answer says it doesn't know
         if "سأبلغ المشرفين" in answer or "إشعار المشرفين" in answer:
             from handlers.messages import forward_to_admins
