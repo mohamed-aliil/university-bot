@@ -8,6 +8,7 @@ def main_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="نَافِذَة التَّوَاصُل")],
             [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
+            [KeyboardButton(text="🤖 استفسار ذكي")],
         ],
         resize_keyboard=True,
     )
@@ -50,7 +51,7 @@ def super_admin_keyboard(unread_count: int = 0, show_admins: bool = True) -> Rep
         [KeyboardButton(text="📚 إدارة المواد")],
         [KeyboardButton(text=msgs_btn), KeyboardButton(text="👥 الإدارة")],
         [KeyboardButton(text="💬 التواصل"), KeyboardButton(text="⚙️ الإعدادات")],
-        [KeyboardButton(text="🔄 تحديث")],
+        [KeyboardButton(text="🤖 الذكاء الاصطناعي"), KeyboardButton(text="🔄 تحديث")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
@@ -357,6 +358,26 @@ async def quick_reply_keyboard() -> ReplyKeyboardMarkup:
         kb.append(row)
     kb.append([KeyboardButton(text="✏️ رد مخصص"), KeyboardButton(text="❌ إلغاء")])
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
+
+
+def ai_admin_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة سؤال/جواب"), KeyboardButton(text="➖ حذف سؤال/جواب")],
+            [KeyboardButton(text="📋 عرض الأسئلة"), KeyboardButton(text="📄 رفع ملف سياق")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def ai_user_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 

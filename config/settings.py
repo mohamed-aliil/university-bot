@@ -13,10 +13,15 @@ class Settings(BaseSettings):
     DATABASE_URL: str = "sqlite+aiosqlite:///data/database.sqlite3"
     CHANNEL_USERNAME: str = "@Moezabj7"
     NEWS_CHANNEL_ID: str = "-1003830457482"
+    GEMINI_API_KEYS: str = ""
 
     @property
     def admin_ids(self) -> List[int]:
         return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip()]
+
+    @property
+    def gemini_keys(self) -> List[str]:
+        return [x.strip() for x in self.GEMINI_API_KEYS.split(",") if x.strip()]
 
 
 settings = Settings()

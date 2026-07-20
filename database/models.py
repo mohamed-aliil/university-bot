@@ -156,3 +156,19 @@ class AdminNotification(Base):
     chat_id = Column(BigInteger, nullable=False)
     notification_message_id = Column(BigInteger, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class QAPair(Base):
+    __tablename__ = "qa_pairs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    question = Column(Text, nullable=False)
+    answer = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+
+
+class PDFContext(Base):
+    __tablename__ = "pdf_contexts"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String(255), nullable=False)
+    file_path = Column(String(512), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)

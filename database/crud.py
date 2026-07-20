@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -714,3 +714,55 @@ def _fmt_size(bytes_val: int) -> str:
     elif bytes_val >= 1024:
         return f"{bytes_val / 1024:.1f} KB"
     return f"{bytes_val} B"
+
+
+async def add_qa(question: str, answer: str) -> QAPair:
+    async with async_session() as session:
+        qa = QAPair(question=question, answer=answer)
+        session.add(qa)
+        await session.commit()
+        await session.refresh(qa)
+        return qa
+
+
+async def delete_qa(qa_id: int) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(QAPair).where(QAPair.id == qa_id))
+        qa = result.scalar_one_or_none()
+        if qa:
+            await session.delete(qa)
+            await session.commit()
+            return True
+        return False
+
+
+async def get_all_qa() -> list[QAPair]:
+    async with async_session() as session:
+        result = await session.execute(select(QAPair).order_by(QAPair.created_at.desc()))
+        return list(result.scalars().all())
+
+
+async def save_pdf_context(name: str, file_path: str) -> PDFContext:
+    async with async_session() as session:
+        pdf = PDFContext(name=name, file_path=file_path)
+        session.add(pdf)
+        await session.commit()
+        await session.refresh(pdf)
+        return pdf
+
+
+async def delete_pdf_context(pdf_id: int) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(PDFContext).where(PDFContext.id == pdf_id))
+        pdf = result.scalar_one_or_none()
+        if pdf:
+            await session.delete(pdf)
+            await session.commit()
+            return True
+        return False
+
+
+async def get_all_pdfs() -> list[PDFContext]:
+    async with async_session() as session:
+        result = await session.execute(select(PDFContext).order_by(PDFContext.created_at.desc()))
+        return list(result.scalars().all())

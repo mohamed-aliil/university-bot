@@ -636,7 +636,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
             return
         from keyboards.reply import main_keyboard
         from handlers.messages import ContactState
-        if text in ("نَافِذَة التَّوَاصُل", "نَافِذَة الـمَوَادّ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة"):
+        if text in ("نَافِذَة التَّوَاصُل", "نَافِذَة الـمَوَادّ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة", "🤖 استفسار ذكي"):
             await state.clear()
             if text == "نَافِذَة التَّوَاصُل":
                 await state.set_state(ContactState.waiting_for_message)
