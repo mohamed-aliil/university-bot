@@ -270,11 +270,11 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده.\n"
         "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
         "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
-        "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم أين هي بالضبط:\n"
-        "  مثال: 'هذه المادة موجودة في مجلد الرياضيات ← شيتات ← اضغط على الرابط التالي'\n"
+        "- إذا وجدت المادة المطلوبة في الشجرة، أخبر المستخدم أين هي بالضبط وارسل له الرابط.\n"
         "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
         "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
-        "- إذا ما لقيت الإجابة في السياق، قل 'سأبلغ المشرفين'."
+        "- **الأهم**: إذا ما لقيت الإجابة في السياق أو المستخدم طلب شيء يحتاج مشرف (تسجيل، تغيير، إضافة، استفسار خاص، شكوى، طلب مادة غير موجودة)، "
+        "قل حرفياً: 'سأبلغ المشرفين 📢' وأخبرهم بالطلب."
     )
 
     user_prompt = q
@@ -287,14 +287,29 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         # Save to history
         history.append({"user": q, "assistant": answer})
         await state.update_data(history=history)
-        # Notify admins if the answer says it doesn't know
-        if "سأبلغ المشرفين" in answer or "إشعار المشرفين" in answer:
+        # Notify admins if needed
+        needs_admin = (
+            "سأبلغ المشرفين" in answer
+            or "📢" in answer
+            or "إشعار المشرفين" in answer
+        )
+        # Also check user question for direct requests
+        user_needs_admin = any(w in q for w in [
+            "قول للمشرف", "بلغ المشرف", "كلم المشرف", "شكوى",
+            "دير", "سوي", "اعمل", "غير", "ضيف", "زيد", "نقص",
+            "ابلغ", "المشرفين", "للإدارة", "الادارة",
+        ])
+        if needs_admin or user_needs_admin:
             from handlers.messages import forward_to_admins
             from database.crud import save_message
+            ai_context = "\n".join(
+                f"المستخدم: {turn['user']}\nالمساعد: {turn['assistant']}"
+                for turn in history[-5:]
+            )
             msg = await save_message(
                 user_id=message.from_user.id,
                 message_type="text",
-                content=f"[AI استفسار غير مجاب] {q}",
+                content=f"[طلب AI]\n{q}\n\nسجل المحادثة:\n{ai_context}",
             )
             await forward_to_admins(message.bot, msg, message.from_user)
     else:
