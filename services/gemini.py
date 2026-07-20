@@ -31,7 +31,6 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
     messages.append({"role": "user", "content": prompt})
 
     MODELS = [
-        "mixtral-8x7b-32768",
         "openai/gpt-oss-120b",
         "qwen/qwen3.6-27b",
         "gpt-oss-120b",
