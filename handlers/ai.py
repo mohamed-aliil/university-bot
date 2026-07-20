@@ -73,24 +73,39 @@ async def ai_delete_qa_start(message: Message, state: FSMContext) -> None:
         lines.append(f"🔹 {qa.id}: {q_short}")
     await state.set_state(AIAdminState.waiting_delete_id)
     await message.answer(
-        "📋 الأسئلة الموجودة:\n\n" + "\n".join(lines[-20:]) + "\n\nأرسل الرقم للحذف:",
+        "📋 الأسئلة الموجودة:\n\n" + "\n".join(lines[-20:]) + "\n\nأرسل رقم السؤال للحذف\n(أو عدة أرقام كل رقم في سطر):",
         reply_markup=cancel_keyboard(),
     )
 
 
 @router.message(AIAdminState.waiting_delete_id, AdminFilter())
 async def ai_delete_qa_confirm(message: Message, state: FSMContext) -> None:
-    try:
-        qa_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ رقم غير صالح.")
+    text = message.text.strip()
+    ids = set()
+    for line in text.splitlines():
+        line = line.strip()
+        try:
+            ids.add(int(line))
+        except ValueError:
+            pass
+    if not ids:
+        await message.answer("❌ أرسل رقماً واحداً أو عدة أرقام كل رقم في سطر.")
         return
-    ok = await delete_qa(qa_id)
+    deleted = 0
+    not_found = 0
+    for qa_id in ids:
+        ok = await delete_qa(qa_id)
+        if ok:
+            deleted += 1
+        else:
+            not_found += 1
     await state.clear()
-    if ok:
-        await message.answer("✅ تم حذف السؤال.", reply_markup=ai_admin_keyboard())
-    else:
-        await message.answer("❌ الرقم غير موجود.", reply_markup=ai_admin_keyboard())
+    parts = []
+    if deleted:
+        parts.append(f"✅ تم حذف {deleted} سؤال/جواب")
+    if not_found:
+        parts.append(f"❌ {not_found} غير موجودة")
+    await message.answer(" | ".join(parts), reply_markup=ai_admin_keyboard())
 
 
 @router.message(AdminFilter(), F.text == "📋 عرض الأسئلة")
@@ -462,12 +477,20 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
     elif answer.startswith("[DEL_QA]"):
         parts = answer.replace("[DEL_QA]", "", 1).strip()
-        try:
-            qa_id = int(parts)
-            ok = await delete_qa(qa_id)
-            await message.answer(f"✅ تم حذف السؤال {qa_id}" if ok else "❌ الرقم غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم السؤال.", reply_markup=cancel_keyboard())
+        ids = set()
+        for token in parts.replace(",", " ").split():
+            try:
+                ids.add(int(token))
+            except ValueError:
+                pass
+        if not ids:
+            await message.answer("❌ أرسل أرقام السؤوال.", reply_markup=cancel_keyboard())
+        else:
+            deleted = 0
+            for qa_id in ids:
+                if await delete_qa(qa_id):
+                    deleted += 1
+            await message.answer(f"✅ تم حذف {deleted} من {len(ids)}", reply_markup=cancel_keyboard())
 
     elif answer.startswith("[ADD_ARTICLE]"):
         parts = answer.replace("[ADD_ARTICLE]", "", 1).strip().split("|")
