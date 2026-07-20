@@ -1,4 +1,5 @@
 import logging
+import aiohttp
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -7,6 +8,7 @@ from filters import AdminFilter
 from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
+from config import settings
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -22,6 +24,9 @@ class AIAdminState(StatesGroup):
     waiting_delete_id = State()
     waiting_pdf_name = State()
     waiting_pdf_file = State()
+    waiting_image_analysis = State()
+    waiting_file_analysis = State()
+    admin_chat = State()
 
 
 @router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
@@ -127,8 +132,10 @@ async def ai_upload_pdf_file(message: Message, state: FSMContext) -> None:
     pdf_dir = "data/pdfs"
     os.makedirs(pdf_dir, exist_ok=True)
     dest = os.path.join(pdf_dir, f"{name}_{doc.file_id[:20]}.pdf")
-    file = await message.bot.get_file(doc.file_id)
-    await file.download(destination=dest)
+    file_info = await message.bot.get_file(doc.file_id)
+    file_bytes = await message.bot.download_file(file_info.file_path)
+    with open(dest, "wb") as f:
+        f.write(file_bytes.read())
     pdf = await save_pdf_context(name, dest)
     await state.clear()
     await message.answer(f"✅ تم رفع {name} بنجاح.", reply_markup=ai_admin_keyboard())
@@ -215,3 +222,131 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
             "⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.",
             reply_markup=ai_user_keyboard(),
         )
+
+
+# ─── Admin: Image Analysis ───
+
+@router.message(AdminFilter(), F.text == "🧠 تحليل صورة")
+async def ai_admin_image_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.waiting_image_analysis)
+    await message.answer("🖼 أرسل الصورة التي تريد تحليلها:", reply_markup=cancel_keyboard())
+
+
+@router.message(AIAdminState.waiting_image_analysis, AdminFilter(), F.photo)
+async def ai_admin_image_analyze(message: Message, state: FSMContext) -> None:
+    photo = message.photo[-1]
+    file_info = await message.bot.get_file(photo.file_id)
+    file_bytes = await message.bot.download_file(file_info.file_path)
+    import base64
+    b64 = base64.b64encode(file_bytes.read()).decode()
+
+    prompt = "حلل هذه الصورة بالتفصيل باللغة العربية. ماذا ترى فيها؟"
+    answer = await _call_groq_vision(prompt, b64)
+    await state.clear()
+    if answer:
+        await message.answer(f"🧠 التحليل:\n\n{answer}", reply_markup=ai_admin_keyboard())
+    else:
+        await message.answer("⚠️ فشل تحليل الصورة.", reply_markup=ai_admin_keyboard())
+
+
+@router.message(AIAdminState.waiting_image_analysis, AdminFilter())
+async def ai_admin_image_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("❌ يرجى إرسال صورة.")
+
+
+# ─── Admin: File Analysis ───
+
+@router.message(AdminFilter(), F.text == "📄 تحليل ملف")
+async def ai_admin_file_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.waiting_file_analysis)
+    await message.answer("📄 أرسل الملف (PDF, صورة, نص) لتحليله:", reply_markup=cancel_keyboard())
+
+
+@router.message(AIAdminState.waiting_file_analysis, AdminFilter(), F.document)
+async def ai_admin_file_analyze(message: Message, state: FSMContext) -> None:
+    doc = message.document
+    file_info = await message.bot.get_file(doc.file_id)
+    file_bytes = await message.bot.download_file(file_info.file_path)
+    content = file_bytes.read()
+    text = content.decode("utf-8", errors="ignore")[:3000]
+
+    prompt = f"حلل هذا المحتوى بالعربية:\n\n{text}"
+    answer = await call_gemini(prompt)
+    await state.clear()
+    if answer:
+        await message.answer(f"📄 تحليل الملف:\n\n{answer}", reply_markup=ai_admin_keyboard())
+    else:
+        await message.answer("⚠️ فشل تحليل الملف.", reply_markup=ai_admin_keyboard())
+
+
+@router.message(AIAdminState.waiting_file_analysis, AdminFilter())
+async def ai_admin_file_invalid(message: Message, state: FSMContext) -> None:
+    await message.answer("❌ يرجى إرسال ملف.")
+
+
+# ─── Admin: Smart Chat ───
+
+@router.message(AdminFilter(), F.text == "🤖 محادثة ذكية")
+async def ai_admin_chat_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.admin_chat)
+    await message.answer(
+        "🤖 محادثة ذكية مع المساعد.\nاسأل أي شيء أو استخدم 🔙 رجوع للخروج.",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(AIAdminState.admin_chat, AdminFilter(), F.text == "❌ إلغاء")
+async def ai_admin_chat_exit(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("🔝 القائمة", reply_markup=ai_admin_keyboard())
+
+
+@router.message(AIAdminState.admin_chat, AdminFilter())
+async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
+    q = message.text or message.caption or ""
+    if not q:
+        return
+    answer = await call_gemini(q)
+    if answer:
+        await message.answer(answer, reply_markup=cancel_keyboard())
+    else:
+        await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
+
+
+# ─── Helper: Groq Vision ───
+
+async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
+    api_key = settings.GROQ_API_KEY
+    if not api_key:
+        return None
+    from config import settings
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    payload = {
+        "model": "openai/gpt-oss-120b",
+        "messages": [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": prompt},
+                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                ],
+            }
+        ],
+        "max_tokens": 1024,
+    }
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload, headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+                choices = data.get("choices", [])
+                if choices:
+                    return choices[0].get("message", {}).get("content", "").strip()
+    except Exception:
+        return None
+    return None
