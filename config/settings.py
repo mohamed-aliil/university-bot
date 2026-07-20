@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     NEWS_CHANNEL_ID: str = "-1003830457482"
     GEMINI_API_KEYS: str = ""
     GROQ_API_KEY: str = ""
+    GROQ_API_KEYS: str = ""
 
     @property
     def admin_ids(self) -> List[int]:
@@ -23,6 +24,13 @@ class Settings(BaseSettings):
     @property
     def gemini_keys(self) -> List[str]:
         return [x.strip() for x in self.GEMINI_API_KEYS.split(",") if x.strip()]
+
+    @property
+    def groq_keys(self) -> List[str]:
+        keys = [x.strip() for x in self.GROQ_API_KEYS.split(",") if x.strip()]
+        if self.GROQ_API_KEY and self.GROQ_API_KEY not in keys:
+            keys.insert(0, self.GROQ_API_KEY)
+        return keys
 
 
 settings = Settings()

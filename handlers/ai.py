@@ -745,7 +745,10 @@ async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
     )
 
 async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
-    api_key = settings.GROQ_API_KEY
+    keys = settings.groq_keys
+    if not keys:
+        return None
+    api_key = keys[0]
     if not api_key:
         return None
     headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}

@@ -6,10 +6,10 @@ logger = logging.getLogger(__name__)
 
 
 async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
-    # Try Groq first (free, generous quota)
-    groq_key = settings.GROQ_API_KEY
-    if groq_key:
-        result = await _call_groq(prompt, system_prompt, groq_key)
+    # Try Groq keys first (free, generous quota)
+    groq_keys = settings.groq_keys
+    for key in groq_keys:
+        result = await _call_groq(prompt, system_prompt, key)
         if result:
             return result
 
