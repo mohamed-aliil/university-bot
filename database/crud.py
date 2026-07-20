@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -793,4 +793,48 @@ async def delete_article(article_id: int) -> bool:
 async def get_all_articles() -> list[Article]:
     async with async_session() as session:
         result = await session.execute(select(Article).order_by(Article.created_at.desc()))
+        return list(result.scalars().all())
+
+
+# ─── Course Prerequisites ───
+
+async def clear_prerequisites() -> None:
+    async with async_session() as session:
+        await session.execute(delete(CoursePrerequisite))
+        await session.commit()
+
+
+async def add_prerequisite(course_code: str, course_name: str, prerequisite_code: str, prerequisite_name: str) -> CoursePrerequisite:
+    async with async_session() as session:
+        cp = CoursePrerequisite(
+            course_code=course_code,
+            course_name=course_name,
+            prerequisite_code=prerequisite_code,
+            prerequisite_name=prerequisite_name,
+        )
+        session.add(cp)
+        await session.commit()
+        await session.refresh(cp)
+        return cp
+
+
+async def get_all_prerequisites() -> list[CoursePrerequisite]:
+    async with async_session() as session:
+        result = await session.execute(select(CoursePrerequisite).order_by(CoursePrerequisite.course_code))
+        return list(result.scalars().all())
+
+
+async def get_prerequisites_for(course_code: str) -> list[CoursePrerequisite]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(CoursePrerequisite).where(CoursePrerequisite.course_code == course_code)
+        )
+        return list(result.scalars().all())
+
+
+async def get_courses_opened_by(prerequisite_code: str) -> list[CoursePrerequisite]:
+    async with async_session() as session:
+        result = await session.execute(
+            select(CoursePrerequisite).where(CoursePrerequisite.prerequisite_code == prerequisite_code)
+        )
         return list(result.scalars().all())

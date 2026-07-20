@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, delete_article, get_all_articles
+from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -29,6 +29,7 @@ class AIAdminState(StatesGroup):
     admin_chat = State()
     waiting_article_title = State()
     waiting_article_text = State()
+    waiting_prereqs = State()
 
 
 @router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
@@ -176,7 +177,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
-    # Build context from Q&A, materials, and articles
+    # Build context from Q&A, materials, articles, and prerequisites
     qa_list = await get_all_qa()
     qa_context = "\n".join(
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
@@ -196,6 +197,12 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         f"عنوان: {a.title}\nمحتوى: {a.content[:500]}" for a in articles_list
     ) if articles_list else ""
 
+    prereqs_list = await get_all_prerequisites()
+    prereqs_context = "\n".join(
+        f"{p.course_name} ({p.course_code}) ← يحتاج: {p.prerequisite_name} ({p.prerequisite_code})"
+        for p in prereqs_list
+    ) if prereqs_list else ""
+
     system_prompt = (
         "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
@@ -205,12 +212,14 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "2. للأسئلة الخاصة بالكلية (مواعيد، مواد، شيتات، إلخ)، استخدم المعلومات الموجودة في السياق أدناه.\n"
         "3. إذا سأل عن شيء موجود في قاعدة الأسئلة، أجب بالإجابة الموجودة.\n"
         "4. المقالات والتنويهات المحفوظة (أسفل) تحتوي على إعلانات وتنويهات رسمية — ابحث فيها عن إجابة السؤال.\n"
-        "5. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
-        "6. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
-        "7. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
+        "5. المتطلبات الدراسية (أسفل) توضح أي مادة تفتح أي مادة أخرى (prerequisite chain).\n"
+        "6. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
+        "7. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
+        "8. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
-        f"📰 المقالات والتنويهات:\n{articles_context}"
+        f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
+        f"🔗 المتطلبات الدراسية:\n{prereqs_context}"
     )
 
     answer = await call_gemini(q, system_prompt=system_prompt)
@@ -408,6 +417,99 @@ async def ai_admin_delete_article(message: Message, state: FSMContext) -> None:
         await message.answer("✅ تم حذف المقال.", reply_markup=ai_admin_keyboard())
     else:
         await message.answer("❌ المقال غير موجود.", reply_markup=ai_admin_keyboard())
+
+
+# ─── Admin: المتطلبات الدراسية ───
+
+@router.message(AdminFilter(), F.text == "🔗 المتطلبات الدراسية")
+async def ai_admin_prereqs_start(message: Message, state: FSMContext) -> None:
+    await message.answer(
+        "🔗 أرسل شجرة المتطلبات الدراسية كما هي (نصاً)، وسأقوم باستخراج العلاقات وحفظها.\n\n"
+        "مثال:\n"
+        "مقدمة في تقنية المعلومات (ITGS111)\n"
+        "تفتح: مقدمة في هندسة البرمجيات (ITGS213)\n\n"
+        "أو أرسل (عرض) لرؤية المحفوظ، أو (مسح) لحذف الكل.",
+        reply_markup=cancel_keyboard(),
+    )
+    await state.set_state(AIAdminState.waiting_prereqs)
+
+
+@router.message(AdminFilter(), AIAdminState.waiting_prereqs, F.text.lower().strip() == "عرض")
+async def ai_admin_prereqs_view(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    prereqs = await get_all_prerequisites()
+    if not prereqs:
+        await message.answer("❌ لا توجد متطلبات دراسية محفوظة.", reply_markup=ai_admin_keyboard())
+        return
+    lines = []
+    for p in prereqs:
+        lines.append(f"🔸 {p.course_name} ({p.course_code}) ← يحتاج {p.prerequisite_name} ({p.prerequisite_code})")
+    for i in range(0, len(lines), 15):
+        chunk = "\n".join(lines[i:i+15])
+        await message.answer(f"🔗 المتطلبات الدراسية:\n\n{chunk}", reply_markup=ai_admin_keyboard())
+    await message.answer(f"📊 المجموع: {len(prereqs)} علاقة", reply_markup=ai_admin_keyboard())
+
+
+@router.message(AdminFilter(), AIAdminState.waiting_prereqs, F.text.lower().strip() == "مسح")
+async def ai_admin_prereqs_clear(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await clear_prerequisites()
+    await message.answer("✅ تم مسح جميع المتطلبات الدراسية.", reply_markup=ai_admin_keyboard())
+
+
+@router.message(AdminFilter(), AIAdminState.waiting_prereqs)
+async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
+    text = message.text or ""
+    if len(text) < 20:
+        await message.answer("❌ النص قصير جداً.")
+        return
+
+    await message.answer("🤔 جاري تحليل الشجرة واستخراج العلاقات...")
+    await clear_prerequisites()
+
+    prompt = (
+        "استخرج من النص التالي علاقات المتطلبات الدراسية ( prerequisite relationships ).\n"
+        "النص يصف مواد دراسية و المواد التي تفتحها (تفتح = prerequisite for).\n"
+        "أعد النتيجة بهذا التنسيق بالضبط:\n"
+        "---\n"
+        "المادة: اسم المادة (رمزها)\n"
+        "تفتح: اسم المادة المفتوحة (رمزها)\n"
+        "---\n"
+        "المادة: اسم المادة (رمزها)\n"
+        "تفتح: اسم المادة المفتوحة (رمزها)\n"
+        "---\n\n"
+        f"النص:\n{text}"
+    )
+    answer = await call_gemini(prompt)
+    if not answer:
+        await message.answer("⚠️ فشل التحليل.", reply_markup=ai_admin_keyboard())
+        await state.clear()
+        return
+
+    import re
+    pattern = r"المادة:\s*(.+?)\s*\(([^)]+)\)\s*\nتفتح:\s*(.+?)\s*\(([^)]+)\)"
+    matches = re.findall(pattern, answer)
+    if not matches:
+        await message.answer("⚠️ لم أستطع استخراج العلاقات. أرسل النص بشكل أوضح.", reply_markup=ai_admin_keyboard())
+        await state.clear()
+        return
+
+    count = 0
+    for course_name, course_code, prereq_name, prereq_code in matches:
+        await add_prerequisite(
+            course_code=course_code.strip(),
+            course_name=course_name.strip(),
+            prerequisite_code=prereq_code.strip(),
+            prerequisite_name=prereq_name.strip(),
+        )
+        count += 1
+
+    await state.clear()
+    await message.answer(
+        f"✅ تم حفظ {count} علاقة prerequisite بنجاح.\n\n"
+        "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً.",
+        reply_markup=ai_admin_keyboard(),
+    )
 
 async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
     api_key = settings.GROQ_API_KEY

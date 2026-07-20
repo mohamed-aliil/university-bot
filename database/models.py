@@ -180,3 +180,13 @@ class Article(Base):
     title = Column(String(255), nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class CoursePrerequisite(Base):
+    __tablename__ = "course_prerequisites"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    course_code = Column(String(50), nullable=False, index=True)
+    course_name = Column(String(255), nullable=False)
+    prerequisite_code = Column(String(50), nullable=False)
+    prerequisite_name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
