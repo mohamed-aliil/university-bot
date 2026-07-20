@@ -300,11 +300,15 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         history_lines.append(f"المساعد: {turn['assistant']}")
     history_context = "\n".join(history_lines)
 
+    history_note = ""
+    if history_context:
+        history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
+
     system_prompt = (
         "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
         "تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
-        "هذه محادثة مستمرة — تذكر السياق والرسائل السابقة.\n\n"
+        f"{history_note}"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
         f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
@@ -323,8 +327,6 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     )
 
     user_prompt = q
-    if history_context:
-        user_prompt = f"سجل المحادثة السابقة:\n{history_context}\n\nالسؤال الحالي:\n{q}"
 
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
