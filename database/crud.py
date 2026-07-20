@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 
@@ -765,4 +765,32 @@ async def delete_pdf_context(pdf_id: int) -> bool:
 async def get_all_pdfs() -> list[PDFContext]:
     async with async_session() as session:
         result = await session.execute(select(PDFContext).order_by(PDFContext.created_at.desc()))
+        return list(result.scalars().all())
+
+
+# ─── Articles ───
+
+async def add_article(title: str, content: str) -> Article:
+    async with async_session() as session:
+        article = Article(title=title, content=content)
+        session.add(article)
+        await session.commit()
+        await session.refresh(article)
+        return article
+
+
+async def delete_article(article_id: int) -> bool:
+    async with async_session() as session:
+        result = await session.execute(select(Article).where(Article.id == article_id))
+        article = result.scalar_one_or_none()
+        if article:
+            await session.delete(article)
+            await session.commit()
+            return True
+        return False
+
+
+async def get_all_articles() -> list[Article]:
+    async with async_session() as session:
+        result = await session.execute(select(Article).order_by(Article.created_at.desc()))
         return list(result.scalars().all())

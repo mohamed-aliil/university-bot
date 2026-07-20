@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders
+from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, get_all_articles
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -27,7 +27,8 @@ class AIAdminState(StatesGroup):
     waiting_image_analysis = State()
     waiting_file_analysis = State()
     admin_chat = State()
-    waiting_announcement = State()
+    waiting_article_title = State()
+    waiting_article_text = State()
 
 
 @router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
@@ -175,7 +176,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
-    # Build context from Q&A and materials
+    # Build context from Q&A, materials, and articles
     qa_list = await get_all_qa()
     qa_context = "\n".join(
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
@@ -190,6 +191,11 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         folder_parts.append(f"{f.name}: {', '.join(names[:15])}")
     materials_context = "\n".join(folder_parts) if folder_parts else "لا توجد مواد بعد."
 
+    articles_list = await get_all_articles()
+    articles_context = "\n\n".join(
+        f"عنوان: {a.title}\nمحتوى: {a.content[:500]}" for a in articles_list
+    ) if articles_list else ""
+
     system_prompt = (
         "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
@@ -198,11 +204,13 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         "1. رحب بالمستخدم وتحدث معه بشكل طبيعي (مرحبا، كيف حالك، إلخ).\n"
         "2. للأسئلة الخاصة بالكلية (مواعيد، مواد، شيتات، إلخ)، استخدم المعلومات الموجودة في السياق أدناه.\n"
         "3. إذا سأل عن شيء موجود في قاعدة الأسئلة، أجب بالإجابة الموجودة.\n"
-        "4. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
-        "5. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
-        "6. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
+        "4. المقالات والتنويهات المحفوظة (أسفل) تحتوي على إعلانات وتنويهات رسمية — ابحث فيها عن إجابة السؤال.\n"
+        "5. إذا سأل عن شيء خاص بالكلية ولكن غير موجود في السياق، قل أنك ستبلغ المشرفين.\n"
+        "6. للأسئلة العامة (رياضيات، لغة، ثقافة، محادثة عادية) أجب بحرية.\n"
+        "7. لا تخترع معلومات عن الكلية. إذا لم تكن متأكداً، قل ذلك.\n\n"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
-        f"📁 المواد المتاحة:\n{materials_context}"
+        f"📁 المواد المتاحة:\n{materials_context}\n\n"
+        f"📰 المقالات والتنويهات:\n{articles_context}"
     )
 
     answer = await call_gemini(q, system_prompt=system_prompt)
@@ -314,66 +322,57 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
 
 
-# ─── Admin: تحليل الإعلانات والتنويهات ───
+# ─── Admin: إضافة مقال/إعلان ───
 
-@router.message(AdminFilter(), F.text == "📰 تحليل إعلان")
-async def ai_admin_announcement_start(message: Message, state: FSMContext) -> None:
-    await state.set_state(AIAdminState.waiting_announcement)
+@router.message(AdminFilter(), F.text == "📰 إضافة مقال")
+async def ai_admin_article_title(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.waiting_article_title)
     await message.answer(
-        "📰 أرسل نص الإعلان أو التنويه وسأقوم باستخراج الأسئلة والأجوبة منه وإضافتها تلقائياً.",
+        "✏️ أرسل عنوان المقال أو الإعلان (مثال: تنويه نتائج الامتحانات):\n\n"
+        "أو أرسل كلمة (لا) ليقوم المساعد بتوليد عنوان مناسب.",
         reply_markup=cancel_keyboard(),
     )
 
 
-@router.message(AIAdminState.waiting_announcement, AdminFilter())
-async def ai_admin_announcement_analyze(message: Message, state: FSMContext) -> None:
+@router.message(AIAdminState.waiting_article_title, AdminFilter())
+async def ai_admin_article_text_prompt(message: Message, state: FSMContext) -> None:
+    title = message.text.strip()
+    if title.lower() in ("لا", "لأ", "no"):
+        title = ""
+    await state.update_data(article_title=title)
+    await state.set_state(AIAdminState.waiting_article_text)
+    await message.answer(
+        "📝 أرسل نص المقال أو الإعلان كاملاً:\n\n"
+        "مثال: نقلاً عن م.محمد حموده، تنويه هام... إلخ",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(AIAdminState.waiting_article_text, AdminFilter())
+async def ai_admin_article_save(message: Message, state: FSMContext) -> None:
     text = message.text or message.caption or ""
     if not text or len(text) < 20:
-        await message.answer("❌ النص قصير جداً. أرسل الإعلان كاملاً.")
+        await message.answer("❌ النص قصير جداً. أرسل المحتوى كاملاً.")
         return
 
-    await message.answer("🤔 جاري تحليل الإعلان واستخراج الأسئلة...")
+    data = await state.get_data()
+    title = data.get("article_title", "")
 
-    prompt = (
-        "اقرأ هذا الإعلان ثم استخرج منه أسئلة وأجوبة محتملة قد يسألها طالب.\n"
-        "يجب أن تكون الأسئلة متنوعة وتغطي كل المعلومات المهمة في الإعلان.\n"
-        "أعد النتيجة بهذا التنسيق بالضبط:\n"
-        "---\n"
-        "س: السؤال الأول\n"
-        "ج: الجواب الأول\n"
-        "---\n"
-        "س: السؤال الثاني\n"
-        "ج: الجواب الثاني\n"
-        "---\n\n"
-        f"الإعلان:\n{text}"
-    )
-    answer = await call_gemini(prompt)
-    if not answer or "س:" not in answer:
-        await message.answer("⚠️ فشل في استخراج الأسئلة. حاول مرة أخرى.", reply_markup=ai_admin_keyboard())
-        await state.clear()
-        return
+    # Generate title if not provided
+    if not title:
+        await message.answer("🤔 جاري توليد عنوان مناسب...")
+        gen = await call_gemini(
+            f"اقرأ هذا النص واستخرج منه عنواناً مناسباً (جملة واحدة فقط، لا تزد):\n\n{text[:2000]}"
+        )
+        title = gen.strip().strip('"').strip("'") if gen else "مقال"
+        if len(title) > 200:
+            title = title[:200]
 
-    import re
-    pairs = re.findall(r"س:\s*(.*?)\nج:\s*(.*?)(?:\n---|$)", answer, re.DOTALL)
-    if not pairs:
-        await message.answer("⚠️ لم أتمكن من استخراج أزواج أسئلة.", reply_markup=ai_admin_keyboard())
-        await state.clear()
-        return
-
-    added = 0
-    for q, a in pairs:
-        q = q.strip()
-        a = a.strip()
-        if q and a:
-            existing = await get_all_qa()
-            if not any(e.question.strip().lower() == q.lower() for e in existing):
-                await add_qa(q, a)
-                added += 1
-
+    article = await add_article(title, text)
     await state.clear()
     await message.answer(
-        f"✅ تم استخراج وإضافة {added} سؤال/جواب من الإعلان:\n\n"
-        + "\n".join(f"📌 {q[:50]}…\n💬 {a[:50]}…" for q, a in pairs[:5]),
+        f"✅ تم حفظ المقال بنجاح:\n\n📰 {article.title}\n📝 {len(text)} حرف\n\n"
+        "عندما يسأل الطالب سؤالاً متعلقاً بهذا المقال، سيقوم المساعد بالبحث والإجابة تلقائياً.",
         reply_markup=ai_admin_keyboard(),
     )
 

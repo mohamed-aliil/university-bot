@@ -172,3 +172,11 @@ class PDFContext(Base):
     name = Column(String(255), nullable=False)
     file_path = Column(String(512), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class Article(Base):
+    __tablename__ = "articles"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
