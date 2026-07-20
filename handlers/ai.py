@@ -301,6 +301,19 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
         await message.answer(answer, reply_markup=ai_user_keyboard())
+        # Try to forward actual files from Telegram links in the answer
+        import re
+        for tme_link in re.findall(r"https?://t\.me/([a-zA-Z0-9_]+)/(\d+)", answer):
+            username, msg_id = tme_link[0], int(tme_link[1])
+            try:
+                chat = "@" + username
+                await message.bot.copy_message(
+                    chat_id=message.chat.id,
+                    from_chat_id=chat,
+                    message_id=msg_id,
+                )
+            except Exception:
+                pass
         # Save to history
         history.append({"user": q, "assistant": answer})
         await state.update_data(history=history)
