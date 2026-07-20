@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, get_all_articles
+from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, add_article, delete_article, get_all_articles
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -375,6 +375,39 @@ async def ai_admin_article_save(message: Message, state: FSMContext) -> None:
         "عندما يسأل الطالب سؤالاً متعلقاً بهذا المقال، سيقوم المساعد بالبحث والإجابة تلقائياً.",
         reply_markup=ai_admin_keyboard(),
     )
+
+
+@router.message(AdminFilter(), F.text == "📋 عرض المقالات")
+async def ai_admin_view_articles(message: Message, state: FSMContext) -> None:
+    articles = await get_all_articles()
+    if not articles:
+        await message.answer("❌ لا توجد مقالات.", reply_markup=ai_admin_keyboard())
+        return
+    lines = []
+    for a in articles:
+        c = a.content[:80].replace("\n", " ")
+        lines.append(f"🔹 {a.id}: {a.title}\n   📝 {c}…")
+    for i in range(0, len(lines), 5):
+        chunk = "\n\n".join(lines[i:i+5])
+        await message.answer(f"📋 المقالات:\n\n{chunk}")
+    await message.answer(
+        "لحذف مقال أرسل: حذف [الرقم]\nمثال: حذف 3",
+        reply_markup=ai_admin_keyboard(),
+    )
+
+
+@router.message(AdminFilter(), F.text.regex(r"حذف\s+(\d+)"))
+async def ai_admin_delete_article(message: Message, state: FSMContext) -> None:
+    import re
+    m = re.match(r"حذف\s+(\d+)", message.text)
+    if not m:
+        return
+    article_id = int(m.group(1))
+    ok = await delete_article(article_id)
+    if ok:
+        await message.answer("✅ تم حذف المقال.", reply_markup=ai_admin_keyboard())
+    else:
+        await message.answer("❌ المقال غير موجود.", reply_markup=ai_admin_keyboard())
 
 async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
     api_key = settings.GROQ_API_KEY
