@@ -173,9 +173,9 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await message.answer(
-        "🤖 مرحباً بك في نَافِذَة الـ AI!\n\n"
-        "هذه محادثة جديدة — اسأل أي سؤال وسأحاول مساعدتك.\n"
-        "مثال: موعد امتحان الرياضيات، شيتات الكلية، إلخ.\n\n"
+        "مرحباً بك في نَافِذَة الـ AI!\n"
+        "أنا نموذج ذكاء اصطناعي مُطوّر لبوت نَافِذَة، أعمل على معالجة أسئلتك ومساعدتك في كافة استفساراتك الجامعية خطوة بخطوة.\n"
+        "تفضل بكتابة سؤالك وسأجيبك فوراً!\n\n"
         "أو استخدم 🔙 رجوع للعودة.",
         reply_markup=ai_user_keyboard(),
     )
