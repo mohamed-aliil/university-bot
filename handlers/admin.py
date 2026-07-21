@@ -1294,19 +1294,7 @@ async def ai_settings_panel(message: Message) -> None:
 @router.message(SuperAdminFilter(), F.text == "⏹ إيقاف AI مع إعلام")
 async def ai_stop_with_notify(message: Message) -> None:
     set_ai_active(False)
-    from database.crud import get_all_users
-    users = await get_all_users()
-    sent = 0
-    for u in users:
-        try:
-            await message.bot.send_message(
-                u.user_id,
-                "🛑 تم إيقاف المساعد الذكي (نَافِذَة الـ AI) مؤقتاً للصيانة. سنعاود التشغيل قريباً.",
-            )
-            sent += 1
-        except Exception:
-            pass
-    await message.answer(f"✅ تم إيقاف AI وإعلام {sent} مستخدم.", reply_markup=ai_settings_keyboard())
+    await message.answer("🔴 تم إيقاف AI. المستخدمون سيرون الإعلام عند ضغط زر AI.", reply_markup=ai_settings_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🔇 إيقاف AI صامت")
