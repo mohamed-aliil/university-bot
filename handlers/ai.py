@@ -183,9 +183,9 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
             await state.clear()
             await message.answer("🔝", reply_markup=main_keyboard())
             return
-        await message.answer("🛑 المساعد الذكي متوقف حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
+        await message.answer("🛑 نَافِذَة الـ AI متوقفة حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
-    if has_agreed_ai(message.from_user.id):
+    if await has_agreed_ai(message.from_user.id):
         await state.set_state(AIState.waiting_for_question)
         await state.update_data(history=[])
         await message.answer(
@@ -220,7 +220,7 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
 @router.callback_query(AIState.waiting_agreement, F.data == "agree_ai")
 async def ai_user_agree(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
-    set_agreed_ai(callback.from_user.id)
+    await set_agreed_ai(callback.from_user.id)
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await callback.message.answer(

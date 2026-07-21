@@ -47,13 +47,30 @@ def set_ai_silent() -> None:
     AI_ACTIVE_FILE.touch()
 
 
-def has_agreed_ai(user_id: int) -> bool:
+async def has_agreed_ai(user_id: int) -> bool:
+    try:
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.user_id == user_id))
+            u = result.scalar_one_or_none()
+            if u is not None and hasattr(u, 'agreed_ai') and u.agreed_ai:
+                return True
+    except Exception:
+        pass
     return (AGREED_DIR / str(user_id)).exists()
 
 
-def set_agreed_ai(user_id: int) -> None:
+async def set_agreed_ai(user_id: int) -> None:
     AGREED_DIR.mkdir(parents=True, exist_ok=True)
     (AGREED_DIR / str(user_id)).touch()
+    try:
+        async with async_session() as session:
+            result = await session.execute(select(User).where(User.user_id == user_id))
+            u = result.scalar_one_or_none()
+            if u is not None and hasattr(u, 'agreed_ai'):
+                u.agreed_ai = True
+                await session.commit()
+    except Exception:
+        pass
 
 
 def save_error(source: str, detail: str) -> None:
