@@ -6,7 +6,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter
-from database.crud import add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs, get_folder, get_content_items, get_folders, get_content_links, add_article, delete_article, get_all_articles, clear_prerequisites, add_prerequisite, get_all_prerequisites, is_ai_active
+from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs,
+                           get_folder, get_content_items, get_folders, get_content_links,
+                           add_article, delete_article, get_all_articles, get_all_prerequisites,
+                           clear_prerequisites, add_prerequisite, is_ai_active,
+                           add_folder, remove_folder, add_content_item, remove_content_item,
+                           add_content_link, remove_content_link, ban_user, unban_user, get_user)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -518,23 +523,49 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     prereqs_list = await get_all_prerequisites()
     prereq_count = len(prereqs_list)
 
+    # Build folders/tree context for admin
+    async def _tf(parent_id: int = None, indent: int = 0) -> str:
+        lines = []
+        for f in await get_folders(parent_id):
+            lines.append(f"{'  ' * indent}• {f.name} (ID: {f.id})")
+            items = await get_content_items(f.id)
+            for it in items:
+                lines.append(f"{'  ' * (indent+1)}📄 {it.title or 'محتوى'} (ID: {it.id})")
+            child = await _tf(f.id, indent + 1)
+            if child:
+                lines.append(child)
+        return "\n".join(lines)
+    folders_tree = await _tf()
+
     admin_system_prompt = (
         "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
         "تحدث بالعربية. افهم الأخطاء الإملائية وصححها.\n\n"
         "⚡ يمكنك تنفيذ الأوامر التالية إذا طلبها المشرف:\n"
         "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
-        "- [DEL_QA] الرقم ← حذف سؤال/جواب برقمه\n"
+        "- [DEL_QA] الرقم1 الرقم2 ... ← حذف أسئلة بأرقامها\n"
         "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال\n"
         "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
         "- [LIST_QA] ← عرض كل الأسئلة\n"
         "- [LIST_ARTICLES] ← عرض كل المقالات\n"
-        "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية\n\n"
+        "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية\n"
+        "- [ADD_PREREQ] كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب\n"
+        "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للأب)\n"
+        "- [ADD_ITEM] ID_المجلد | عنوان المادة\n"
+        "- [ADD_LINK] ID_العنصر | رابط t.me/...\n"
+        "- [DEL_FOLDER] ID\n"
+        "- [DEL_ITEM] ID\n"
+        "- [DEL_LINK] ID\n"
+        "- [LIST_FOLDERS] ← عرض المجلدات والمواد\n"
+        "- [BAN] user_id ← حظر مستخدم\n"
+        "- [UNBAN] user_id ← إلغاء حظر\n"
+        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة\n\n"
         "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
         "استخدم الأمر المناسب من فوق.\n"
         "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n\n"
         f"الأسئلة المحفوظة: {qa_context}\n"
         f"المقالات: {art_context}\n"
-        f"المتطلبات الدراسية: {prereq_count} علاقة"
+        f"المتطلبات الدراسية: {prereq_count} علاقة\n"
+        f"المجلدات:\n{folders_tree[:2000]}"
     )
 
     answer = await call_gemini(q, system_prompt=admin_system_prompt)
@@ -606,6 +637,112 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     elif answer.startswith("[CLEAR_PREREQS]"):
         await clear_prerequisites()
         await message.answer("✅ تم مسح المتطلبات الدراسية.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_PREREQ]"):
+        parts = answer.replace("[ADD_PREREQ]", "", 1).strip().split("|")
+        if len(parts) >= 4:
+            cc, cn, pc, pn = [p.strip() for p in parts[:4]]
+            pr = await add_prerequisite(course_code=cc, course_name=cn, prerequisite_code=pc, prerequisite_name=pn)
+            await message.answer(f"✅ تم إضافة متطلب: {cn} ← يحتاج {pn}", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_FOLDER]"):
+        parts = answer.replace("[ADD_FOLDER]", "", 1).strip().split("|")
+        name = parts[0].strip()
+        parent_id = None
+        if len(parts) >= 2 and parts[1].strip().isdigit():
+            pid = int(parts[1].strip())
+            parent_id = pid if pid != 0 else None
+        f = await add_folder(name, parent_id)
+        await message.answer(f"✅ تم إضافة مجلد: {f.name} (ID: {f.id})", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_ITEM]"):
+        parts = answer.replace("[ADD_ITEM]", "", 1).strip().split("|")
+        if len(parts) >= 1 and parts[0].strip().isdigit():
+            fid = int(parts[0].strip())
+            title = parts[1].strip() if len(parts) >= 2 else None
+            ci = await add_content_item(fid, title)
+            await message.answer(f"✅ تم إضافة مادة: {ci.title or 'محتوى'} (ID: {ci.id})", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: ID_المجلد | عنوان المادة", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_LINK]"):
+        parts = answer.replace("[ADD_LINK]", "", 1).strip().split("|")
+        if len(parts) >= 2 and parts[0].strip().isdigit():
+            iid = int(parts[0].strip())
+            link = parts[1].strip()
+            cl = await add_content_link(iid, link)
+            await message.answer(f"✅ تم إضافة رابط (ID: {cl.id})", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: ID_العنصر | الرابط", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[DEL_FOLDER]"):
+        parts = answer.replace("[DEL_FOLDER]", "", 1).strip()
+        try:
+            fid = int(parts)
+            ok = await remove_folder(fid)
+            await message.answer(f"✅ تم حذف المجلد {fid}" if ok else "❌ المجلد غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم المجلد.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[DEL_ITEM]"):
+        parts = answer.replace("[DEL_ITEM]", "", 1).strip()
+        try:
+            iid = int(parts)
+            ok = await remove_content_item(iid)
+            await message.answer(f"✅ تم حذف المادة {iid}" if ok else "❌ المادة غير موجودة", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم المادة.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[DEL_LINK]"):
+        parts = answer.replace("[DEL_LINK]", "", 1).strip()
+        try:
+            lid = int(parts)
+            ok = await remove_content_link(lid)
+            await message.answer(f"✅ تم حذف الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم الرابط.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[LIST_FOLDERS]"):
+        ft = await _tf()
+        if ft:
+            for i in range(0, len(ft), 3500):
+                await message.answer(f"📂 المجلدات:\n{ft[i:i+3500]}", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ لا توجد مجلدات.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[BAN]"):
+        parts = answer.replace("[BAN]", "", 1).strip()
+        try:
+            uid = int(parts)
+            ok = await ban_user(uid)
+            await message.answer(f"✅ تم حظر {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم المستخدم.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[UNBAN]"):
+        parts = answer.replace("[UNBAN]", "", 1).strip()
+        try:
+            uid = int(parts)
+            ok = await unban_user(uid)
+            await message.answer(f"✅ تم إلغاء حظر {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=cancel_keyboard())
+        except ValueError:
+            await message.answer("❌ أرسل رقم المستخدم.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[VIEW_MESSAGES]"):
+        from database.crud import get_unread_messages, save_or_replace_user_message
+        msgs = await get_unread_messages()
+        if msgs:
+            for m in msgs[:10]:
+                u = await get_user(m.user_id)
+                uname = u.full_name if u else f"ID: {m.user_id}"
+                await message.answer(
+                    f"💬 من: {uname}\n🆔 {m.user_id}\n{m.content or m.caption or ''}",
+                    reply_markup=cancel_keyboard(),
+                )
+        else:
+            await message.answer("📭 لا توجد رسائل واردة.", reply_markup=cancel_keyboard())
 
     else:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
