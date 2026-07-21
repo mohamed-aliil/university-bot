@@ -1992,31 +1992,34 @@ async def show_next_unread(target, state: FSMContext) -> None:
     mtype = msg.message_type
     fid = msg.file_id
 
+    import html as _html
+    caption_clean = _html.escape(caption) if hasattr(_html, 'escape') else caption
+
     try:
         if mtype == "photo" and fid:
-            await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_photo(chat_id=chat_id, photo=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "video" and fid:
-            await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_video(chat_id=chat_id, video=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "document" and fid:
-            await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_document(chat_id=chat_id, document=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "audio" and fid:
-            await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_audio(chat_id=chat_id, audio=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "voice" and fid:
-            await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_voice(chat_id=chat_id, voice=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "sticker" and fid:
             await bot.send_sticker(chat_id=chat_id, sticker=fid)
-            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "animation" and fid:
-            await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=inline_kb)
+            await bot.send_animation(chat_id=chat_id, animation=fid, caption=caption, reply_markup=inline_kb, parse_mode=None)
         elif mtype == "video_note" and fid:
             await bot.send_video_note(chat_id=chat_id, video_note=fid)
-            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb, parse_mode=None)
         else:
-            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb)
+            await bot.send_message(chat_id=chat_id, text=caption, reply_markup=inline_kb, parse_mode=None)
     except Exception:
         import traceback as tb_mod
         tb_str = tb_mod.format_exc()
-        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None)
+        await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None, parse_mode=None)
         from aiogram.enums import ParseMode
         await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{html_mod.escape(tb_str[-1500:])}</code>", parse_mode=ParseMode.HTML)
 
