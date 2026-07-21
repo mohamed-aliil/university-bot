@@ -9,7 +9,7 @@ from filters import AdminFilter
 from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs,
                            get_folder, get_content_items, get_folders, get_content_links,
                            add_article, delete_article, get_all_articles, get_all_prerequisites,
-                           clear_prerequisites, add_prerequisite, is_ai_active,
+                            clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
                             add_folder, remove_folder, add_content_item, remove_content_item,
                             add_content_link, remove_content_link, ban_user, unban_user, get_user,
                             get_all_aliases, has_agreed_ai, set_agreed_ai)
@@ -179,6 +179,10 @@ async def ai_back_to_admin(message: Message, state: FSMContext) -> None:
 @router.message(F.text == "نَافِذَة الـ AI")
 async def ai_user_start(message: Message, state: FSMContext) -> None:
     if not is_ai_active():
+        if is_ai_silent():
+            await state.clear()
+            await message.answer("🔝", reply_markup=main_keyboard())
+            return
         await message.answer("🛑 المساعد الذكي متوقف حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
     if has_agreed_ai(message.from_user.id):

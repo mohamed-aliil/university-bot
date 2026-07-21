@@ -1299,8 +1299,9 @@ async def ai_stop_with_notify(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "🔇 إيقاف AI صامت")
 async def ai_stop_silent(message: Message) -> None:
-    set_ai_active(False)
-    await message.answer("🔴 تم إيقاف AI بدون إعلام.", reply_markup=ai_settings_keyboard())
+    from database.crud import set_ai_silent
+    set_ai_silent()
+    await message.answer("🔴 تم إيقاف AI بصمت.", reply_markup=ai_settings_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "▶️ تشغيل AI")

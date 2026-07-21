@@ -6,6 +6,7 @@ from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, Cont
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
 AI_BUTTON_HIDDEN_FILE = Path(__file__).parent.parent / "data" / ".ai_hidden"
+AI_SILENT_FILE = Path(__file__).parent.parent / "data" / ".ai_silent"
 AGREED_DIR = Path(__file__).parent.parent / "data" / "agreed_ai"
 
 
@@ -26,12 +27,23 @@ def is_ai_active() -> bool:
     return not AI_ACTIVE_FILE.exists()
 
 
+def is_ai_silent() -> bool:
+    return AI_SILENT_FILE.exists()
+
+
 def set_ai_active(active: bool) -> None:
     AI_ACTIVE_FILE.parent.mkdir(parents=True, exist_ok=True)
     if active:
-        AI_ACTIVE_FILE.unlink(missing_ok=True)  # Remove stop flag = active
+        AI_ACTIVE_FILE.unlink(missing_ok=True)
+        AI_SILENT_FILE.unlink(missing_ok=True)
     else:
-        AI_ACTIVE_FILE.touch()  # Create stop flag = stopped
+        AI_ACTIVE_FILE.touch()
+
+
+def set_ai_silent() -> None:
+    AI_SILENT_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AI_SILENT_FILE.touch()
+    AI_ACTIVE_FILE.touch()
 
 
 def has_agreed_ai(user_id: int) -> bool:
