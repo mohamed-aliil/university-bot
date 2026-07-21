@@ -387,7 +387,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
         # Strip CoT: find [Output Generation] marker (most reliable for this model)
-        gen_match = re.search(r"\[Output Generation\]\s*->\s*\"?(.*)", clean_answer, re.DOTALL)
+        gen_match = re.search(r"\[Output Generation\].*?->\s*\"?(.*)", clean_answer, re.DOTALL)
         if gen_match:
             clean_answer = gen_match.group(1).strip().rstrip('"')
         else:
@@ -793,7 +793,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
         clean = re.sub(r"<[^>]+>", "", clean)
         clean = clean.replace("**", "")
-        gen_match = re.search(r"\[Output Generation\]\s*->\s*\"?(.*)", clean, re.DOTALL)
+        gen_match = re.search(r"\[Output Generation\].*?->\s*\"?(.*)", clean, re.DOTALL)
         if gen_match:
             clean = gen_match.group(1).strip().rstrip('"')
         else:
