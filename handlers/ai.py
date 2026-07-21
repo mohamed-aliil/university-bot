@@ -368,6 +368,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 pass
         # Strip Telegram links from displayed text (files already forwarded)
         clean_answer = re.sub(r"https?://t\.me/\S+", "", answer).strip()
+        # Strip any HTML tags (AI models may return <think> tags etc.)
+        clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
         # Clean up double spaces / empty lines
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
         if clean_answer:
@@ -604,7 +606,8 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await message.answer("✅ تم مسح المتطلبات الدراسية.", reply_markup=cancel_keyboard())
 
     else:
-        await message.answer(answer, reply_markup=cancel_keyboard())
+        clean = re.sub(r"<[^>]+>", "", answer)
+        await message.answer(clean, reply_markup=cancel_keyboard())
 
 
 # ─── Admin: إضافة مقال/إعلان ───
