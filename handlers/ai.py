@@ -386,19 +386,42 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
-        # Strip CoT: find [Output Generation] marker (most reliable for this model)
+        # Strip CoT: find [Output Generation] marker first
         gen_match = re.search(r"\[Output Generation\].*?->\s*\"?(.*)", clean_answer, re.DOTALL)
         if gen_match:
             clean_answer = gen_match.group(1).strip().rstrip('"')
         else:
-            # Fallback: find last termination marker
-            for marker in ["Proceeds.", "Ready.", "All good.", "Output matches"]:
-                idx = clean_answer.rfind(marker)
-                if idx != -1:
-                    after = clean_answer[idx + len(marker):].strip()
-                    if after:
-                        clean_answer = after
-                        break
+            # Fallback: remove from "Here's a thinking process" or similar to end of analysis
+            # Strategy: find the first Arabic-only paragraph after the thinking process
+            paragraphs = re.split(r"\n\s*\n", clean_answer)
+            answer_parts = []
+            for p in paragraphs:
+                stripped = p.strip()
+                if not stripped:
+                    continue
+                # Count Arabic vs non-Arabic chars
+                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
+                total = len(stripped.strip())
+                # If mostly non-Arabic and looks like analysis, skip
+                if total > 0:
+                    arabic_ratio = arabic_count / total
+                else:
+                    arabic_ratio = 0
+                # Keep paragraph if: mostly Arabic, or it's short Arabic text
+                is_thinking = (
+                    re.match(r"^\d+\.\s", stripped)  # numbered "1. ..."
+                    or re.match(r"^-\s", stripped)   # bullet "- ..."
+                    or stripped.startswith("Here") 
+                    or stripped.startswith("Let")
+                    or stripped.startswith("Wait")
+                    or stripped.startswith("I'll")
+                    or stripped.startswith("Ok")
+                    or arabic_ratio < 0.3
+                )
+                if not is_thinking:
+                    answer_parts.append(stripped)
+            if answer_parts:
+                clean_answer = "\n\n".join(answer_parts)
             else:
                 # Last resort: strip from first Arabic char
                 m = re.search(r"[\u0600-\u06FF]", clean_answer)
@@ -797,9 +820,27 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         if gen_match:
             clean = gen_match.group(1).strip().rstrip('"')
         else:
-            m = re.search(r"[\u0600-\u06FF]", clean)
-            if m:
-                clean = clean[m.start():].strip()
+            paragraphs = re.split(r"\n\s*\n", clean)
+            answer_parts = []
+            for p in paragraphs:
+                stripped = p.strip()
+                if not stripped:
+                    continue
+                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
+                total = len(stripped)
+                arabic_ratio = arabic_count / total if total > 0 else 0
+                is_thinking = (
+                    re.match(r"^\d+\.\s", stripped)
+                    or re.match(r"^-\s", stripped)
+                    or stripped.startswith("Here")
+                    or stripped.startswith("Let")
+                    or stripped.startswith("Wait")
+                    or stripped.startswith("I'll")
+                    or arabic_ratio < 0.3
+                )
+                if not is_thinking:
+                    answer_parts.append(stripped)
+            clean = "\n\n".join(answer_parts) if answer_parts else clean
         await message.answer(clean, reply_markup=cancel_keyboard())
 
 
