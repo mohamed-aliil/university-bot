@@ -10,9 +10,9 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                            get_folder, get_content_items, get_folders, get_content_links,
                            add_article, delete_article, get_all_articles, get_all_prerequisites,
                            clear_prerequisites, add_prerequisite, is_ai_active,
-                           add_folder, remove_folder, add_content_item, remove_content_item,
-                           add_content_link, remove_content_link, ban_user, unban_user, get_user,
-                           get_all_aliases)
+                            add_folder, remove_folder, add_content_item, remove_content_item,
+                            add_content_link, remove_content_link, ban_user, unban_user, get_user,
+                            get_all_aliases, has_agreed_ai, set_agreed_ai)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -181,6 +181,17 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
     if not is_ai_active():
         await message.answer("🛑 المساعد الذكي متوقف حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
+    if has_agreed_ai(message.from_user.id):
+        await state.set_state(AIState.waiting_for_question)
+        await state.update_data(history=[])
+        await message.answer(
+            "مرحباً بك في نَافِذَة الـ AI!\n"
+            "أنا نموذج ذكاء اصطناعي مُطوّر لبوت نَافِذَة، أعمل على معالجة أسئلتك ومساعدتك في كافة استفساراتك الجامعية خطوة بخطوة.\n"
+            "تفضل بكتابة سؤالك وسأجيبك فوراً!\n\n"
+            "أو استخدم 🔙 رجوع للعودة.",
+            reply_markup=ai_user_keyboard(),
+        )
+        return
     await state.set_state(AIState.waiting_agreement)
     terms = (
         "اتفاقية استخدام نَافِذَة الـ AI\n\n"
@@ -205,6 +216,7 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
 @router.callback_query(AIState.waiting_agreement, F.data == "agree_ai")
 async def ai_user_agree(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
+    set_agreed_ai(callback.from_user.id)
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await callback.message.answer(
