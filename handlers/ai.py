@@ -386,6 +386,10 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
+        # Strip English thinking/reasoning at start (keep only from first Arabic char)
+        match = re.search(r"[\u0600-\u06FF]", clean_answer)
+        if match:
+            clean_answer = clean_answer[match.start():].strip()
         # Clean up double spaces / empty lines
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
         if clean_answer:
@@ -759,6 +763,9 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
         clean = re.sub(r"<[^>]+>", "", clean)
         clean = clean.replace("**", "")
+        match = re.search(r"[\u0600-\u06FF]", clean)
+        if match:
+            clean = clean[match.start():].strip()
         await message.answer(clean, reply_markup=cancel_keyboard())
 
 
