@@ -5,23 +5,30 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Simple rate limiter: track last request time per API key
-_last_req_time: dict[str, float] = {}
+# Token bucket rate limiter: 30 tokens max, refill 0.5/sec (30 RPM)
+_tokens: dict[str, float] = {}
+_last_refill: dict[str, float] = {}
 _rate_lock = asyncio.Lock()
 
 async def _wait_for_rate_limit(api_key: str) -> None:
-    """Ensure max 30 requests/minute per API key (2s between requests)."""
+    """Allow burst of 30 requests, then throttle to 0.5 req/sec."""
+    import time
     async with _rate_lock:
-        import time
         now = time.monotonic()
-        last = _last_req_time.get(api_key, 0)
+        tokens = _tokens.get(api_key, 30.0)
+        last = _last_refill.get(api_key, now)
         elapsed = now - last
-        min_gap = 2.0  # 30 RPM = 1 req per 2 seconds
-        if elapsed < min_gap:
-            wait = min_gap - elapsed
+        tokens = min(30.0, tokens + elapsed * 0.5)
+        _last_refill[api_key] = now
+        if tokens < 1.0:
+            wait = (1.0 - tokens) / 0.5
             logger.debug("Rate limit: waiting %.2fs for key %s...", wait, api_key[:8])
             await asyncio.sleep(wait)
-        _last_req_time[api_key] = time.monotonic()
+            tokens = 0.0
+            _last_refill[api_key] = time.monotonic()
+        else:
+            tokens -= 1.0
+        _tokens[api_key] = tokens
 
 
 async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
