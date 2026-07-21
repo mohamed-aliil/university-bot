@@ -397,14 +397,13 @@ def ai_user_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def agreement_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✅ موافقة")],
-            [KeyboardButton(text="❌ عدم الموافقة")],
-        ],
-        resize_keyboard=True,
-    )
+def agreement_keyboard() -> InlineKeyboardMarkup:
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.button(text="✅ موافقة", callback_data="agree_ai")
+    builder.button(text="❌ عدم الموافقة", callback_data="disagree_ai")
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 

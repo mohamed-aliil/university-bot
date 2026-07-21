@@ -183,30 +183,31 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         return
     await state.set_state(AIState.waiting_agreement)
     terms = (
-        "📋 اتفاقية استخدام نَافِذَة الـ AI\n\n"
+        "اتفاقية استخدام نَافِذَة الـ AI\n\n"
         "قبل البدء، الرجاء الاطلاع على الشروط التالية:\n\n"
-        "1️⃣ طبيعة الخدمة: هذا البوت يعمل بالذكاء الاصطناعي وهو قيد التجربة، "
+        "1. طبيعة الخدمة: هذا البوت يعمل بالذكاء الاصطناعي وهو قيد التجربة، "
         "وقد تظهر به بعض الأخطاء أو معلومات غير دقيقة من وقت لآخر.\n\n"
-        "2️⃣ المسؤولية: باستخدامك للبوت، فإنك تتحمل كامل المسؤولية عن كيفية "
+        "2. المسؤولية: باستخدامك للبوت، فإنك تتحمل كامل المسؤولية عن كيفية "
         "استخدام المعلومات المقدمة.\n\n"
-        "3️⃣ البيانات: قد يتم استخدام بعض المحادثات بشكل مجهول بهدف تحسين "
+        "3. البيانات: قد يتم استخدام بعض المحادثات بشكل مجهول بهدف تحسين "
         "الخدمة وتطويرها.\n\n"
-        "4️⃣ الاستخدام المقبول: يُمنع استخدام البوت لإرسال محتوى مسيء أو "
+        "4. الاستخدام المقبول: يُمنع استخدام البوت لإرسال محتوى مسيء أو "
         "مخالف للأنظمة. يحق للإدارة إيقاف الوصول عن أي مستخدم يخالف ذلك.\n\n"
-        "5️⃣ التعديلات: يحق لإدارة البوت تعديل هذه الشروط أو إيقاف الخدمة "
+        "5. التعديلات: يحق لإدارة البوت تعديل هذه الشروط أو إيقاف الخدمة "
         "في أي وقت دون إشعار مسبق.\n\n"
-        "6️⃣ التواصل: عند وجود أي استفسار، يُرجى التواصل عبر زر "
+        "6. التواصل: عند وجود أي استفسار، يُرجى التواصل عبر زر "
         "\"💬 التواصل\" في القائمة الرئيسية.\n\n"
         "بالضغط على \"✅ موافقة\"، فإنك توافق على جميع ما ورد أعلاه."
     )
     await message.answer(terms, reply_markup=agreement_keyboard())
 
 
-@router.message(AIState.waiting_agreement, F.text == "✅ موافقة")
-async def ai_user_agree(message: Message, state: FSMContext) -> None:
+@router.callback_query(AIState.waiting_agreement, F.data == "agree_ai")
+async def ai_user_agree(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
-    await message.answer(
+    await callback.message.answer(
         "مرحباً بك في نَافِذَة الـ AI!\n"
         "أنا نموذج ذكاء اصطناعي مُطوّر لبوت نَافِذَة، أعمل على معالجة أسئلتك ومساعدتك في كافة استفساراتك الجامعية خطوة بخطوة.\n"
         "تفضل بكتابة سؤالك وسأجيبك فوراً!\n\n"
@@ -215,10 +216,16 @@ async def ai_user_agree(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.message(AIState.waiting_agreement, F.text.in_(["❌ عدم الموافقة", "🔙 رجوع"]))
-async def ai_user_disagree(message: Message, state: FSMContext) -> None:
+@router.callback_query(AIState.waiting_agreement, F.data == "disagree_ai")
+async def ai_user_disagree(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
     await state.clear()
-    await message.answer("تم العودة إلى القائمة الرئيسية.", reply_markup=main_keyboard())
+    await callback.message.answer("تم العودة إلى القائمة الرئيسية.", reply_markup=main_keyboard())
+
+
+@router.message(AIState.waiting_agreement)
+async def ai_user_agreement_fallback(message: Message, state: FSMContext) -> None:
+    await message.answer("الرجاء استخدام الأزرار أعلاه للموافقة أو الرفض.", reply_markup=agreement_keyboard())
 
 
 @router.message(AIState.waiting_for_question, F.text == "🔙 رجوع")
