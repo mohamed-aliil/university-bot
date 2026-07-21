@@ -8,6 +8,7 @@ AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
 AI_BUTTON_HIDDEN_FILE = Path(__file__).parent.parent / "data" / ".ai_hidden"
 AI_SILENT_FILE = Path(__file__).parent.parent / "data" / ".ai_silent"
 AGREED_DIR = Path(__file__).parent.parent / "data" / "agreed_ai"
+ERRORS_FILE = Path(__file__).parent.parent / "data" / "errors.log"
 
 
 def is_bot_active() -> bool:
@@ -53,6 +54,36 @@ def has_agreed_ai(user_id: int) -> bool:
 def set_agreed_ai(user_id: int) -> None:
     AGREED_DIR.mkdir(parents=True, exist_ok=True)
     (AGREED_DIR / str(user_id)).touch()
+
+
+def save_error(source: str, detail: str) -> None:
+    ERRORS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ts = _utcnow().strftime("%Y-%m-%d %H:%M:%S")
+    entry = f"[{ts}] [{source}] {detail}\n"
+    try:
+        with open(ERRORS_FILE, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        pass
+
+
+def get_errors(limit: int = 10) -> str:
+    if not ERRORS_FILE.exists():
+        return "لا توجد أخطاء."
+    try:
+        with open(ERRORS_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        tail = lines[-limit:]
+        return "".join(tail) or "لا توجد أخطاء."
+    except Exception:
+        return "خطأ في قراءة سجل الأخطاء."
+
+
+def clear_errors() -> None:
+    try:
+        ERRORS_FILE.unlink(missing_ok=True)
+    except Exception:
+        pass
 
 
 def is_ai_hidden() -> bool:

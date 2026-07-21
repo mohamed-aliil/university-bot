@@ -908,6 +908,8 @@ async def messages_queue_button(message: Message, state: FSMContext) -> None:
     except Exception as e:
         tb = traceback.format_exc()
         logger.exception("Error in messages_queue_button")
+        from database.crud import save_error
+        save_error("messages_queue_button", tb[-1000:])
         try:
             from aiogram.enums import ParseMode
             await message.answer(
@@ -1320,6 +1322,13 @@ async def ai_hide_button(message: Message) -> None:
 async def ai_show_button(message: Message) -> None:
     set_ai_hidden(False)
     await message.answer("👁 تم إظهار زر نَافِذَة الـ AI للمستخدمين.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "📋 سجل الأخطاء")
+async def ai_errors_button(message: Message) -> None:
+    from database.crud import get_errors
+    errors = get_errors(15)
+    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>", parse_mode=ParseMode.HTML)
 
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
@@ -2008,6 +2017,8 @@ async def show_next_unread(target, state: FSMContext) -> None:
     except Exception:
         import traceback as tb_mod
         tb_str = tb_mod.format_exc()
+        from database.crud import save_error
+        save_error("show_next_unread", tb_str[-1000:])
         await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None, parse_mode=None)
         from aiogram.enums import ParseMode
         await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{html_mod.escape(tb_str[-1500:])}</code>", parse_mode=ParseMode.HTML)
