@@ -11,7 +11,8 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                            add_article, delete_article, get_all_articles, get_all_prerequisites,
                            clear_prerequisites, add_prerequisite, is_ai_active,
                            add_folder, remove_folder, add_content_item, remove_content_item,
-                           add_content_link, remove_content_link, ban_user, unban_user, get_user)
+                           add_content_link, remove_content_link, ban_user, unban_user, get_user,
+                           get_all_aliases)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
 from services.gemini import call_gemini
 from config import settings
@@ -322,6 +323,17 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     if not prereqs_context:
         prereqs_context = "لا توجد متطلبات دراسية محفوظة."
 
+    # Build aliases context
+    try:
+        aliases_list = await get_all_aliases()
+    except Exception:
+        aliases_list = []
+    aliases_context = ""
+    for a in aliases_list:
+        aliases_context += f"- '{a.alias}' ← {a.course_name} ({a.course_code})\n"
+    if aliases_list:
+        aliases_context = "📌 الأسماء البديلة للمواد (المستخدمون يسألون بها):\n" + aliases_context
+
     # Build conversation history
     history_lines = []
     for turn in history[-10:]:  # last 10 exchanges max
@@ -340,6 +352,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n"
         "ممنوع كتابة أي تفكير داخلي أو تحليل بالإنگليزية — جاوب مباشرة بالعربية فقط ولا تكتب anything in English.\n\n"
         f"{history_note}"
+        f"{aliases_context}"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
         f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
@@ -354,13 +367,31 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
         "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
         "- **الأهم**: إذا ما لقيت الإجابة في السياق أو المستخدم طلب شيء يحتاج مشرف (تسجيل، تغيير، إضافة، استفسار خاص، شكوى، طلب مادة غير موجودة)، "
-        "قل حرفياً: 'سأبلغ المشرفين 📢' وأخبرهم بالطلب."
+        "قل حرفياً: 'سأبلغ المشرفين 📢' وأخبرهم بالطلب.\n"
+        "- إذا استخدم المستخدم اسم مادة غير موجود في الشجرة لكنك تعرف المادة المقصودة (مثلاً قال 'سي' وأنت تعرف أنها ITGS112)، "
+        "اسأله: 'هل تقصد [اسم المادة] (رمزها)؟'. لو قال نعم، اكتب في ردك: [SAVE_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة\n"
     )
 
     user_prompt = q
 
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
+        # Process [SAVE_ALIAS] command from AI response
+        save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)
+        if save_match:
+            alias_name = save_match.group(1).strip().lower()
+            course_code = save_match.group(2).strip()
+            course_name = save_match.group(3).strip()
+            try:
+                from database.crud import add_alias
+                await add_alias(alias_name, course_code, course_name)
+                # Also send confirmation to user
+                try:
+                    await message.answer(f"✅ تم حفظ الاسم البديل '{alias_name}' ← {course_name}")
+                except Exception:
+                    pass
+            except Exception:
+                pass
         # Try to forward actual files from Telegram links in the answer (deduplicated)
         forwarded = set()
         for tme_link in re.findall(r"https?://t\.me/([a-zA-Z0-9_]+)/(\d+)", answer):
@@ -603,6 +634,13 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         return "\n".join(lines)
     folders_tree = await _tf()
 
+    # Build aliases context
+    try:
+        admin_aliases = await get_all_aliases()
+    except Exception:
+        admin_aliases = []
+    aliases_str = "\n".join(f"'{a.alias}' ← {a.course_name} ({a.course_code})" for a in admin_aliases) or "لا يوجد"
+
     admin_system_prompt = (
         "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
         "تحدث بالعربية. افهم الأخطاء الإملائية وصححها.\n"
@@ -626,13 +664,15 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [LIST_FOLDERS] ← عرض المجلدات والمواد\n"
         "- [BAN] user_id ← حظر مستخدم\n"
         "- [UNBAN] user_id ← إلغاء حظر\n"
-        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة\n\n"
+        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة\n"
+        "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل\n\n"
         "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
         "استخدم الأمر المناسب من فوق.\n"
         "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n\n"
         f"الأسئلة المحفوظة: {qa_context}\n"
         f"المقالات: {art_context}\n"
         f"المتطلبات الدراسية: {prereq_count} علاقة\n"
+        f"الأسماء البديلة:\n{aliases_str}\n"
         f"المجلدات:\n{folders_tree[:2000]}"
     )
 
@@ -811,6 +851,17 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 )
         else:
             await message.answer("📭 لا توجد رسائل واردة.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_ALIAS]"):
+        parts = answer.replace("[ADD_ALIAS]", "", 1).strip().split("|")
+        if len(parts) >= 3:
+            alias_name = parts[0].strip().lower()
+            course_code = parts[1].strip()
+            course_name = parts[2].strip()
+            ca = await add_alias(alias_name, course_code, course_name)
+            await message.answer(f"✅ تم حفظ: '{alias_name}' ← {course_name} ({course_code})", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: الاسم_البديل | كود_المادة | اسم_المادة", reply_markup=cancel_keyboard())
 
     else:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()

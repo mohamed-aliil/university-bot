@@ -190,3 +190,12 @@ class CoursePrerequisite(Base):
     prerequisite_code = Column(String(50), nullable=False)
     prerequisite_name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class CourseAlias(Base):
+    __tablename__ = "course_aliases"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    alias = Column(String(255), nullable=False, index=True, unique=True)
+    course_code = Column(String(50), nullable=False)
+    course_name = Column(String(255), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)

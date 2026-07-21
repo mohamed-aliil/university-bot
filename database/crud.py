@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
@@ -865,3 +865,36 @@ async def get_courses_opened_by(prerequisite_code: str) -> list[CoursePrerequisi
             select(CoursePrerequisite).where(CoursePrerequisite.prerequisite_code == prerequisite_code)
         )
         return list(result.scalars().all())
+
+
+async def add_alias(alias: str, course_code: str, course_name: str) -> CourseAlias:
+    async with async_session() as session:
+        ca = CourseAlias(alias=alias.strip(), course_code=course_code, course_name=course_name)
+        session.add(ca)
+        await session.commit()
+        await session.refresh(ca)
+        return ca
+
+
+async def get_course_by_alias(alias: str) -> CourseAlias | None:
+    async with async_session() as session:
+        result = await session.execute(
+            select(CourseAlias).where(CourseAlias.alias == alias.strip())
+        )
+        return result.scalar_one_or_none()
+
+
+async def get_all_aliases() -> list[CourseAlias]:
+    async with async_session() as session:
+        result = await session.execute(select(CourseAlias).order_by(CourseAlias.created_at))
+        return list(result.scalars().all())
+
+
+async def delete_alias(alias_id: int) -> bool:
+    async with async_session() as session:
+        obj = await session.get(CourseAlias, alias_id)
+        if not obj:
+            return False
+        await session.delete(obj)
+        await session.commit()
+        return True
