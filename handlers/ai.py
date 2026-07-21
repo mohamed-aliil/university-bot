@@ -386,10 +386,24 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
-        # Strip English thinking/reasoning at start (keep only from first Arabic char)
-        match = re.search(r"[\u0600-\u06FF]", clean_answer)
-        if match:
-            clean_answer = clean_answer[match.start():].strip()
+        # Strip CoT: find [Output Generation] marker (most reliable for this model)
+        gen_match = re.search(r"\[Output Generation\]\s*->\s*\"?(.*)", clean_answer, re.DOTALL)
+        if gen_match:
+            clean_answer = gen_match.group(1).strip().rstrip('"')
+        else:
+            # Fallback: find last termination marker
+            for marker in ["Proceeds.", "Ready.", "All good.", "Output matches"]:
+                idx = clean_answer.rfind(marker)
+                if idx != -1:
+                    after = clean_answer[idx + len(marker):].strip()
+                    if after:
+                        clean_answer = after
+                        break
+            else:
+                # Last resort: strip from first Arabic char
+                m = re.search(r"[\u0600-\u06FF]", clean_answer)
+                if m:
+                    clean_answer = clean_answer[m.start():].strip()
         # Clean up double spaces / empty lines
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
         if clean_answer:
@@ -763,9 +777,13 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
         clean = re.sub(r"<[^>]+>", "", clean)
         clean = clean.replace("**", "")
-        match = re.search(r"[\u0600-\u06FF]", clean)
-        if match:
-            clean = clean[match.start():].strip()
+        gen_match = re.search(r"\[Output Generation\]\s*->\s*\"?(.*)", clean, re.DOTALL)
+        if gen_match:
+            clean = gen_match.group(1).strip().rstrip('"')
+        else:
+            m = re.search(r"[\u0600-\u06FF]", clean)
+            if m:
+                clean = clean[m.start():].strip()
         await message.answer(clean, reply_markup=cancel_keyboard())
 
 

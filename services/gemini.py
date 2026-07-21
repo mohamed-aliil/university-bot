@@ -32,7 +32,6 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
 
     MODELS = [
         "qwen/qwen3.6-27b",
-        "openai/gpt-oss-120b",
         "gpt-oss-120b",
     ]
     headers = {
