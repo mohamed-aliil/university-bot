@@ -360,9 +360,14 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
     if answer:
-        # Try to forward actual files from Telegram links in the answer
+        # Try to forward actual files from Telegram links in the answer (deduplicated)
+        forwarded = set()
         for tme_link in re.findall(r"https?://t\.me/([a-zA-Z0-9_]+)/(\d+)", answer):
             username, msg_id = tme_link[0], int(tme_link[1])
+            key = f"{username}/{msg_id}"
+            if key in forwarded:
+                continue
+            forwarded.add(key)
             try:
                 chat = "@" + username
                 await message.bot.copy_message(
