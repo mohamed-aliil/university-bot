@@ -212,7 +212,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
                 reply_markup=ai_user_keyboard(),
             )
         except Exception:
-            pass
+            pass  # ignore if even the error message fails
         for admin_id in settings.admin_ids:
             try:
                 await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
@@ -407,8 +407,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                     from_chat_id=chat,
                     message_id=msg_id,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("copy_message failed for %s/%s: %s", username, msg_id, exc)
         # Strip Telegram links from displayed text (files already forwarded)
         clean_answer = re.sub(r"https?://t\.me/\S+", "", answer).strip()
         # Remove content inside <think> tags (reasoning output) first
