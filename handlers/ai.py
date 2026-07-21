@@ -337,7 +337,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
         "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
         "تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
-        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n\n"
+        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n"
+        "ممنوع كتابة أي تفكير داخلي أو تحليل بالإنگليزية — جاوب مباشرة بالعربية فقط ولا تكتب anything in English.\n\n"
         f"{history_note}"
         f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
         f"📁 المواد المتاحة:\n{materials_context}\n\n"
@@ -386,7 +387,6 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
         # Clean up double spaces / empty lines
-        clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
         if clean_answer:
             await message.answer(clean_answer, reply_markup=ai_user_keyboard())
@@ -549,7 +549,8 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     admin_system_prompt = (
         "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
         "تحدث بالعربية. افهم الأخطاء الإملائية وصححها.\n"
-        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n\n"
+        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n"
+        "ممنوع كتابة أي تفكير داخلي أو تحليل بالإنگليزية — جاوب مباشرة بالعربية فقط ولا تكتب anything in English.\n\n"
         "⚡ يمكنك تنفيذ الأوامر التالية إذا طلبها المشرف:\n"
         "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
         "- [DEL_QA] الرقم1 الرقم2 ... ← حذف أسئلة بأرقامها\n"
