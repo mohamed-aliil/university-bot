@@ -50,9 +50,10 @@ def set_ai_silent() -> None:
 async def has_agreed_ai(user_id: int) -> bool:
     try:
         async with async_session() as session:
-            result = await session.execute(select(User).where(User.user_id == user_id))
-            u = result.scalar_one_or_none()
-            if u is not None and hasattr(u, 'agreed_ai') and u.agreed_ai:
+            from .models import UserPreference
+            result = await session.execute(select(UserPreference).where(UserPreference.user_id == user_id))
+            pref = result.scalar_one_or_none()
+            if pref is not None and pref.agreed_ai:
                 return True
     except Exception:
         pass
@@ -64,11 +65,15 @@ async def set_agreed_ai(user_id: int) -> None:
     (AGREED_DIR / str(user_id)).touch()
     try:
         async with async_session() as session:
-            result = await session.execute(select(User).where(User.user_id == user_id))
-            u = result.scalar_one_or_none()
-            if u is not None and hasattr(u, 'agreed_ai'):
-                u.agreed_ai = True
-                await session.commit()
+            from .models import UserPreference
+            result = await session.execute(select(UserPreference).where(UserPreference.user_id == user_id))
+            pref = result.scalar_one_or_none()
+            if pref is None:
+                pref = UserPreference(user_id=user_id, agreed_ai=True)
+                session.add(pref)
+            else:
+                pref.agreed_ai = True
+            await session.commit()
     except Exception:
         pass
 
