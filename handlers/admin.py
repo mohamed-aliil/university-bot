@@ -1328,6 +1328,7 @@ async def ai_show_button(message: Message) -> None:
 @router.message(SuperAdminFilter(), F.text == "📋 سجل الأخطاء")
 async def ai_errors_button(message: Message) -> None:
     from database.crud import get_errors
+    from aiogram.enums import ParseMode
     errors = get_errors(15)
     await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>", parse_mode=ParseMode.HTML)
 
