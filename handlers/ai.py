@@ -531,6 +531,22 @@ async def ai_admin_chat_exit(message: Message, state: FSMContext) -> None:
 
 @router.message(AIAdminState.admin_chat, AdminFilter())
 async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
+    try:
+        await _ai_admin_chat_message(message, state)
+    except Exception as e:
+        import traceback
+        tb = traceback.format_exc()
+        logger.exception("AI admin chat error")
+        err_msg = str(e)[:300] or "خطأ غير معروف"
+        await message.answer(f"⚠️ حدث خطأ: {err_msg}", reply_markup=cancel_keyboard())
+        for admin_id in settings.admin_ids:
+            try:
+                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
+            except Exception:
+                pass
+
+
+async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     q = message.text or message.caption or ""
     if not q:
         return
