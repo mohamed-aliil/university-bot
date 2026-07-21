@@ -397,4 +397,14 @@ def ai_user_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
+def agreement_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="✅ موافقة")],
+            [KeyboardButton(text="❌ عدم الموافقة")],
+        ],
+        resize_keyboard=True,
+    )
+
+
 

@@ -908,10 +908,15 @@ async def messages_queue_button(message: Message, state: FSMContext) -> None:
     except Exception as e:
         tb = traceback.format_exc()
         logger.exception("Error in messages_queue_button")
-        await message.answer(
-            f"⚠️ خطأ:\n<code>{tb[-1500:]}</code>",
-            reply_markup=await admin_main_keyboard(message.from_user.id),
-        )
+        try:
+            from aiogram.enums import ParseMode
+            await message.answer(
+                f"⚠️ خطأ:\n<code>{html_mod.escape(tb[-1500:])}</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=await admin_main_keyboard(message.from_user.id),
+            )
+        except Exception:
+            await message.answer(f"⚠️ خطأ: {e}", parse_mode=None)
 
 
 @router.message(SuperAdminFilter(), F.text == "👥 المشرفين")
@@ -2012,7 +2017,8 @@ async def show_next_unread(target, state: FSMContext) -> None:
         import traceback as tb_mod
         tb_str = tb_mod.format_exc()
         await bot.send_message(chat_id=chat_id, text=caption, reply_markup=None)
-        await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{tb_str[-1500:]}</code>")
+        from aiogram.enums import ParseMode
+        await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{html_mod.escape(tb_str[-1500:])}</code>", parse_mode=ParseMode.HTML)
 
     await bot.send_message(chat_id=chat_id, text=".", reply_markup=reply_kb)
 

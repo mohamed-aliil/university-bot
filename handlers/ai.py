@@ -13,7 +13,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                            add_folder, remove_folder, add_content_item, remove_content_item,
                            add_content_link, remove_content_link, ban_user, unban_user, get_user,
                            get_all_aliases)
-from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard
+from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
 from services.gemini import call_gemini
 from config import settings
 
@@ -23,6 +23,7 @@ router = Router()
 
 class AIState(StatesGroup):
     waiting_for_question = State()
+    waiting_agreement = State()
 
 
 class AIAdminState(StatesGroup):
@@ -180,6 +181,29 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
     if not is_ai_active():
         await message.answer("🛑 المساعد الذكي متوقف حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
+    await state.set_state(AIState.waiting_agreement)
+    terms = (
+        "📋 اتفاقية استخدام نَافِذَة الـ AI\n\n"
+        "قبل البدء، الرجاء الاطلاع على الشروط التالية:\n\n"
+        "1️⃣ طبيعة الخدمة: هذا البوت يعمل بالذكاء الاصطناعي وهو قيد التجربة، "
+        "وقد تظهر به بعض الأخطاء أو معلومات غير دقيقة من وقت لآخر.\n\n"
+        "2️⃣ المسؤولية: باستخدامك للبوت، فإنك تتحمل كامل المسؤولية عن كيفية "
+        "استخدام المعلومات المقدمة.\n\n"
+        "3️⃣ البيانات: قد يتم استخدام بعض المحادثات بشكل مجهول بهدف تحسين "
+        "الخدمة وتطويرها.\n\n"
+        "4️⃣ الاستخدام المقبول: يُمنع استخدام البوت لإرسال محتوى مسيء أو "
+        "مخالف للأنظمة. يحق للإدارة إيقاف الوصول عن أي مستخدم يخالف ذلك.\n\n"
+        "5️⃣ التعديلات: يحق لإدارة البوت تعديل هذه الشروط أو إيقاف الخدمة "
+        "في أي وقت دون إشعار مسبق.\n\n"
+        "6️⃣ التواصل: عند وجود أي استفسار، يُرجى التواصل عبر زر "
+        "\"💬 التواصل\" في القائمة الرئيسية.\n\n"
+        "بالضغط على \"✅ موافقة\"، فإنك توافق على جميع ما ورد أعلاه."
+    )
+    await message.answer(terms, reply_markup=agreement_keyboard())
+
+
+@router.message(AIState.waiting_agreement, F.text == "✅ موافقة")
+async def ai_user_agree(message: Message, state: FSMContext) -> None:
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await message.answer(
@@ -189,6 +213,12 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         "أو استخدم 🔙 رجوع للعودة.",
         reply_markup=ai_user_keyboard(),
     )
+
+
+@router.message(AIState.waiting_agreement, F.text.in_(["❌ عدم الموافقة", "🔙 رجوع"]))
+async def ai_user_disagree(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await message.answer("تم العودة إلى القائمة الرئيسية.", reply_markup=main_keyboard())
 
 
 @router.message(AIState.waiting_for_question, F.text == "🔙 رجوع")
@@ -215,7 +245,7 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
             pass  # ignore if even the error message fails
         for admin_id in settings.admin_ids:
             try:
-                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
+                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n{tb[:3500]}", parse_mode=None)
             except Exception as e2:
                 logger.error("Failed to send traceback to admin %s: %s", admin_id, e2)
 
@@ -232,6 +262,30 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     history: list[dict] = data.get("history", [])
+
+    # Check if AI previously offered to notify admins and user is confirming
+    if data.get("pending_admin_notify"):
+        confirm_words = ["نعم", "اي", "أي", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات"]
+        if any(w in q.lower() for w in confirm_words):
+            await state.update_data(pending_admin_notify=False)
+            from handlers.messages import forward_to_admins
+            from database.crud import save_message
+            ai_context = "\n".join(
+                f"المستخدم: {turn['user']}\nالمساعد: {turn['assistant']}"
+                for turn in history[-5:]
+            )
+            original_q = data.get("pending_notify_q", q)
+            msg = await save_message(
+                user_id=message.from_user.id,
+                message_type="text",
+                content=f"[طلب AI]\n{original_q}\n\nسجل المحادثة:\n{ai_context}",
+            )
+            await forward_to_admins(message, "text", msg.id)
+            await message.answer("✅ تم إبلاغ المشرفين، سيردون عليك قريباً إن شاء الله.", reply_markup=ai_user_keyboard())
+            return
+        else:
+            await state.update_data(pending_admin_notify=False)
+            # fall through to normal AI processing
 
     # Build static context from Q&A, materials, articles, and prerequisites
     try:
@@ -346,30 +400,24 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
 
     system_prompt = (
-        "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — وهي منصة كلية. "
-        "اسمك \"مساعد نافذة\". عندما يُسأل من أنت، قل: \"أنا مساعد نافذة الذكي، هنا لمساعدتك في كل ما يخص الكلية والمواد الدراسية.\"\n\n"
-        "تتحدث بالعربية بأسلوب ودود ومفيد.\n\n"
-        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n"
-        "ممنوع كتابة أي تفكير داخلي أو تحليل بالإنگليزية — جاوب مباشرة بالعربية فقط ولا تكتب anything in English.\n\n"
+        "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — منصة كلية. اسمك \"مساعد نافذة\".\n\n"
+        "تتحدث بالعربية بأسلوب ودود طبيعي.\n"
+        "ممنوع استخدام ** أو * أو أي تنسيق Markdown — اكتب نص فقط.\n"
+        "ممنوع تكتب تفكير داخلي أو تحليل — جاوب مباشرة بالعربية فقط.\n\n"
         f"{history_note}"
         f"{aliases_context}"
-        f"📚 قاعدة المعرفة (الأسئلة والأجوبة):\n{qa_context}\n\n"
-        f"📁 المواد المتاحة:\n{materials_context}\n\n"
-        f"📰 المقالات والتنويهات:\n{articles_context}\n\n"
-        f"🔗 شجرة المتطلبات الدراسية:\n{prereqs_context}\n\n"
-        "📌 تعليمات:\n"
-        "- أنت تفهم الأسئلة بطبيعة — الطالب يسأل بأي صيغة، وأنت تفهم قصده حتى لو فيه أخطاء إملائية.\n"
-        "- صحح الأخطاء الإملائية البسيطة وافهم السؤال.\n"
-        "- أي سؤال عن مواد كلية، متطلبات، شيتات، ملخصات، كتب، امتحانات — استخدم الشجرة الكاملة للمواد بالأسفل.\n"
-        "- الشجرة تبين لك كل مجلد وكل ملف وروابطه — ابحث فيها جيداً قبل الرد.\n"
-        "- المقالات والتنويهات المحفوظة تحتوي إعلانات رسمية — اعتمد عليها بالإجابة عن المواعيد والإعلانات.\n"
-        "- المواد والروابط الموجودة في الشجرة — إذا سألك عن مادة اذكر اسم المادة والروابط (t.me/...) في ردك. الـ links اللي تكتبها في الرد، النظام بيحولها تلقائياً كملفات.\n"
-        "- إذا كانت الإجابة موجودة، جاوب بثقة.\n"
-        "- إذا السؤال عن شيء خارج الكلية، جاوب طبيعي.\n"
-        "- **الأهم**: إذا ما لقيت الإجابة في السياق أو المستخدم طلب شيء يحتاج مشرف (تسجيل، تغيير، إضافة، استفسار خاص، شكوى، طلب مادة غير موجودة)، "
-        "قل حرفياً: 'سأبلغ المشرفين 📢' وأخبرهم بالطلب.\n"
-        "- إذا استخدم المستخدم اسم مادة غير موجود في الشجرة لكنك تعرف المادة المقصودة (مثلاً قال 'سي' وأنت تعرف أنها ITGS112)، "
-        "اسأله: 'هل تقصد [اسم المادة] (رمزها)؟'. لو قال نعم، اكتب في ردك: [SAVE_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة\n"
+        f"📚 قاعدة المعرفة:\n{qa_context}\n\n"
+        f"📁 المواد:\n{materials_context}\n\n"
+        f"📰 المقالات:\n{articles_context}\n\n"
+        f"🔗 المتطلبات:\n{prereqs_context}\n\n"
+        "📌 تعليمات بسيطة:\n"
+        "- افهم السؤال حتى لو فيه أخطاء إملائية.\n"
+        "- استخدم قاعدة المعرفة والمواد والمقالات للإجابة.\n"
+        "- إذا عرفت الإجابة جاوب. إذا برا الكلية جاوب طبيعي.\n"
+        "- إذا السؤال يحتاج مشرف (تسجيل، شكوى، طلب مادة)، جاوب طبيعي ثم في النهاية اسأل: "
+        "'هل تريدني أن أبلغ المشرفين بهذا الطلب؟'\n"
+        "- إذا استخدم المستخدم اسم مادة غريب وانت عارفها، اسأله هل يقصدها. لو قال نعم اكتب:\n"
+        "[SAVE_ALIAS] الاسم | كود_المادة | اسم_المادة\n"
     )
 
     user_prompt = q
@@ -460,24 +508,31 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                     clean_answer = clean_answer[m.start():].strip()
         # Clean up double spaces / empty lines
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
+
+        # Force the "ask permission" flow even if model ignores instructions
+        had_notify_offer = False
+        for phrase in ["سأبلغ المشرفين", "سأخبر المشرفين", "سأبلغ الإدارة", "سأخبر الإدارة"]:
+            if phrase in clean_answer:
+                clean_answer = clean_answer.replace(phrase, "هل تريدني أن أبلغ المشرفين بهذا الطلب؟")
+                had_notify_offer = True
+        if "📢" in clean_answer:
+            clean_answer = clean_answer.replace("📢", "").strip()
+        if had_notify_offer or (re.search(r"سأبلغ", clean_answer) and re.search(r"المشرفين|الإدارة", clean_answer)):
+            await state.update_data(pending_admin_notify=True, pending_notify_q=q)
+            clean_answer = clean_answer.replace("📢", "").strip()
+            await state.update_data(pending_admin_notify=True, pending_notify_q=q)
+
         if clean_answer:
             await message.answer(clean_answer, reply_markup=ai_user_keyboard())
         # Save to history
         history.append({"user": q, "assistant": answer})
         await state.update_data(history=history)
-        # Notify admins if needed
-        needs_admin = (
-            "سأبلغ المشرفين" in answer
-            or "📢" in answer
-            or "إشعار المشرفين" in answer
-        )
-        # Also check user question for direct requests
-        user_needs_admin = any(w in q for w in [
-            "قول للمشرف", "بلغ المشرف", "كلم المشرف", "شكوى",
-            "دير", "سوي", "اعمل", "غير", "ضيف", "زيد", "نقص",
-            "ابلغ", "المشرفين", "للإدارة", "الادارة",
-        ])
-        if needs_admin or user_needs_admin:
+
+        # Check if AI offered to notify admins (after forced replacement above)
+        if "هل تريد" in clean_answer and "أبلغ المشرفين" in clean_answer:
+            if not (await state.get_data()).get("pending_admin_notify"):
+                await state.update_data(pending_admin_notify=True, pending_notify_q=q)
+        elif any(w in q for w in ["قول للمشرف", "بلغ المشرف", "كلم المشرف", "ابلغ المشرف"]):
             from handlers.messages import forward_to_admins
             from database.crud import save_message
             ai_context = "\n".join(
@@ -595,7 +650,7 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await message.answer(f"⚠️ حدث خطأ: {err_msg}", reply_markup=cancel_keyboard())
         for admin_id in settings.admin_ids:
             try:
-                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n<code>{tb[:3500]}</code>")
+                await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n{tb[:3500]}", parse_mode=None)
             except Exception:
                 pass
 

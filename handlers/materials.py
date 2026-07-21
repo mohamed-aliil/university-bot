@@ -256,6 +256,25 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         await message.answer(header, reply_markup=content_edit_kb())
     elif text == "🔙 رجوع":
         await handle_back(message, state)
+    else:
+        user_obj = message.from_user
+        if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):
+            admin_buttons = ("📩 الطلبات المرسلة", "👥 الإدارة", "💬 التواصل", "⚙️ الإعدادات",
+                            "🤖 الذكاء الاصطناعي", "🔄 تحديث", "نَافِذَة الـ AI")
+            if any(text.startswith(b) for b in admin_buttons):
+                await state.clear()
+                if text == "نَافِذَة الـ AI":
+                    from handlers.ai import ai_user_start
+                    await ai_user_start(message, state)
+                elif text.startswith("📩 الطلبات المرسلة"):
+                    from handlers.admin import show_next_unread
+                    try:
+                        await show_next_unread(message, state)
+                    except Exception as e:
+                        await message.answer(f"⚠️ خطأ: {e}", parse_mode=None)
+                else:
+                    from handlers.admin import admin_main_keyboard
+                    await message.answer("🔝", reply_markup=await admin_main_keyboard(user_obj.id))
 
 
 @router.callback_query(AdminFilter(), F.data.startswith("rename_folder:"))
@@ -654,6 +673,10 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
                 await state.set_state(SState.browsing)
                 await state.update_data(folder_id=None)
                 await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(top_folders, []))
+                return
+            if text == "نَافِذَة الـ AI":
+                from handlers.ai import ai_user_start
+                await ai_user_start(message, state)
                 return
             if await is_admin_user(message.from_user.id) or message.from_user.id in settings.admin_ids:
                 from handlers.admin import settings_button, admin_main_keyboard
