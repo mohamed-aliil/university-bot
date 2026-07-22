@@ -125,7 +125,7 @@ def log_ai_action(user_id: int, user_name: str, action: str) -> None:
         pass
 
 
-def get_ai_log(limit: int = 30) -> str:
+def get_ai_log(limit: int = 5) -> str:
     if not AI_LOG_FILE.exists():
         return "لا توجد سجلات AI بعد."
     try:
