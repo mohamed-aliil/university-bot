@@ -1159,7 +1159,9 @@ async def ai_admin_view_articles(message: Message, state: FSMContext) -> None:
         chunk = "\n\n".join(lines[i:i+5])
         await message.answer(f"📋 المقالات:\n\n{chunk}")
     await message.answer(
-        "لحذف مقال أرسل: حذف [الرقم]\nمثال: حذف 3\nأو لحذف عدة: حذف 3 5 7",
+        "لحذف مقال أرسل: حذف [الرقم]\n"
+        "لعرض مقال كامل أرسل: عرض [الرقم]\n"
+        "مثال: عرض 3",
         reply_markup=ai_admin_keyboard(),
     )
 
@@ -1186,6 +1188,29 @@ async def ai_admin_delete_article(message: Message, state: FSMContext) -> None:
         f"✅ تم حذف {deleted} من {len(ids)} مقال" if deleted else "❌ لم يتم حذف أي مقال",
         reply_markup=ai_admin_keyboard(),
     )
+
+
+@router.message(AdminFilter(), F.text.startswith("عرض "))
+async def ai_admin_view_article_full(message: Message, state: FSMContext) -> None:
+    parts = message.text.strip().split()
+    if len(parts) < 2:
+        return
+    try:
+        art_id = int(parts[1])
+    except ValueError:
+        return
+    articles = await get_all_articles()
+    target = next((a for a in articles if a.id == art_id), None)
+    if not target:
+        await message.answer("❌ المقال غير موجود.", reply_markup=ai_admin_keyboard())
+        return
+    text = f"🔹 {target.id}: {target.title}\n\n{target.content}"
+    from aiogram.enums import ParseMode
+    if len(text) > 4000:
+        for i in range(0, len(text), 4000):
+            await message.answer(text[i:i+4000], reply_markup=ai_admin_keyboard() if i == 0 else None)
+    else:
+        await message.answer(text, reply_markup=ai_admin_keyboard())
 
 
 # ─── Admin: المتطلبات الدراسية ───
