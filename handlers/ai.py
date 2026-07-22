@@ -384,8 +384,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     except Exception as e:
         logger.error("AI: build_tree failed: %s", e)
         materials_context = "حدث خطأ أثناء بناء شجرة المواد."
-    if len(materials_context) > 3000:
-        materials_context = materials_context[:3000] + "\n... (يوجد المزيد)"
+    if len(materials_context) > 6000:
+        materials_context = materials_context[:6000] + "\n... (يوجد المزيد)"
 
     try:
         articles_list = await get_all_articles()
@@ -487,6 +487,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         "📌 تعليمات بسيطة:\n"
         "- افهم السؤال حتى لو فيه أخطاء إملائية.\n"
         "- استخدم قاعدة المعرفة والمواد والمقالات للإجابة.\n"
+        "- عندما يسألك عن مجلد أو مادة معينة، ابحث في قائمة المواد أعلاه وأجب منه.\n"
         "- إذا عرفت الإجابة جاوب. إذا برا الكلية جاوب طبيعي.\n"
         "- إذا السؤال يحتاج مشرف (تسجيل، شكوى، طلب مادة)، جاوب طبيعي ثم في النهاية اسأل: "
         "'هل تريدني أن أبلغ المشرفين بهذا الطلب؟'\n"
@@ -821,12 +822,13 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل\n\n"
         "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
         "استخدم الأمر المناسب من فوق.\n"
-        "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n\n"
+        "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n"
+        "عندما يسألك عن مجلد أو مادة معينة، ابحث في قائمة المجلدات أعلاه.\n\n"
         f"الأسئلة المحفوظة: {qa_context}\n"
         f"المقالات: {art_context}\n"
         f"المتطلبات الدراسية: {prereq_count} علاقة\n"
         f"الأسماء البديلة:\n{aliases_str}\n"
-        f"المجلدات:\n{folders_tree[:2000]}"
+        f"المجلدات:\n{folders_tree[:4000]}"
     )
 
     answer = await call_gemini(q, system_prompt=admin_system_prompt)

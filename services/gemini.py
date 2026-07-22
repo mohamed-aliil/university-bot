@@ -175,7 +175,8 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
     """Analyze an image using Groq's vision models."""
     groq_keys = settings.groq_keys
     MODELS = [
-        "llama-3.2-90b-vision-preview",
+        "qwen/qwen3.6-27b",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
     ]
     headers_tmpl = {"Content-Type": "application/json"}
 
