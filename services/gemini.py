@@ -169,3 +169,65 @@ async def _call_gemini(prompt: str, system_prompt: str, api_key: str) -> str | N
             logger.exception("Gemini %s failed: %s", model, e)
             continue
     return None
+
+
+async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
+    """Analyze an image using Groq's vision models."""
+    groq_keys = settings.groq_keys
+    MODELS = [
+        "llama-3.2-90b-vision-preview",
+        "llama-3.2-11b-vision-preview",
+    ]
+    headers_tmpl = {"Content-Type": "application/json"}
+
+    for api_key in groq_keys:
+        for model in MODELS:
+            for attempt in range(3):
+                try:
+                    await _wait_for_rate_limit(api_key)
+                    headers = {**headers_tmpl, "Authorization": f"Bearer {api_key}"}
+                    payload = {
+                        "model": model,
+                        "messages": [
+                            {
+                                "role": "user",
+                                "content": [
+                                    {"type": "text", "text": prompt},
+                                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
+                                ],
+                            }
+                        ],
+                        "max_tokens": 2048,
+                    }
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            json=payload, headers=headers,
+                            timeout=aiohttp.ClientTimeout(total=60),
+                        ) as resp:
+                            if resp.status == 429:
+                                logger.warning("Groq vision 429 for %s (attempt %d/3)", model, attempt + 1)
+                                if attempt < 2:
+                                    await asyncio.sleep(2 ** attempt)
+                                    continue
+                                break
+                            if resp.status != 200:
+                                body = await resp.text()
+                                logger.warning("Groq vision %s error %s: %s", model, resp.status, body[:200])
+                                break
+                            data = await resp.json()
+                            choices = data.get("choices", [])
+                            if choices:
+                                text = choices[0].get("message", {}).get("content", "")
+                                if text:
+                                    logger.info("Groq vision %s success", model)
+                                    return text.strip()
+                except asyncio.TimeoutError:
+                    logger.warning("Groq vision %s timeout (attempt %d/3)", model, attempt + 1)
+                    if attempt < 2:
+                        await asyncio.sleep(1)
+                        continue
+                except Exception as e:
+                    logger.warning("Groq vision %s failed: %s", model, e)
+                    break
+    return None

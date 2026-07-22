@@ -16,7 +16,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              add_content_link, remove_content_link, ban_user, unban_user, get_user,
                              get_all_aliases, has_agreed_ai, set_agreed_ai)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
-from services.gemini import call_gemini
+from services.gemini import call_gemini, call_groq_vision
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -67,6 +67,7 @@ class AIAdminState(StatesGroup):
     waiting_article_title = State()
     waiting_article_text = State()
     waiting_prereqs = State()
+    smart_mode = State()
 
 
 @router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
@@ -402,6 +403,24 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         logger.error("AI: get_all_prerequisites failed: %s", e)
         prereqs_list = []
 
+    # Load PDF context files
+    try:
+        pdfs = await get_all_pdfs()
+        pdf_context = ""
+        for p in pdfs:
+            pdf_context += f"\n📄 {p.name}: "
+            try:
+                with open(p.file_path, "rb") as pf:
+                    raw = pf.read()
+                text = raw.decode("utf-8", errors="ignore")[:1500]
+                pdf_context += text[:500] + "...\n"
+            except Exception:
+                pdf_context += "(تعذر قراءة الملف)\n"
+        if pdfs:
+            pdf_context = "📚 الملفات السياقية:\n" + pdf_context + "\n"
+    except Exception:
+        pdf_context = ""
+
     # Build two views: forward (what a course opens) and backward (what a course needs)
     forward_map: dict[str, list[tuple[str, str]]] = {}
     backward_map: dict[str, list[tuple[str, str]]] = {}
@@ -463,6 +482,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         f"📚 قاعدة المعرفة:\n{qa_context}\n\n"
         f"📁 المواد:\n{materials_context}\n\n"
         f"📰 المقالات:\n{articles_context}\n\n"
+        f"{pdf_context}"
         f"🔗 المتطلبات:\n{prereqs_context}\n\n"
         "📌 تعليمات بسيطة:\n"
         "- افهم السؤال حتى لو فيه أخطاء إملائية.\n"
@@ -606,67 +626,63 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         )
 
 
-# ─── Admin: Image Analysis ───
+# ─── Admin: Smart unified analysis ───
 
-@router.message(AdminFilter(), F.text == "🧠 تحليل صورة")
-async def ai_admin_image_start(message: Message, state: FSMContext) -> None:
-    await state.set_state(AIAdminState.waiting_image_analysis)
-    await message.answer("🖼 أرسل الصورة التي تريد تحليلها:", reply_markup=cancel_keyboard())
+@router.message(AdminFilter(), F.text == "🧠 تحليل ذكي")
+async def ai_smart_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(AIAdminState.smart_mode)
+    await message.answer(
+        "🧠 أرسل أي شيء للتحليل:\n"
+        "• 🖼 صورة → تحليلها\n"
+        "• 📄 PDF → حفظه كسياق علمي\n"
+        "• 📝 نص → محادثة ذكية مع أوامر\n\n"
+        "أو أرسل /exit للخروج.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
-@router.message(AIAdminState.waiting_image_analysis, AdminFilter(), F.photo)
-async def ai_admin_image_analyze(message: Message, state: FSMContext) -> None:
+@router.message(AIAdminState.smart_mode, AdminFilter(), F.photo)
+async def ai_smart_image(message: Message, state: FSMContext) -> None:
     photo = message.photo[-1]
     file_info = await message.bot.get_file(photo.file_id)
     file_bytes = await message.bot.download_file(file_info.file_path)
     import base64
     b64 = base64.b64encode(file_bytes.read()).decode()
-
     prompt = "حلل هذه الصورة بالتفصيل باللغة العربية. ماذا ترى فيها؟"
-    answer = await _call_groq_vision(prompt, b64)
-    await state.clear()
+    answer = await call_groq_vision(prompt, b64)
     if answer:
-        await safe_send(message, f"🧠 التحليل:\n\n{answer}", reply_markup=ai_admin_keyboard())
+        await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}", reply_markup=cancel_keyboard())
     else:
-        await message.answer("⚠️ فشل تحليل الصورة.", reply_markup=ai_admin_keyboard())
+        await message.answer("⚠️ فشل تحليل الصورة.", reply_markup=cancel_keyboard())
 
 
-@router.message(AIAdminState.waiting_image_analysis, AdminFilter())
-async def ai_admin_image_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("❌ يرجى إرسال صورة.")
-
-
-# ─── Admin: File Analysis ───
-
-@router.message(AdminFilter(), F.text == "📄 تحليل ملف")
-async def ai_admin_file_start(message: Message, state: FSMContext) -> None:
-    await state.set_state(AIAdminState.waiting_file_analysis)
-    await message.answer("📄 أرسل الملف (PDF, صورة, نص) لتحليله:", reply_markup=cancel_keyboard())
-
-
-@router.message(AIAdminState.waiting_file_analysis, AdminFilter(), F.document)
-async def ai_admin_file_analyze(message: Message, state: FSMContext) -> None:
+@router.message(AIAdminState.smart_mode, AdminFilter(), F.document)
+async def ai_smart_document(message: Message, state: FSMContext) -> None:
     doc = message.document
+    import os
+    pdf_dir = "data/pdfs"
+    os.makedirs(pdf_dir, exist_ok=True)
+    name = (doc.file_name or "ملف").rsplit(".", 1)[0][:50]
+    dest = os.path.join(pdf_dir, f"{name}_{doc.file_id[:20]}.pdf")
     file_info = await message.bot.get_file(doc.file_id)
     file_bytes = await message.bot.download_file(file_info.file_path)
-    content = file_bytes.read()
-    text = content.decode("utf-8", errors="ignore")[:3000]
-
-    prompt = f"حلل هذا المحتوى بالعربية:\n\n{text}"
-    answer = await call_gemini(prompt)
-    await state.clear()
-    if answer:
-        await safe_send(message, f"📄 تحليل الملف:\n\n{answer}", reply_markup=ai_admin_keyboard())
-    else:
-        await message.answer("⚠️ فشل تحليل الملف.", reply_markup=ai_admin_keyboard())
+    with open(dest, "wb") as f:
+        f.write(file_bytes.read())
+    pdf = await save_pdf_context(name, dest)
+    await message.answer(
+        f"✅ تم حفظ الملف كسياق: {name}\n"
+        f"الآن عند سؤال المستخدمين، المساعد يستخدم هذا السياق في الإجابة.",
+        reply_markup=cancel_keyboard(),
+    )
 
 
-@router.message(AIAdminState.waiting_file_analysis, AdminFilter())
-async def ai_admin_file_invalid(message: Message, state: FSMContext) -> None:
-    await message.answer("❌ يرجى إرسال ملف.")
+@router.message(AIAdminState.smart_mode, AdminFilter())
+async def ai_smart_text(message: Message, state: FSMContext) -> None:
+    """Handle text in smart mode — same as smart chat with command execution."""
+    await _ai_admin_chat_message(message, state)
 
 
-# ─── Admin: Smart Chat ───
+# ─── Admin: Smart chat (also accessible via smart mode) ───
 
 @router.message(AdminFilter(), F.text == "🤖 محادثة ذكية")
 async def ai_admin_chat_start(message: Message, state: FSMContext) -> None:
@@ -1195,41 +1211,3 @@ async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
         "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً.",
         reply_markup=ai_admin_keyboard(),
     )
-
-async def _call_groq_vision(prompt: str, image_b64: str) -> str | None:
-    keys = settings.groq_keys
-    if not keys:
-        return None
-    api_key = keys[0]
-    if not api_key:
-        return None
-    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
-    payload = {
-        "model": "openai/gpt-oss-120b",
-        "messages": [
-            {
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": prompt},
-                    {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}},
-                ],
-            }
-        ],
-        "max_tokens": 1024,
-    }
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                json=payload, headers=headers,
-                timeout=aiohttp.ClientTimeout(total=30),
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-                choices = data.get("choices", [])
-                if choices:
-                    return choices[0].get("message", {}).get("content", "").strip()
-    except Exception:
-        return None
-    return None
