@@ -5,7 +5,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
-# Token bucket rate limiter: 30 tokens max, refill 0.5/sec (30 RPM)
+# Token bucket rate limiters per API key: 30 tokens max, refill 0.5/sec (30 RPM)
 _tokens: dict[str, float] = {}
 _last_refill: dict[str, float] = {}
 _rate_lock = asyncio.Lock()
@@ -13,29 +13,49 @@ _rate_lock = asyncio.Lock()
 async def _wait_for_rate_limit(api_key: str) -> None:
     """Allow burst of 30 requests, then throttle to 0.5 req/sec."""
     import time
-    async with _rate_lock:
-        now = time.monotonic()
-        tokens = _tokens.get(api_key, 30.0)
-        last = _last_refill.get(api_key, now)
-        elapsed = now - last
-        tokens = min(30.0, tokens + elapsed * 0.5)
-        _last_refill[api_key] = now
-        if tokens < 1.0:
+    while True:
+        async with _rate_lock:
+            now = time.monotonic()
+            tokens = _tokens.get(api_key, 30.0)
+            last = _last_refill.get(api_key, now)
+            tokens = min(30.0, tokens + (now - last) * 0.5)
+            if tokens >= 1.0:
+                _tokens[api_key] = tokens - 1.0
+                _last_refill[api_key] = now
+                return
             wait = (1.0 - tokens) / 0.5
-            logger.debug("Rate limit: waiting %.2fs for key %s...", wait, api_key[:8])
-            await asyncio.sleep(wait)
-            tokens = 0.0
-            _last_refill[api_key] = time.monotonic()
-        else:
-            tokens -= 1.0
-        _tokens[api_key] = tokens
+        # Don't hold the lock while sleeping — other keys/requests can proceed
+        logger.debug("Rate limit: waiting %.2fs for key %s...", wait, api_key[:8])
+        await asyncio.sleep(wait / 2)  # Recheck halfway to be responsive
+
+async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) -> str | None:
+    """Pick the Groq key with the most available tokens (load balancing)."""
+    candidates = [k for k in groq_keys if k not in (exclude or set())]
+    if not candidates:
+        return None
+    if len(candidates) == 1:
+        return candidates[0]
+    import time
+    async with _rate_lock:
+        def _tokens_for(k: str) -> float:
+            now = time.monotonic()
+            t = _tokens.get(k, 30.0)
+            last = _last_refill.get(k, now)
+            return min(30.0, t + (now - last) * 0.5)
+        best = max(candidates, key=_tokens_for)
+    return best
 
 
 async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
     try:
-        # Try Groq keys first (free, generous quota)
         groq_keys = settings.groq_keys
-        for key in groq_keys:
+        # Load balance: pick key with most available tokens
+        tried = set()
+        for _ in groq_keys:
+            key = await _pick_best_key(groq_keys, tried)
+            if not key:
+                break
+            tried.add(key)
             result = await _call_groq(prompt, system_prompt, key)
             if result:
                 return result
