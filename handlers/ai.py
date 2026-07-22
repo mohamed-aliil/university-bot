@@ -669,9 +669,28 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
     with open(dest, "wb") as f:
         f.write(file_bytes.read())
     pdf = await save_pdf_context(name, dest)
+
+    await message.answer(f"✅ تم حفظ {name} كسياق علمي. جاري تحليل المحتوى...")
+    try:
+        raw = open(dest, "rb").read()
+        text = raw.decode("utf-8", errors="ignore")[:3000]
+        summary = await call_gemini(
+            f"لخص هذا المحتوى بالعربية في 3-4 نقاط:\n\n{text}",
+            system_prompt="لخص بدقة ووضوح بالعربية. لا تكتب Markdown.",
+        )
+        if summary:
+            await safe_send(
+                message,
+                f"📄 تحليل الملف \"{name}\":\n\n{summary}\n\n---\nالآن الـ AI يستخدم هذا المحتوى للإجابة على أسئلة المستخدمين.",
+                reply_markup=cancel_keyboard(),
+            )
+            return
+    except Exception as e:
+        logger.warning("PDF summary failed: %s", e)
+
     await message.answer(
-        f"✅ تم حفظ الملف كسياق: {name}\n"
-        f"الآن عند سؤال المستخدمين، المساعد يستخدم هذا السياق في الإجابة.",
+        f"✅ تم حفظ {name} كسياق.\n"
+        f"الـ AI سيستخدمه عند الإجابة.",
         reply_markup=cancel_keyboard(),
     )
 
@@ -1206,8 +1225,12 @@ async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
         count += 1
 
     await state.clear()
-    await message.answer(
-        f"✅ تم حفظ {count} علاقة prerequisite بنجاح.\n\n"
-        "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً.",
-        reply_markup=ai_admin_keyboard(),
-    )
+    summary_lines = []
+    for course_name, course_code, prereq_name, prereq_code in matches[:20]:
+        summary_lines.append(f"🔸 {course_name.strip()} ({course_code.strip()}) ← يحتاج {prereq_name.strip()} ({prereq_code.strip()})")
+    summary = "\n".join(summary_lines)
+    msg = f"✅ تم حفظ {count} علاقة:\n\n{summary}\n\n"
+    if count > 20:
+        msg += f"...و {count - 20} علاقة أخرى\n\n"
+    msg += "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً."
+    await message.answer(msg, reply_markup=ai_admin_keyboard())
