@@ -176,7 +176,6 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
     groq_keys = settings.groq_keys
     MODELS = [
         "llama-3.2-90b-vision-preview",
-        "llama-3.2-11b-vision-preview",
     ]
     headers_tmpl = {"Content-Type": "application/json"}
 

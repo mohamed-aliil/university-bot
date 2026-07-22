@@ -635,7 +635,8 @@ async def ai_smart_start(message: Message, state: FSMContext) -> None:
         "🧠 أرسل أي شيء للتحليل:\n"
         "• 🖼 صورة → تحليلها\n"
         "• 📄 PDF → حفظه كسياق علمي\n"
-        "• 📝 نص → محادثة ذكية مع أوامر\n\n"
+        "• 📝 نص متطلبات (تفتح/يحتاج) → استخراج العلاقات\n"
+        "• 📝 نص عادي → محادثة ذكية مع أوامر\n\n"
         "أو أرسل /exit للخروج.",
         reply_markup=cancel_keyboard(),
     )
@@ -697,8 +698,14 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
 
 @router.message(AIAdminState.smart_mode, AdminFilter())
 async def ai_smart_text(message: Message, state: FSMContext) -> None:
-    """Handle text in smart mode — same as smart chat with command execution."""
-    await _ai_admin_chat_message(message, state)
+    """Handle text in smart mode — detects prerequisites, else smart chat."""
+    text = message.text or ""
+    # Check for prerequisites patterns
+    prereq_keywords = ["تفتح", "يحتاج", "متطلب", "prerequisite", "يفتح"]
+    if any(kw in text for kw in prereq_keywords) and len(text) > 30:
+        await _ai_admin_parse_prereqs(message, state)
+    else:
+        await _ai_admin_chat_message(message, state)
 
 
 # ─── Admin: Smart chat (also accessible via smart mode) ───
@@ -1177,8 +1184,8 @@ async def ai_admin_prereqs_clear(message: Message, state: FSMContext) -> None:
     await message.answer("✅ تم مسح جميع المتطلبات الدراسية.", reply_markup=ai_admin_keyboard())
 
 
-@router.message(AdminFilter(), AIAdminState.waiting_prereqs)
-async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
+async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
+    """Parse prerequisites text and save extracted relationships."""
     text = message.text or ""
     if len(text) < 20:
         await message.answer("❌ النص قصير جداً.")
@@ -1234,3 +1241,8 @@ async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
         msg += f"...و {count - 20} علاقة أخرى\n\n"
     msg += "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً."
     await message.answer(msg, reply_markup=ai_admin_keyboard())
+
+
+@router.message(AdminFilter(), AIAdminState.waiting_prereqs)
+async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
+    await _ai_admin_parse_prereqs(message, state)
