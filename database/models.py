@@ -226,3 +226,12 @@ class CourseAlias(Base):
     course_code = Column(String(50), nullable=False)
     course_name = Column(String(255), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class AILog(Base):
+    __tablename__ = "ai_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
+    user_name = Column(String(255), nullable=False)
+    action = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)

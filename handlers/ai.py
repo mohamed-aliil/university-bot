@@ -229,7 +229,7 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         return
     await state.set_state(AIState.waiting_agreement)
     name = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
-    log_ai_action(message.from_user.id, name, "📋 عرض اتفاقية AI")
+    await log_ai_action(message.from_user.id, name, "📋 عرض اتفاقية AI")
     terms = (
         "اتفاقية استخدام نَافِذَة الـ AI\n\n"
         "قبل البدء، الرجاء الاطلاع على الشروط التالية:\n\n"
@@ -256,7 +256,7 @@ async def ai_user_agree(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await set_agreed_ai(callback.from_user.id)
     name = callback.from_user.full_name or callback.from_user.username or str(callback.from_user.id)
-    log_ai_action(callback.from_user.id, name, "✅ موافقة على اتفاقية AI")
+    await log_ai_action(callback.from_user.id, name, "✅ موافقة على اتفاقية AI")
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await callback.message.answer(

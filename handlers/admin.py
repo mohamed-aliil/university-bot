@@ -1336,7 +1336,7 @@ async def ai_errors_button(message: Message) -> None:
 @router.message(SuperAdminFilter(), F.text == "📋 سجل AI")
 async def ai_log_button(message: Message) -> None:
     from database.crud import get_ai_log
-    log = get_ai_log(5)
+    log = await get_ai_log(5)
     await message.answer(f"📋 سجل AI (آخر 5):\n\n<code>{log}</code>")
 
 

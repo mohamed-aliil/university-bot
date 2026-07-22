@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
@@ -110,57 +110,44 @@ def clear_errors() -> None:
 
 # ─── AI action log ───
 
-AI_LOG_FILE = Path(__file__).parent.parent / "data" / "ai_log.log"
 
-
-def log_ai_action(user_id: int, user_name: str, action: str) -> None:
-    """Record an AI-related user action (agreed, first_use, etc.)."""
+async def log_ai_action(user_id: int, user_name: str, action: str) -> None:
     try:
-        AI_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
-        ts = _utcnow().strftime("%Y-%m-%d %H:%M:%S")
-        entry = f"[{ts}] [{user_id}] {user_name} — {action}\n"
-        with open(AI_LOG_FILE, "a", encoding="utf-8") as f:
-            f.write(entry)
+        async with async_session() as session:
+            session.add(AILog(user_id=user_id, user_name=user_name, action=action))
+            await session.commit()
     except Exception:
         pass
 
 
-def get_ai_log(limit: int = 5) -> str:
-    if not AI_LOG_FILE.exists():
-        return "لا توجد سجلات AI بعد."
+async def get_ai_log(limit: int = 5) -> str:
     try:
-        with open(AI_LOG_FILE, "r", encoding="utf-8") as f:
-            lines = f.readlines()
-        tail = lines[-limit:]
-
-        import re
-        pattern = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[(\d+)\] (.+) — (.+)$")
-        entries = []
-        for line in tail:
-            m = pattern.match(line)
-            if m:
-                entries.append((m.group(1), int(m.group(2)), m.group(3), m.group(4)))
-
-        if not entries:
-            return "لا توجد سجلات AI بعد."
-
-        # group consecutive same-user entries
-        groups = []
-        for ts, uid, name, action in entries:
-            if groups and groups[-1][0] == uid and groups[-1][1] == name:
-                groups[-1][2].append((ts, action))
-            else:
-                groups.append((uid, name, [(ts, action)]))
-
-        parts = []
-        for uid, name, actions in groups:
-            header = f"[{uid}] {name}"
-            action_lines = [f"  [{ts.split()[1]}] {action}" for ts, action in actions]
-            parts.append(header + "\n" + "\n".join(action_lines))
-
-        return "\n\n".join(parts)
+        async with async_session() as session:
+            result = await session.execute(
+                select(AILog).order_by(AILog.created_at.desc()).limit(limit)
+            )
+            rows = result.scalars().all()
+            rows.reverse()
     except Exception:
         return "خطأ في قراءة سجل AI."
+
+    if not rows:
+        return "لا توجد سجلات AI بعد."
+
+    groups = []
+    for row in rows:
+        if groups and groups[-1][0] == row.user_id and groups[-1][1] == row.user_name:
+            groups[-1][2].append((row.created_at.strftime("%H:%M:%S"), row.action))
+        else:
+            groups.append((row.user_id, row.user_name, [(row.created_at.strftime("%H:%M:%S"), row.action)]))
+
+    parts = []
+    for uid, name, actions in groups:
+        header = f"[{uid}] {name}"
+        action_lines = [f"  [{ts}] {action}" for ts, action in actions]
+        parts.append(header + "\n" + "\n".join(action_lines))
+
+    return "\n\n".join(parts)
 
 
 # ─── Bot settings (key-value) ───
