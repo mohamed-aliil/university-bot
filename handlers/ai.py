@@ -1,24 +1,53 @@
 import logging
 import re
+import asyncio
 import aiohttp
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from filters import AdminFilter
 from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs,
                            get_folder, get_content_items, get_folders, get_content_links,
                            add_article, delete_article, get_all_articles, get_all_prerequisites,
-                            clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
-                            add_folder, remove_folder, add_content_item, remove_content_item,
-                            add_content_link, remove_content_link, ban_user, unban_user, get_user,
-                            get_all_aliases, has_agreed_ai, set_agreed_ai)
+                             clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
+                             add_folder, remove_folder, add_content_item, remove_content_item,
+                             add_content_link, remove_content_link, ban_user, unban_user, get_user,
+                             get_all_aliases, has_agreed_ai, set_agreed_ai)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
 from services.gemini import call_gemini
 from config import settings
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+MAX_MSG_LEN = 4000  # Leave room for safety
+
+
+async def safe_send(message: Message, text: str, reply_markup=None) -> None:
+    """Split long text and send in chunks to avoid message_too_long."""
+    if not text:
+        return
+    if len(text) <= MAX_MSG_LEN:
+        await message.answer(text, reply_markup=reply_markup)
+        return
+    parts = []
+    while text:
+        if len(text) <= MAX_MSG_LEN:
+            parts.append(text)
+            break
+        split_at = text.rfind("\n", 0, MAX_MSG_LEN)
+        if split_at == -1:
+            split_at = text.rfind(" ", 0, MAX_MSG_LEN)
+        if split_at == -1:
+            split_at = MAX_MSG_LEN
+        parts.append(text[:split_at])
+        text = text[split_at:].strip()
+    for i, part in enumerate(parts):
+        markup = reply_markup if i == len(parts) - 1 else None
+        await message.answer(part, reply_markup=markup)
+        await asyncio.sleep(0.3)
 
 
 class AIState(StatesGroup):
@@ -548,7 +577,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             await state.update_data(pending_admin_notify=True, pending_notify_q=q)
 
         if clean_answer:
-            await message.answer(clean_answer, reply_markup=ai_user_keyboard())
+            await safe_send(message, clean_answer, reply_markup=ai_user_keyboard())
         # Save to history
         history.append({"user": q, "assistant": answer})
         await state.update_data(history=history)
@@ -597,7 +626,7 @@ async def ai_admin_image_analyze(message: Message, state: FSMContext) -> None:
     answer = await _call_groq_vision(prompt, b64)
     await state.clear()
     if answer:
-        await message.answer(f"🧠 التحليل:\n\n{answer}", reply_markup=ai_admin_keyboard())
+        await safe_send(message, f"🧠 التحليل:\n\n{answer}", reply_markup=ai_admin_keyboard())
     else:
         await message.answer("⚠️ فشل تحليل الصورة.", reply_markup=ai_admin_keyboard())
 
@@ -627,7 +656,7 @@ async def ai_admin_file_analyze(message: Message, state: FSMContext) -> None:
     answer = await call_gemini(prompt)
     await state.clear()
     if answer:
-        await message.answer(f"📄 تحليل الملف:\n\n{answer}", reply_markup=ai_admin_keyboard())
+        await safe_send(message, f"📄 تحليل الملف:\n\n{answer}", reply_markup=ai_admin_keyboard())
     else:
         await message.answer("⚠️ فشل تحليل الملف.", reply_markup=ai_admin_keyboard())
 
@@ -974,7 +1003,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 if not is_thinking:
                     answer_parts.append(stripped)
             clean = "\n\n".join(answer_parts) if answer_parts else clean
-        await message.answer(clean, reply_markup=cancel_keyboard())
+        await safe_send(message, clean, reply_markup=cancel_keyboard())
 
 
 # ─── Admin: إضافة مقال/إعلان ───
