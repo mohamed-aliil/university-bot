@@ -15,7 +15,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              add_folder, remove_folder, rename_folder, add_content_item, remove_content_item,
                              update_content_item_title, add_content_link, remove_content_link, update_content_link,
                              ban_user, unban_user, get_user,
-                             get_all_aliases, has_agreed_ai, set_agreed_ai)
+                             get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from config import settings
@@ -217,6 +217,8 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         await message.answer("🛑 نَافِذَة الـ AI متوقفة حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
     if await has_agreed_ai(message.from_user.id):
+        name = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
+        log_ai_action(message.from_user.id, name, "📝 دخول إلى نافذة AI")
         await state.set_state(AIState.waiting_for_question)
         await state.update_data(history=[])
         await message.answer(
@@ -228,6 +230,8 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         )
         return
     await state.set_state(AIState.waiting_agreement)
+    name = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
+    log_ai_action(message.from_user.id, name, "📋 عرض اتفاقية AI")
     terms = (
         "اتفاقية استخدام نَافِذَة الـ AI\n\n"
         "قبل البدء، الرجاء الاطلاع على الشروط التالية:\n\n"
@@ -252,6 +256,8 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
 async def ai_user_agree(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
     await set_agreed_ai(callback.from_user.id)
+    name = callback.from_user.full_name or callback.from_user.username or str(callback.from_user.id)
+    log_ai_action(callback.from_user.id, name, "✅ موافقة على اتفاقية AI")
     await state.set_state(AIState.waiting_for_question)
     await state.update_data(history=[])
     await callback.message.answer(

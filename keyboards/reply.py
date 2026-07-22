@@ -129,7 +129,7 @@ def ai_settings_keyboard() -> ReplyKeyboardMarkup:
             [KeyboardButton(text="⏹ إيقاف AI مع إعلام"), KeyboardButton(text="🔇 إيقاف AI صامت")],
             [KeyboardButton(text="▶️ تشغيل AI")],
             [KeyboardButton(text="🙈 إخفاء الزر"), KeyboardButton(text="👁 إظهار الزر")],
-            [KeyboardButton(text="📋 سجل الأخطاء")],
+            [KeyboardButton(text="📋 سجل الأخطاء"), KeyboardButton(text="📋 سجل AI")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

@@ -1333,6 +1333,13 @@ async def ai_errors_button(message: Message) -> None:
     await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>", parse_mode=ParseMode.HTML)
 
 
+@router.message(SuperAdminFilter(), F.text == "📋 سجل AI")
+async def ai_log_button(message: Message) -> None:
+    from database.crud import get_ai_log
+    log = get_ai_log(30)
+    await message.answer(f"📋 سجل AI (آخر 30):\n\n<code>{log}</code>")
+
+
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
 async def cleanup_db_prompt(message: Message) -> None:
     stats = await get_db_table_stats()

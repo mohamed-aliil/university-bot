@@ -108,6 +108,35 @@ def clear_errors() -> None:
         pass
 
 
+# ─── AI action log ───
+
+AI_LOG_FILE = Path(__file__).parent.parent / "data" / "ai_log.log"
+
+
+def log_ai_action(user_id: int, user_name: str, action: str) -> None:
+    """Record an AI-related user action (agreed, first_use, etc.)."""
+    try:
+        AI_LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
+        ts = _utcnow().strftime("%Y-%m-%d %H:%M:%S")
+        entry = f"[{ts}] [{user_id}] {user_name} — {action}\n"
+        with open(AI_LOG_FILE, "a", encoding="utf-8") as f:
+            f.write(entry)
+    except Exception:
+        pass
+
+
+def get_ai_log(limit: int = 30) -> str:
+    if not AI_LOG_FILE.exists():
+        return "لا توجد سجلات AI بعد."
+    try:
+        with open(AI_LOG_FILE, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+        tail = lines[-limit:]
+        return "".join(tail) or "لا توجد سجلات AI بعد."
+    except Exception:
+        return "خطأ في قراءة سجل AI."
+
+
 # ─── Bot settings (key-value) ───
 
 
