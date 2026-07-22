@@ -646,7 +646,8 @@ async def ai_smart_start(message: Message, state: FSMContext) -> None:
 
 @router.message(AIAdminState.smart_mode, AdminFilter(), F.photo)
 async def ai_smart_image(message: Message, state: FSMContext) -> None:
-    photo = message.photo[-1]
+    # Use a medium-sized photo (index -2) to avoid huge base64
+    photo = message.photo[-2] if len(message.photo) >= 2 else message.photo[-1]
     file_info = await message.bot.get_file(photo.file_id)
     file_bytes = await message.bot.download_file(file_info.file_path)
     import base64
@@ -656,7 +657,7 @@ async def ai_smart_image(message: Message, state: FSMContext) -> None:
     if answer:
         await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}", reply_markup=cancel_keyboard())
     else:
-        await message.answer("⚠️ فشل تحليل الصورة.", reply_markup=cancel_keyboard())
+        await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.", reply_markup=cancel_keyboard())
 
 
 @router.message(AIAdminState.smart_mode, AdminFilter(), F.document)
