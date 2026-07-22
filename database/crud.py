@@ -147,24 +147,45 @@ async def delete_bot_setting(key: str) -> None:
         pass
 
 
-async def get_required_channel() -> tuple[str | None, str | None]:
-    """Returns (chat_id, invite_link) or (None, None) if not set."""
-    chat_id = await get_bot_setting("required_channel_id")
-    link = await get_bot_setting("required_channel_link")
-    return (chat_id, link) if chat_id else (None, None)
+# ─── Required channels (multiple) ───
 
 
-async def set_required_channel(chat_id: str, invite_link: str) -> None:
-    await set_bot_setting("required_channel_id", chat_id)
-    await set_bot_setting("required_channel_link", invite_link)
+async def add_required_channel(chat_id: str, invite_link: str, custom_message: str | None = None):
+    """Add a required channel. Returns the new RequiredChannel object."""
+    async with async_session() as session:
+        from .models import RequiredChannel
+        rc = RequiredChannel(chat_id=chat_id, invite_link=invite_link, custom_message=custom_message)
+        session.add(rc)
+        await session.commit()
+        return rc
 
 
-async def clear_required_channel() -> None:
-    await delete_bot_setting("required_channel_id")
-    await delete_bot_setting("required_channel_link")
+async def get_all_required_channels():
+    """Return list of all RequiredChannel objects."""
+    async with async_session() as session:
+        from .models import RequiredChannel
+        result = await session.execute(select(RequiredChannel).order_by(RequiredChannel.id))
+        return result.scalars().all()
 
 
-# ─── Channel verification (per user) ───
+async def remove_required_channel(channel_id: int) -> None:
+    async with async_session() as session:
+        from .models import RequiredChannel
+        await session.execute(delete(RequiredChannel).where(RequiredChannel.id == channel_id))
+        await session.commit()
+
+
+async def update_channel_message(channel_id: int, custom_message: str | None) -> None:
+    async with async_session() as session:
+        from .models import RequiredChannel
+        result = await session.execute(select(RequiredChannel).where(RequiredChannel.id == channel_id))
+        rc = result.scalar_one_or_none()
+        if rc:
+            rc.custom_message = custom_message
+            await session.commit()
+
+
+# ─── Channel verification (per user, cached in DB) ───
 
 
 async def is_channel_verified(user_id: int) -> bool:
@@ -175,7 +196,6 @@ async def is_channel_verified(user_id: int) -> bool:
             result = await session.execute(select(UserPreference).where(UserPreference.user_id == user_id))
             pref = result.scalar_one_or_none()
             if pref and pref.channel_verified and pref.channel_verified_at:
-                # Re-check every 24 hours
                 age = datetime.now(timezone.utc).replace(tzinfo=None) - pref.channel_verified_at
                 if age < timedelta(hours=24):
                     return True

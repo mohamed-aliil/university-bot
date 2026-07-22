@@ -10,7 +10,8 @@ from database.crud import (
     add_monitored_channel, get_all_monitored_channels, remove_monitored_channel,
     get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
     add_content_item, add_content_link, get_folders, add_folder,
-    get_required_channel, set_required_channel, clear_required_channel,
+    add_required_channel, get_all_required_channels, remove_required_channel,
+    update_channel_message,
 )
 from datetime import datetime, timezone
 from filters import SuperAdminFilter
@@ -25,7 +26,9 @@ class ChannelManageState(StatesGroup):
     waiting_channel_input = State()
     waiting_mode = State()
     waiting_delete = State()
-    waiting_main_channel = State()
+    waiting_required_channel = State()
+    waiting_required_message = State()
+    waiting_required_delete = State()
 
 
 CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
@@ -38,31 +41,21 @@ async def channels_menu(message: Message, state: FSMContext) -> None:
     await message.answer("📡 إدارة القنوات:", reply_markup=await channels_keyboard())
 
 
-@router.message(SuperAdminFilter(), F.text.in_({"🔒 تعيين القناة الرئيسية", "🔒 تعيين القناة الرئيسية ✅"}))
-async def set_main_channel_start(message: Message, state: FSMContext) -> None:
-    current_id, current_link = await get_required_channel()
-    text = "✏️ أرسل رابط القناة أو المعرف (مثال: @qanat أو https://t.me/qanat):"
-    if current_id:
-        text = (
-            f"🔒 القناة الحالية: {current_link or current_id}\n\n"
-            "✏️ أرسل رابط القناة الجديدة، أو أرسل /clear لإزالتها:"
-        )
-    await state.set_state(ChannelManageState.waiting_main_channel)
-    await message.answer(text, reply_markup=cancel_keyboard())
+@router.message(SuperAdminFilter(), F.text.startswith("🔒 إضافة قناة إجبارية"))
+async def add_required_channel_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(ChannelManageState.waiting_required_channel)
+    await message.answer(
+        "✏️ أرسل رابط القناة أو المعرف (مثال: @qanat أو https://t.me/qanat):",
+        reply_markup=cancel_keyboard(),
+    )
 
 
-@router.message(ChannelManageState.waiting_main_channel, SuperAdminFilter())
-async def set_main_channel_process(message: Message, state: FSMContext) -> None:
+@router.message(ChannelManageState.waiting_required_channel, SuperAdminFilter())
+async def add_required_channel_link(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
-    if text == "/clear":
-        await clear_required_channel()
-        await message.answer("✅ تم إلغاء تعيين القناة الرئيسية.", reply_markup=await channels_keyboard())
-        await state.clear()
-        return
-
     match = re.search(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)", text)
-    channel_username = None
     chat_id = None
+    channel_username = None
     if match:
         channel_username = match.group(1)
         chat_id = f"@{channel_username}"
@@ -78,29 +71,95 @@ async def set_main_channel_process(message: Message, state: FSMContext) -> None:
     try:
         chat = await message.bot.get_chat(chat_id)
         title = chat.title or channel_username or chat_id
-        # Generate invite link
-        invite_link = (await message.bot.create_chat_invite_link(chat_id, member_limit=0)).invite_link
-        await set_required_channel(str(chat.id), invite_link)
+        invite = await message.bot.create_chat_invite_link(chat_id, member_limit=0)
+        await state.update_data(
+            rc_chat_id=str(chat.id),
+            rc_invite_link=invite.invite_link,
+            rc_title=title,
+        )
+        await state.set_state(ChannelManageState.waiting_required_message)
         await message.answer(
-            f"✅ تم تعيين القناة الرئيسية:\n"
-            f"📌 {title}\n"
-            f"🔗 {invite_link}\n\n"
-            "جميع المستخدمين يجب أن يشتركوا فيها لاستخدام البوت.",
-            reply_markup=await channels_keyboard(),
+            f"✅ تم التعرف على القناة: {title}\n\n"
+            "✏️ أرسل الرسالة التي ستظهر للمستخدمين غير المشتركين (أو أرسل /skip لاستخدام رسالة افتراضية):",
+            reply_markup=cancel_keyboard(),
         )
     except Exception as e:
-        logger.exception("Failed to set main channel")
+        logger.exception("Failed to add required channel")
         await message.answer(
-            f"❌ فشل في تعيين القناة. تأكد من إضافة البوت مشرفاً في القناة.\n\nالخطأ: {e}",
+            f"❌ فشل. تأكد من إضافة البوت مشرفاً في القناة.\n\nالخطأ: {e}",
             reply_markup=await channels_keyboard(),
         )
+        await state.clear()
+
+
+@router.message(ChannelManageState.waiting_required_message, SuperAdminFilter())
+async def add_required_channel_message(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    data = await state.get_data()
+    custom_msg = None if text == "/skip" else text
+    await add_required_channel(
+        chat_id=data["rc_chat_id"],
+        invite_link=data["rc_invite_link"],
+        custom_message=custom_msg,
+    )
+    await message.answer(
+        f"✅ تم إضافة القناة الإجبارية:\n"
+        f"📌 {data['rc_title']}\n"
+        f"🔗 {data['rc_invite_link']}\n\n"
+        "جميع المستخدمين يجب أن يشتركوا فيها لاستخدام البوت.",
+        reply_markup=await channels_keyboard(),
+    )
     await state.clear()
 
 
-@router.message(SuperAdminFilter(), F.text == "🔓 إلغاء تعيين القناة الرئيسية")
-async def clear_main_channel(message: Message) -> None:
-    await clear_required_channel()
-    await message.answer("✅ تم إلغاء تعيين القناة الرئيسية.", reply_markup=await channels_keyboard())
+@router.message(SuperAdminFilter(), F.text == "📋 القنوات الإجبارية")
+async def list_required_channels(message: Message) -> None:
+    channels = await get_all_required_channels()
+    if not channels:
+        await message.answer("❌ لا توجد قنوات إجبارية.", reply_markup=await channels_keyboard())
+        return
+    text = "🔒 القنوات الإجبارية:\n\n"
+    for i, ch in enumerate(channels, 1):
+        text += f"{i}. {ch.chat_id}\n   🔗 {ch.invite_link}\n"
+        if ch.custom_message:
+            msg_preview = ch.custom_message[:50].replace("\n", " ")
+            text += f"   📝 {msg_preview}...\n"
+        text += "\n"
+    await message.answer(text, reply_markup=await channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "➖ حذف قناة إجبارية")
+async def delete_required_channel_start(message: Message, state: FSMContext) -> None:
+    channels = await get_all_required_channels()
+    if not channels:
+        await message.answer("❌ لا توجد قنوات إجبارية للحذف.", reply_markup=await channels_keyboard())
+        return
+    text = "🔒 اختر القناة للحذف:\n\n"
+    for i, ch in enumerate(channels, 1):
+        text += f"{i}. {ch.chat_id}\n"
+    await state.set_state(ChannelManageState.waiting_required_delete)
+    await state.update_data(required_channels=channels)
+    await message.answer(text + "\nأرسل رقم القناة:", reply_markup=cancel_keyboard())
+
+
+@router.message(ChannelManageState.waiting_required_delete, SuperAdminFilter())
+async def delete_required_channel_confirm(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    channels = data.get("required_channels", [])
+    try:
+        idx = int(message.text.strip()) - 1
+        if idx < 0 or idx >= len(channels):
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ رقم غير صالح.")
+        return
+    ch = channels[idx]
+    await remove_required_channel(ch.id)
+    await message.answer(
+        f"✅ تم حذف القناة الإجبارية: {ch.chat_id}",
+        reply_markup=await channels_keyboard(),
+    )
+    await state.clear()
 
 
 @router.message(SuperAdminFilter(), F.text == "📋 عرض القنوات")

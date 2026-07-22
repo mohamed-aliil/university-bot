@@ -53,6 +53,16 @@ class BotSetting(Base):
     value = Column(Text, default="")
 
 
+class RequiredChannel(Base):
+    __tablename__ = "required_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(String, nullable=False)
+    invite_link = Column(String, nullable=False)
+    custom_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
 

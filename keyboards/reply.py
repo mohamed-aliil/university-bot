@@ -137,23 +137,19 @@ def ai_settings_keyboard() -> ReplyKeyboardMarkup:
 
 
 async def channels_keyboard() -> ReplyKeyboardMarkup:
-    from database.crud import get_required_channel
-    chat_id, link = await get_required_channel()
-    if chat_id:
-        return ReplyKeyboardMarkup(
-            keyboard=[
-                [KeyboardButton(text="➕ إضافة قناة"), KeyboardButton(text="➖ حذف قناة")],
-                [KeyboardButton(text="📋 عرض القنوات")],
-                [KeyboardButton(text="🔒 تعيين القناة الرئيسية ✅"), KeyboardButton(text="🔓 إلغاء تعيين القناة الرئيسية")],
-                [KeyboardButton(text="🔙 رجوع")],
-            ],
-            resize_keyboard=True,
-        )
+    from database.crud import get_all_required_channels
+    req = await get_all_required_channels()
+    count = len(req)
+    if count:
+        status = f" ✅ ({count})"
+    else:
+        status = ""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="➕ إضافة قناة"), KeyboardButton(text="➖ حذف قناة")],
             [KeyboardButton(text="📋 عرض القنوات")],
-            [KeyboardButton(text="🔒 تعيين القناة الرئيسية")],
+            [KeyboardButton(text=f"🔒 إضافة قناة إجبارية{status}"), KeyboardButton(text="➖ حذف قناة إجبارية")],
+            [KeyboardButton(text="📋 القنوات الإجبارية")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

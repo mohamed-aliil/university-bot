@@ -13,7 +13,7 @@ from aiohttp import web
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_required_channel, set_channel_verified
+from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_all_required_channels, set_channel_verified
 from handlers import start, messages, admin, materials, channels, ai
 from middlewares import ThrottlingMiddleware, SubscriptionMiddleware
 from utils.logger import setup_logger
@@ -82,23 +82,43 @@ async def main() -> None:
     @dp.callback_query(lambda c: c.data == "verify_subscription")
     async def verify_subscription_callback(callback: CallbackQuery) -> None:
         user = callback.from_user
-        chat_id, invite_link = await get_required_channel()
-        if not chat_id:
-            await callback.message.edit_text("❌ لا توجد قناة مطلوبة حالياً.")
+        channels = await get_all_required_channels()
+        if not channels:
+            await callback.message.edit_text("❌ لا توجد قنوات مطلوبة حالياً.")
             await callback.answer()
             return
-        try:
-            member = await bot.get_chat_member(chat_id, user.id)
-            if member.status in ("member", "creator", "administrator"):
-                await set_channel_verified(user.id)
-                await callback.message.edit_text(
-                    "✅ تم التحقق من اشتراكك!\nأرسل /start للبدء."
-                )
-                await callback.answer()
-                return
-        except Exception:
-            pass
-        await callback.answer("❌ لم تشترك في القناة بعد. اشترك أولاً ثم اضغط على الزر مرة أخرى.", show_alert=True)
+
+        pending = []
+        for ch in channels:
+            try:
+                member = await bot.get_chat_member(ch.chat_id, user.id)
+                if member.status in ("member", "creator", "administrator"):
+                    continue
+            except Exception:
+                pass
+            pending.append(ch)
+
+        if not pending:
+            await set_channel_verified(user.id)
+            await callback.message.edit_text(
+                "✅ تم التحقق من اشتراكك في جميع القنوات!\nأرسل /start للبدء."
+            )
+            await callback.answer()
+            return
+
+        # Still not subscribed to some
+        first = pending[0]
+        link = first.invite_link or first.chat_id
+        builder = InlineKeyboardBuilder()
+        builder.button(text="✅ لقد اشتركت", callback_data="verify_subscription")
+        if first.invite_link and first.invite_link.startswith("http"):
+            builder.button(text="📢 اضغط للاشتراك", url=first.invite_link)
+        builder.adjust(1)
+        await callback.message.edit_text(
+            f"❌ لم تشترك في القناة التالية بعد:\n\n{link}",
+            reply_markup=builder.as_markup(),
+        )
+        await callback.answer()
 
     @dp.errors()
     async def global_error(event: ErrorEvent) -> None:
