@@ -132,7 +132,33 @@ def get_ai_log(limit: int = 30) -> str:
         with open(AI_LOG_FILE, "r", encoding="utf-8") as f:
             lines = f.readlines()
         tail = lines[-limit:]
-        return "".join(tail) or "لا توجد سجلات AI بعد."
+
+        import re
+        pattern = re.compile(r"^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})\] \[(\d+)\] (.+) — (.+)$")
+        entries = []
+        for line in tail:
+            m = pattern.match(line)
+            if m:
+                entries.append((m.group(1), int(m.group(2)), m.group(3), m.group(4)))
+
+        if not entries:
+            return "لا توجد سجلات AI بعد."
+
+        # group consecutive same-user entries
+        groups = []
+        for ts, uid, name, action in entries:
+            if groups and groups[-1][0] == uid and groups[-1][1] == name:
+                groups[-1][2].append((ts, action))
+            else:
+                groups.append((uid, name, [(ts, action)]))
+
+        parts = []
+        for uid, name, actions in groups:
+            header = f"[{uid}] {name}"
+            action_lines = [f"  [{ts.split()[1]}] {action}" for ts, action in actions]
+            parts.append(header + "\n" + "\n".join(action_lines))
+
+        return "\n\n".join(parts)
     except Exception:
         return "خطأ في قراءة سجل AI."
 
