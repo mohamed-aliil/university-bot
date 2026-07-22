@@ -110,7 +110,7 @@ async def main() -> None:
         first = pending[0]
         link = first.invite_link or first.chat_id
         builder = InlineKeyboardBuilder()
-        builder.button(text="✅ لقد اشتركت", callback_data="verify_subscription")
+        builder.button(text="لقد اشتركت", callback_data="verify_subscription")
         if first.invite_link and first.invite_link.startswith("http"):
             builder.button(text="📢 اضغط للاشتراك", url=first.invite_link)
         builder.adjust(1)

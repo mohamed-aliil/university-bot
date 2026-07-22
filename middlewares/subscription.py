@@ -73,7 +73,7 @@ class SubscriptionMiddleware(BaseMiddleware):
             )
 
         builder = InlineKeyboardBuilder()
-        builder.button(text="✅ لقد اشتركت", callback_data="verify_subscription")
+        builder.button(text="لقد اشتركت", callback_data="verify_subscription")
         if pending_channel.invite_link and pending_channel.invite_link.startswith("http"):
             builder.button(text="📢 اضغط للاشتراك", url=pending_channel.invite_link)
         builder.adjust(1)
