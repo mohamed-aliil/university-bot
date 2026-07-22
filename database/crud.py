@@ -108,6 +108,101 @@ def clear_errors() -> None:
         pass
 
 
+# ─── Bot settings (key-value) ───
+
+
+async def get_bot_setting(key: str) -> str | None:
+    try:
+        async with async_session() as session:
+            from .models import BotSetting
+            result = await session.execute(select(BotSetting).where(BotSetting.key == key))
+            row = result.scalar_one_or_none()
+            return row.value if row else None
+    except Exception:
+        return None
+
+
+async def set_bot_setting(key: str, value: str) -> None:
+    try:
+        async with async_session() as session:
+            from .models import BotSetting
+            result = await session.execute(select(BotSetting).where(BotSetting.key == key))
+            row = result.scalar_one_or_none()
+            if row:
+                row.value = value
+            else:
+                session.add(BotSetting(key=key, value=value))
+            await session.commit()
+    except Exception:
+        pass
+
+
+async def delete_bot_setting(key: str) -> None:
+    try:
+        async with async_session() as session:
+            from .models import BotSetting
+            await session.execute(delete(BotSetting).where(BotSetting.key == key))
+            await session.commit()
+    except Exception:
+        pass
+
+
+async def get_required_channel() -> tuple[str | None, str | None]:
+    """Returns (chat_id, invite_link) or (None, None) if not set."""
+    chat_id = await get_bot_setting("required_channel_id")
+    link = await get_bot_setting("required_channel_link")
+    return (chat_id, link) if chat_id else (None, None)
+
+
+async def set_required_channel(chat_id: str, invite_link: str) -> None:
+    await set_bot_setting("required_channel_id", chat_id)
+    await set_bot_setting("required_channel_link", invite_link)
+
+
+async def clear_required_channel() -> None:
+    await delete_bot_setting("required_channel_id")
+    await delete_bot_setting("required_channel_link")
+
+
+# ─── Channel verification (per user) ───
+
+
+async def is_channel_verified(user_id: int) -> bool:
+    try:
+        async with async_session() as session:
+            from .models import UserPreference
+            from datetime import datetime, timedelta, timezone
+            result = await session.execute(select(UserPreference).where(UserPreference.user_id == user_id))
+            pref = result.scalar_one_or_none()
+            if pref and pref.channel_verified and pref.channel_verified_at:
+                # Re-check every 24 hours
+                age = datetime.now(timezone.utc).replace(tzinfo=None) - pref.channel_verified_at
+                if age < timedelta(hours=24):
+                    return True
+        return False
+    except Exception:
+        return False
+
+
+async def set_channel_verified(user_id: int) -> None:
+    try:
+        async with async_session() as session:
+            from .models import UserPreference
+            from datetime import datetime, timezone
+            result = await session.execute(select(UserPreference).where(UserPreference.user_id == user_id))
+            pref = result.scalar_one_or_none()
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            if pref:
+                pref.channel_verified = True
+                pref.channel_verified_at = now
+            else:
+                pref = UserPreference(user_id=user_id, channel_verified=True, channel_verified_at=now)
+                session.add(pref)
+            await session.commit()
+    except Exception:
+        pass
+
+
 def is_ai_hidden() -> bool:
     return AI_BUTTON_HIDDEN_FILE.exists()
 

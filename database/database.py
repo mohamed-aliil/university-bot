@@ -18,5 +18,5 @@ class Base(DeclarativeBase):
 
 async def init_db():
     async with engine.begin() as conn:
-        from .models import User, Message, Attachment, NewsTemplate, Folder, ContentItem, ContentLink, UserPreference
+        from .models import User, Message, Attachment, NewsTemplate, Folder, ContentItem, ContentLink, UserPreference, BotSetting
         await conn.run_sync(Base.metadata.create_all)

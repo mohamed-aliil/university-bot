@@ -42,6 +42,15 @@ class UserPreference(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(BigInteger, unique=True, nullable=False, index=True)
     agreed_ai = Column(Boolean, default=False)
+    channel_verified = Column(Boolean, default=False)
+    channel_verified_at = Column(DateTime, nullable=True)
+
+
+class BotSetting(Base):
+    __tablename__ = "bot_settings"
+
+    key = Column(String(255), primary_key=True)
+    value = Column(Text, default="")
 
 
 class Message(Base):

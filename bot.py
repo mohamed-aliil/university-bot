@@ -7,15 +7,17 @@ import traceback
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
-from aiogram.types import ErrorEvent, Update
+from aiogram.types import ErrorEvent, Update, CallbackQuery
+from aiogram.filters import CommandStart
 from aiohttp import web
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user
+from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_required_channel, set_channel_verified
 from handlers import start, messages, admin, materials, channels, ai
-from middlewares import ThrottlingMiddleware
+from middlewares import ThrottlingMiddleware, SubscriptionMiddleware
 from utils.logger import setup_logger
+from keyboards.reply import main_keyboard
 
 logger = logging.getLogger(__name__)
 BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://university-bot-8vxq.onrender.com")
@@ -74,7 +76,29 @@ async def main() -> None:
     dp.include_router(ai.router)
     dp.include_router(messages.router)
     dp.include_router(channels.channel_router)
+    dp.message.middleware(SubscriptionMiddleware())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
+
+    @dp.callback_query(lambda c: c.data == "verify_subscription")
+    async def verify_subscription_callback(callback: CallbackQuery) -> None:
+        user = callback.from_user
+        chat_id, invite_link = await get_required_channel()
+        if not chat_id:
+            await callback.message.edit_text("❌ لا توجد قناة مطلوبة حالياً.")
+            await callback.answer()
+            return
+        try:
+            member = await bot.get_chat_member(chat_id, user.id)
+            if member.status in ("member", "creator", "administrator"):
+                await set_channel_verified(user.id)
+                await callback.message.edit_text(
+                    "✅ تم التحقق من اشتراكك!\nأرسل /start للبدء."
+                )
+                await callback.answer()
+                return
+        except Exception:
+            pass
+        await callback.answer("❌ لم تشترك في القناة بعد. اشترك أولاً ثم اضغط على الزر مرة أخرى.", show_alert=True)
 
     @dp.errors()
     async def global_error(event: ErrorEvent) -> None:

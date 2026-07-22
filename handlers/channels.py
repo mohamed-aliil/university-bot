@@ -10,6 +10,7 @@ from database.crud import (
     add_monitored_channel, get_all_monitored_channels, remove_monitored_channel,
     get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
     add_content_item, add_content_link, get_folders, add_folder,
+    get_required_channel, set_required_channel, clear_required_channel,
 )
 from datetime import datetime, timezone
 from filters import SuperAdminFilter
@@ -24,6 +25,7 @@ class ChannelManageState(StatesGroup):
     waiting_channel_input = State()
     waiting_mode = State()
     waiting_delete = State()
+    waiting_main_channel = State()
 
 
 CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
@@ -33,14 +35,79 @@ CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
 async def channels_menu(message: Message, state: FSMContext) -> None:
     logger.info(f"channels_menu called by {message.from_user.id}")
     await state.clear()
-    await message.answer("📡 إدارة القنوات:", reply_markup=channels_keyboard())
+    await message.answer("📡 إدارة القنوات:", reply_markup=await channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text.in_({"🔒 تعيين القناة الرئيسية", "🔒 تعيين القناة الرئيسية ✅"}))
+async def set_main_channel_start(message: Message, state: FSMContext) -> None:
+    current_id, current_link = await get_required_channel()
+    text = "✏️ أرسل رابط القناة أو المعرف (مثال: @qanat أو https://t.me/qanat):"
+    if current_id:
+        text = (
+            f"🔒 القناة الحالية: {current_link or current_id}\n\n"
+            "✏️ أرسل رابط القناة الجديدة، أو أرسل /clear لإزالتها:"
+        )
+    await state.set_state(ChannelManageState.waiting_main_channel)
+    await message.answer(text, reply_markup=cancel_keyboard())
+
+
+@router.message(ChannelManageState.waiting_main_channel, SuperAdminFilter())
+async def set_main_channel_process(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if text == "/clear":
+        await clear_required_channel()
+        await message.answer("✅ تم إلغاء تعيين القناة الرئيسية.", reply_markup=await channels_keyboard())
+        await state.clear()
+        return
+
+    match = re.search(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)", text)
+    channel_username = None
+    chat_id = None
+    if match:
+        channel_username = match.group(1)
+        chat_id = f"@{channel_username}"
+    elif text.startswith("-100") or text.lstrip("-").isdigit():
+        chat_id = text
+    elif text.startswith("@"):
+        channel_username = text[1:]
+        chat_id = text
+    else:
+        await message.answer("❌ رابط غير صالح. أرسل رابط قناة أو معرف (@username) أو ID.")
+        return
+
+    try:
+        chat = await message.bot.get_chat(chat_id)
+        title = chat.title or channel_username or chat_id
+        # Generate invite link
+        invite_link = (await message.bot.create_chat_invite_link(chat_id, member_limit=0)).invite_link
+        await set_required_channel(str(chat.id), invite_link)
+        await message.answer(
+            f"✅ تم تعيين القناة الرئيسية:\n"
+            f"📌 {title}\n"
+            f"🔗 {invite_link}\n\n"
+            "جميع المستخدمين يجب أن يشتركوا فيها لاستخدام البوت.",
+            reply_markup=await channels_keyboard(),
+        )
+    except Exception as e:
+        logger.exception("Failed to set main channel")
+        await message.answer(
+            f"❌ فشل في تعيين القناة. تأكد من إضافة البوت مشرفاً في القناة.\n\nالخطأ: {e}",
+            reply_markup=await channels_keyboard(),
+        )
+    await state.clear()
+
+
+@router.message(SuperAdminFilter(), F.text == "🔓 إلغاء تعيين القناة الرئيسية")
+async def clear_main_channel(message: Message) -> None:
+    await clear_required_channel()
+    await message.answer("✅ تم إلغاء تعيين القناة الرئيسية.", reply_markup=await channels_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "📋 عرض القنوات")
 async def list_channels(message: Message) -> None:
     channels = await get_all_monitored_channels()
     if not channels:
-        await message.answer("❌ لا توجد قنوات مضافة.", reply_markup=channels_keyboard())
+        await message.answer("❌ لا توجد قنوات مضافة.", reply_markup=await channels_keyboard())
         return
     text = "📡 القنوات المضافة:\n\n"
     for i, ch in enumerate(channels, 1):
@@ -48,7 +115,7 @@ async def list_channels(message: Message) -> None:
         title = ch.title or "بدون اسم"
         uname = f"@{ch.channel_username}" if ch.channel_username else ch.channel_id
         text += f"{i}. {title}\n   {uname} | {mode}\n"
-    await message.answer(text, reply_markup=channels_keyboard())
+    await message.answer(text, reply_markup=await channels_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "➕ إضافة قناة")
@@ -81,7 +148,7 @@ async def add_channel_process(message: Message, state: FSMContext) -> None:
 
     existing = await get_monitored_channel_by_channel_id(channel_id)
     if existing:
-        await message.answer("❌ هذه القناة مضافة بالفعل.", reply_markup=channels_keyboard())
+        await message.answer("❌ هذه القناة مضافة بالفعل.", reply_markup=await channels_keyboard())
         await state.clear()
         return
 
@@ -123,7 +190,7 @@ async def add_channel_mode(message: Message, state: FSMContext) -> None:
             f"✅ تم إضافة القناة: {data.get('title')}\n"
             f"الوضع: 🖐 يدوي\n"
             f"يمكنك الآن لصق روابطها في المواد.",
-            reply_markup=channels_keyboard(),
+            reply_markup=await channels_keyboard(),
         )
         await state.clear()
 
@@ -142,7 +209,7 @@ async def add_channel_mode(message: Message, state: FSMContext) -> None:
             f"بدون هاشتاقات = يتجاهله\n\n"
             f"⚠️ تأكد من إضافة البوت (@itjobTripoli_bot) "
             f"كمشرف في القناة حتى يستقبل المنشورات.",
-            reply_markup=channels_keyboard(),
+            reply_markup=await channels_keyboard(),
         )
         await state.clear()
     else:
@@ -153,7 +220,7 @@ async def add_channel_mode(message: Message, state: FSMContext) -> None:
 async def delete_channel_start(message: Message, state: FSMContext) -> None:
     channels = await get_all_monitored_channels()
     if not channels:
-        await message.answer("❌ لا توجد قنوات للحذف.", reply_markup=channels_keyboard())
+        await message.answer("❌ لا توجد قنوات للحذف.", reply_markup=await channels_keyboard())
         return
     text = "📡 اختر القناة للحذف:\n\n"
     for i, ch in enumerate(channels, 1):
@@ -179,7 +246,7 @@ async def delete_channel_confirm(message: Message, state: FSMContext) -> None:
     await remove_monitored_channel(ch.channel_id)
     await message.answer(
         f"✅ تم حذف القناة: {ch.title or ch.channel_id}",
-        reply_markup=channels_keyboard(),
+        reply_markup=await channels_keyboard(),
     )
     await state.clear()
 
