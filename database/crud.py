@@ -756,6 +756,16 @@ async def update_content_item_title(item_id: int, title: str) -> bool:
         return True
 
 
+async def update_content_link(link_id: int, new_link: str) -> bool:
+    async with async_session() as session:
+        obj = await session.get(ContentLink, link_id)
+        if not obj:
+            return False
+        obj.link = new_link
+        await session.commit()
+        return True
+
+
 MATERIALS_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".materials_active"
 
 

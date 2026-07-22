@@ -12,8 +12,9 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                            get_folder, get_content_items, get_folders, get_content_links,
                            add_article, delete_article, get_all_articles, get_all_prerequisites,
                              clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
-                             add_folder, remove_folder, add_content_item, remove_content_item,
-                             add_content_link, remove_content_link, ban_user, unban_user, get_user,
+                             add_folder, remove_folder, rename_folder, add_content_item, remove_content_item,
+                             update_content_item_title, add_content_link, remove_content_link, update_content_link,
+                             ban_user, unban_user, get_user,
                              get_all_aliases, has_agreed_ai, set_agreed_ai)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
@@ -812,6 +813,9 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للأب)\n"
         "- [ADD_ITEM] ID_المجلد | عنوان المادة\n"
         "- [ADD_LINK] ID_العنصر | رابط t.me/...\n"
+        "- [RENAME_FOLDER] ID | الاسم_الجديد\n"
+        "- [RENAME_ITEM] ID | العنوان_الجديد\n"
+        "- [UPDATE_LINK] ID | الرابط_الجديد\n"
         "- [DEL_FOLDER] ID\n"
         "- [DEL_ITEM] ID\n"
         "- [DEL_LINK] ID\n"
@@ -966,6 +970,36 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
             await message.answer(f"✅ تم حذف الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=cancel_keyboard())
         except ValueError:
             await message.answer("❌ أرسل رقم الرابط.", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[RENAME_FOLDER]"):
+        parts = answer.replace("[RENAME_FOLDER]", "", 1).strip().split("|")
+        if len(parts) >= 2 and parts[0].strip().isdigit():
+            fid = int(parts[0].strip())
+            new_name = parts[1].strip()
+            ok = await rename_folder(fid, new_name)
+            await message.answer(f"✅ تم إعادة تسمية المجلد {fid} إلى {new_name}" if ok else "❌ المجلد غير موجود", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: ID | الاسم_الجديد", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[RENAME_ITEM]"):
+        parts = answer.replace("[RENAME_ITEM]", "", 1).strip().split("|")
+        if len(parts) >= 2 and parts[0].strip().isdigit():
+            iid = int(parts[0].strip())
+            title = parts[1].strip()
+            ok = await update_content_item_title(iid, title)
+            await message.answer(f"✅ تم تحديث عنوان المادة {iid} إلى {title}" if ok else "❌ المادة غير موجودة", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: ID | العنوان_الجديد", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[UPDATE_LINK]"):
+        parts = answer.replace("[UPDATE_LINK]", "", 1).strip().split("|")
+        if len(parts) >= 2 and parts[0].strip().isdigit():
+            lid = int(parts[0].strip())
+            new_link = parts[1].strip()
+            ok = await update_content_link(lid, new_link)
+            await message.answer(f"✅ تم تحديث الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("❌ التنسيق: ID | الرابط_الجديد", reply_markup=cancel_keyboard())
 
     elif answer.startswith("[LIST_FOLDERS]"):
         ft = await _tf()
