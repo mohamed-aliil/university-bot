@@ -217,8 +217,6 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         await message.answer("🛑 نَافِذَة الـ AI متوقفة حالياً. حاول لاحقاً.", reply_markup=main_keyboard())
         return
     if await has_agreed_ai(message.from_user.id):
-        name = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
-        log_ai_action(message.from_user.id, name, "📝 دخول إلى نافذة AI")
         await state.set_state(AIState.waiting_for_question)
         await state.update_data(history=[])
         await message.answer(
