@@ -206,21 +206,21 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
                             timeout=aiohttp.ClientTimeout(total=60),
                         ) as resp:
                             if resp.status == 429:
-                                logger.warning("Groq vision 429 for %s (attempt %d/3)", model, attempt + 1)
+                                logger.warning("Groq vision 429 for %s key=%s (attempt %d/3)", model, api_key[:8], attempt + 1)
                                 if attempt < 2:
                                     await asyncio.sleep(2 ** attempt)
                                     continue
                                 break
                             if resp.status != 200:
                                 body = await resp.text()
-                                logger.warning("Groq vision %s error %s: %s", model, resp.status, body[:200])
-                                break
+                                logger.warning("Groq vision %s key=%s error %s: %s", model, api_key[:8], resp.status, body[:300])
+                                continue  # Try next model on same key
                             data = await resp.json()
                             choices = data.get("choices", [])
                             if choices:
                                 text = choices[0].get("message", {}).get("content", "")
                                 if text:
-                                    logger.info("Groq vision %s success", model)
+                                    logger.info("Groq vision %s success (key=%s)", model, api_key[:8])
                                     return text.strip()
                 except asyncio.TimeoutError:
                     logger.warning("Groq vision %s timeout (attempt %d/3)", model, attempt + 1)
@@ -229,5 +229,6 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
                         continue
                 except Exception as e:
                     logger.warning("Groq vision %s failed: %s", model, e)
-                    break
+                    continue  # Try next model
+    logger.error("Groq vision ALL models/keys exhausted")
     return None
