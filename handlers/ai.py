@@ -68,7 +68,6 @@ class AIAdminState(StatesGroup):
     admin_chat = State()
     waiting_article_title = State()
     waiting_article_text = State()
-    waiting_prereqs = State()
     smart_mode = State()
 
 
@@ -689,27 +688,50 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
         f.write(file_bytes.read())
     pdf = await save_pdf_context(name, dest)
 
-    await message.answer(f"✅ تم حفظ {name} كسياق علمي. جاري تحليل المحتوى...")
+    await message.answer(f"✅ تم حفظ {name}. جاري استخراج النص وتحليله...")
     try:
-        raw = open(dest, "rb").read()
-        text = raw.decode("utf-8", errors="ignore")[:3000]
-        summary = await call_gemini(
-            f"لخص هذا المحتوى بالعربية في 3-4 نقاط:\n\n{text}",
-            system_prompt="لخص بدقة ووضوح بالعربية. لا تكتب Markdown.",
-        )
-        if summary:
-            await safe_send(
-                message,
-                f"📄 تحليل الملف \"{name}\":\n\n{summary}\n\n---\nالآن الـ AI يستخدم هذا المحتوى للإجابة على أسئلة المستخدمين.",
-            )
-            return
+        import fitz
+        pdf_text = ""
+        with fitz.open(dest) as doc_pdf:
+            for page in doc_pdf:
+                pdf_text += page.get_text()
+        if not pdf_text.strip():
+            pdf_text = "لم يتم استخراج نص من هذا PDF."
     except Exception as e:
-        logger.warning("PDF summary failed: %s", e)
+        logger.warning("PDF text extraction failed: %s", e)
+        pdf_text = "تعذر استخراج النص من هذا PDF."
 
-    await message.answer(
-        f"✅ تم حفظ {name} كسياق.\n"
-        f"الـ AI سيستخدمه عند الإجابة.",
+    # Save full text as context
+    await save_pdf_context(name, dest)
+    # Store PDF text in state for conversation
+    data = await state.get_data()
+    admin_history: list = data.get("admin_history", [])
+    admin_history.append({"user": f"[رفع ملف: {name}]", "assistant": f"محتوى الملف:\n{pdf_text[:3000]}"})
+    admin_history = admin_history[-5:]
+    await state.update_data(admin_history=admin_history)
+
+    current_state = await state.get_state()
+    _in_smart = current_state == AIAdminState.smart_mode.state
+    _rm = None if _in_smart else cancel_keyboard()
+
+    # Send an initial summary/analysis
+    preview = pdf_text[:1500]
+    summary = await call_gemini(
+        f"لخص هذا المحتوى بالعربية في 3-4 نقاط:\n\n{preview}",
+        system_prompt="لخص بدقة ووضوح بالعربية. لا تكتب Markdown.",
     )
+    if summary:
+        await safe_send(
+            message,
+            f"📄 تحليل \"{name}\":\n\n{summary}\n\n---\nيمكنك متابعة السؤال عن محتوى الملف.",
+            reply_markup=_rm,
+        )
+    else:
+        await safe_send(
+            message,
+            f"📄 تم حفظ \"{name}\". المحتوى:\n\n{pdf_text[:1000]}",
+            reply_markup=_rm,
+        )
 
 
 @router.message(AIAdminState.smart_mode, AdminFilter())
@@ -1314,43 +1336,7 @@ async def ai_admin_view_article_full(message: Message, state: FSMContext) -> Non
         await message.answer(text, reply_markup=ai_admin_keyboard())
 
 
-# ─── Admin: المتطلبات الدراسية ───
-
-@router.message(AdminFilter(), F.text == "🔗 المتطلبات الدراسية")
-async def ai_admin_prereqs_start(message: Message, state: FSMContext) -> None:
-    await message.answer(
-        "🔗 أرسل شجرة المتطلبات الدراسية كما هي (نصاً)، وسأقوم باستخراج العلاقات وحفظها.\n\n"
-        "مثال:\n"
-        "مقدمة في تقنية المعلومات (ITGS111)\n"
-        "تفتح: مقدمة في هندسة البرمجيات (ITGS213)\n\n"
-        "أو أرسل (عرض) لرؤية المحفوظ، أو (مسح) لحذف الكل.",
-        reply_markup=cancel_keyboard(),
-    )
-    await state.set_state(AIAdminState.waiting_prereqs)
-
-
-@router.message(AdminFilter(), AIAdminState.waiting_prereqs, F.text.lower().strip() == "عرض")
-async def ai_admin_prereqs_view(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    prereqs = await get_all_prerequisites()
-    if not prereqs:
-        await message.answer("❌ لا توجد متطلبات دراسية محفوظة.", reply_markup=ai_admin_keyboard())
-        return
-    lines = []
-    for p in prereqs:
-        lines.append(f"🔸 {p.course_name} ({p.course_code}) ← يحتاج {p.prerequisite_name} ({p.prerequisite_code})")
-    for i in range(0, len(lines), 15):
-        chunk = "\n".join(lines[i:i+15])
-        await message.answer(f"🔗 المتطلبات الدراسية:\n\n{chunk}", reply_markup=ai_admin_keyboard())
-    await message.answer(f"📊 المجموع: {len(prereqs)} علاقة", reply_markup=ai_admin_keyboard())
-
-
-@router.message(AdminFilter(), AIAdminState.waiting_prereqs, F.text.lower().strip() == "مسح")
-async def ai_admin_prereqs_clear(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    await clear_prerequisites()
-    await message.answer("✅ تم مسح جميع المتطلبات الدراسية.", reply_markup=ai_admin_keyboard())
-
+# ─── المتطلبات الدراسية (تُستخرج تلقائياً من تحليل ذكي) ───
 
 async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
     """Parse prerequisites text and save extracted relationships."""
@@ -1409,11 +1395,6 @@ async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
         msg += f"...و {count - 20} علاقة أخرى\n\n"
     msg += "الآن عندما يسأل الطالب عن متطلبات مادة أو مواد تفتحها مادة، سيجيب المساعد تلقائياً."
     await message.answer(msg, reply_markup=ai_admin_keyboard())
-
-
-@router.message(AdminFilter(), AIAdminState.waiting_prereqs)
-async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
-    await _ai_admin_parse_prereqs(message, state)
 
 
 # ─── AI send message callbacks ───

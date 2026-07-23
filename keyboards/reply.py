@@ -397,7 +397,7 @@ def ai_admin_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="➕ إضافة سؤال/جواب"), KeyboardButton(text="➖ حذف سؤال/جواب")],
             [KeyboardButton(text="📋 عرض الأسئلة"), KeyboardButton(text="📋 عرض المقالات")],
-            [KeyboardButton(text="📰 إضافة مقال"), KeyboardButton(text="🔗 المتطلبات الدراسية")],
+            [KeyboardButton(text="📰 إضافة مقال")],
             [KeyboardButton(text="🧠 تحليل ذكي"), KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
