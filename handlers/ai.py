@@ -659,19 +659,19 @@ async def ai_smart_image(message: Message, state: FSMContext) -> None:
         import base64
         b64 = base64.b64encode(file_bytes.read()).decode()
         if len(b64) > 20_000_000:
-            await message.answer("⚠️ الصورة كبيرة جداً. أرسل صورة بدقة أقل.", reply_markup=cancel_keyboard())
+            await message.answer("⚠️ الصورة كبيرة جداً. أرسل صورة بدقة أقل.")
             return
         prompt = "حلل هذه الصورة بالتفصيل باللغة العربية. ماذا ترى فيها؟"
         answer = await call_groq_vision(prompt, b64)
         if answer:
-            await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}", reply_markup=cancel_keyboard())
+            await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}")
         else:
-            await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.", reply_markup=cancel_keyboard())
+            await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.")
     except Exception as e:
         logger.exception("Image analysis error")
         from database.crud import save_error
         save_error("ai_smart_image", str(e)[:500])
-        await message.answer(f"⚠️ خطأ: {str(e)[:150]}", reply_markup=cancel_keyboard())
+        await message.answer(f"⚠️ خطأ: {str(e)[:150]}")
 
 
 @router.message(AIAdminState.smart_mode, AdminFilter(), F.document)
@@ -700,7 +700,6 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
             await safe_send(
                 message,
                 f"📄 تحليل الملف \"{name}\":\n\n{summary}\n\n---\nالآن الـ AI يستخدم هذا المحتوى للإجابة على أسئلة المستخدمين.",
-                reply_markup=cancel_keyboard(),
             )
             return
     except Exception as e:
@@ -709,7 +708,6 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
     await message.answer(
         f"✅ تم حفظ {name} كسياق.\n"
         f"الـ AI سيستخدمه عند الإجابة.",
-        reply_markup=cancel_keyboard(),
     )
 
 
