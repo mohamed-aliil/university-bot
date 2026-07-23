@@ -2,7 +2,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 
 from config import settings
-from database.crud import is_bot_active
+from database.crud import is_bot_active, is_bot_stop_notify
 
 
 class BotActiveMiddleware(BaseMiddleware):
@@ -14,11 +14,12 @@ class BotActiveMiddleware(BaseMiddleware):
             user_id = event.from_user.id
 
         if user_id and user_id not in settings.admin_ids and not is_bot_active():
-            msg = "⛔ البوت متوقف حاليًا. يرجى المحاولة لاحقًا."
-            if isinstance(event, Message):
-                await event.answer(msg)
-            elif isinstance(event, CallbackQuery):
-                await event.answer(msg, show_alert=True)
+            if is_bot_stop_notify():
+                msg = "⛔ البوت متوقف حاليًا. يرجى المحاولة لاحقًا."
+                if isinstance(event, Message):
+                    await event.answer(msg)
+                elif isinstance(event, CallbackQuery):
+                    await event.answer(msg, show_alert=True)
             return
 
         return await handler(event, data)

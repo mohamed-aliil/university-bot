@@ -884,15 +884,17 @@ async def start_bot_kb(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "🔇 إيقاف صامت")
 async def stop_bot_silent(message: Message) -> None:
-    from database.crud import set_bot_active
+    from database.crud import set_bot_active, set_bot_stop_notify
     set_bot_active(False)
+    set_bot_stop_notify(False)
     await message.answer("⛔ تم إيقاف البوت.", reply_markup=settings_keyboard(bot_active=False))
 
 
 @router.message(SuperAdminFilter(), F.text == "📢 إيقاف مع إعلام")
 async def stop_bot_with_notify(message: Message) -> None:
-    from database.crud import set_bot_active
+    from database.crud import set_bot_active, set_bot_stop_notify
     set_bot_active(False)
+    set_bot_stop_notify(True)
     await message.answer(
         "⛔ تم إيقاف البوت مع إعلام.\nالمستخدمون سيرون الإعلام عند استخدام البوت.",
         reply_markup=settings_keyboard(bot_active=False),
