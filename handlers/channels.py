@@ -90,7 +90,7 @@ async def monitored_channels_menu(message: Message, state: FSMContext) -> None:
 async def required_channels_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.update_data(in_required_channels=True)
-    await message.answer("إدارة القنوات الإجبارية:", reply_markup=required_channels_keyboard())
+    await message.answer("القنوات الإجبارية:", reply_markup=required_channels_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "➕ إضافة قناة إجبارية")

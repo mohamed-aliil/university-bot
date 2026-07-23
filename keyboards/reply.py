@@ -173,14 +173,10 @@ def ai_stop_choice_keyboard() -> ReplyKeyboardMarkup:
 
 
 async def channels_keyboard() -> ReplyKeyboardMarkup:
-    from database.crud import get_all_required_channels
-    req = await get_all_required_channels()
-    count = len(req)
-    status = f" ✅ ({count})" if count else ""
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📡 القنوات المُراقبة")],
-            [KeyboardButton(text=f"القنوات الإجبارية{status}")],
+            [KeyboardButton(text="القنوات الإجبارية")],
             [KeyboardButton(text="📰 تخصيص الأخبار")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
