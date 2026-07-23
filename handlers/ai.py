@@ -31,7 +31,7 @@ async def safe_send(message: Message, text: str, reply_markup=None) -> None:
     if not text:
         return
     if len(text) <= MAX_MSG_LEN:
-        await message.answer(text, reply_markup=reply_markup)
+        await message.answer(text, reply_markup=reply_markup, parse_mode=None)
         return
     parts = []
     while text:
@@ -47,7 +47,7 @@ async def safe_send(message: Message, text: str, reply_markup=None) -> None:
         text = text[split_at:].strip()
     for i, part in enumerate(parts):
         markup = reply_markup if i == len(parts) - 1 else None
-        await message.answer(part, reply_markup=markup)
+        await message.answer(part, reply_markup=markup, parse_mode=None)
         await asyncio.sleep(0.3)
 
 
@@ -778,6 +778,10 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     admin_history: list[dict] = data.get("admin_history", [])
 
+    current_state = await state.get_state()
+    _in_smart = current_state == AIAdminState.smart_mode.state
+    _rm = None if _in_smart else cancel_keyboard()
+
     qa_list = await get_all_qa()
     qa_context = "\n".join(
         f"{qa.id}: س: {qa.question[:60]} → ج: {qa.answer[:60]}"
@@ -866,7 +870,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
     answer = await call_gemini(q, system_prompt=admin_system_prompt)
     if not answer:
-        await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
+        await message.answer("⚠️ فشل.", reply_markup=_rm)
         return
 
     # Save to history (keep last 5)
@@ -879,9 +883,9 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         if len(parts) >= 2:
             qq, aa = parts[0].strip(), "|".join(parts[1:]).strip()
             qa = await add_qa(qq, aa)
-            await message.answer(f"✅ تم إضافة سؤال/جواب (رقم {qa.id})", reply_markup=cancel_keyboard())
+            await message.answer(f"✅ تم إضافة سؤال/جواب (رقم {qa.id})", reply_markup=_rm)
         else:
-            await message.answer("❌ التنسيق خطأ. استخدم: السؤال | الجواب", reply_markup=cancel_keyboard())
+            await message.answer("❌ التنسيق خطأ. استخدم: السؤال | الجواب", reply_markup=_rm)
 
     elif answer.startswith("[DEL_QA]"):
         parts = answer.replace("[DEL_QA]", "", 1).strip()
@@ -1115,7 +1119,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 if not is_thinking:
                     answer_parts.append(stripped)
             clean = "\n\n".join(answer_parts) if answer_parts else clean
-        await safe_send(message, clean, reply_markup=cancel_keyboard())
+        await safe_send(message, clean, reply_markup=_rm)
 
 
 # ─── Admin: إضافة مقال/إعلان ───
