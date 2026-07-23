@@ -308,8 +308,9 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
         import traceback
         tb = traceback.format_exc()
         logger.exception("AI user question error")
-        from database.crud import save_error
+        from database.crud import save_error, save_error_db
         save_error("ai_user_question", tb[:1500])
+        await save_error_db("ai_user_question", str(e)[:500], user_id=message.from_user.id, traceback=tb[:2000])
         err_msg = str(e)[:200] or "خطأ غير معروف"
         try:
             await message.answer(
@@ -679,8 +680,9 @@ async def ai_smart_image(message: Message, state: FSMContext) -> None:
             await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.")
     except Exception as e:
         logger.exception("Image analysis error")
-        from database.crud import save_error
+        from database.crud import save_error, save_error_db
         save_error("ai_smart_image", str(e)[:500])
+        await save_error_db("ai_smart_image", str(e)[:500], user_id=message.from_user.id)
         await message.answer(f"⚠️ خطأ: {str(e)[:150]}")
 
 
@@ -790,8 +792,9 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         import traceback
         tb = traceback.format_exc()
         logger.exception("AI admin chat error")
-        from database.crud import save_error
+        from database.crud import save_error, save_error_db
         save_error("ai_admin_chat", tb[:1500])
+        await save_error_db("ai_admin_chat", str(e)[:300], user_id=message.from_user.id, traceback=tb[:2000])
         err_msg = str(e)[:300] or "خطأ غير معروف"
         await message.answer(f"⚠️ حدث خطأ: {err_msg}", reply_markup=cancel_keyboard())
         for admin_id in settings.admin_ids:

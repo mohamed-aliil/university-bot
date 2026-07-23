@@ -127,7 +127,7 @@ async def toggle_materials(message: Message) -> None:
     await message.answer("✅ تم تشغيل نظام المواد" if new_state else "✅ تم إيقاف نظام المواد", reply_markup=materials_settings_keyboard())
 
 
-@router.message(AdminFilter(), F.text == "📚 إدارة المواد")
+@router.message(AdminFilter(), F.text == "📚 نَافِذَةُ المَوَادَ")
 async def materials_entry(message: Message, state: FSMContext) -> None:
     await state.set_state(MState.browsing)
     await state.update_data(folder_id=None)

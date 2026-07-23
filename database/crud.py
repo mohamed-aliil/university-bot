@@ -1,7 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
-from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, _utcnow
+from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, ErrorLog, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
 AI_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".ai_active"
@@ -108,6 +108,51 @@ def clear_errors() -> None:
         pass
 
 
+# ─── Error log (DB) ───
+
+
+async def save_error_db(source: str, error_text: str, user_id: int | None = None, traceback: str | None = None) -> None:
+    try:
+        async with async_session() as session:
+            session.add(ErrorLog(source=source[:255] if source else None, user_id=user_id, error_text=error_text[:2000] if error_text else None, traceback=traceback[:3000] if traceback else None))
+            await session.commit()
+    except Exception:
+        pass
+
+
+async def get_errors_db(limit: int = 15) -> str:
+    try:
+        async with async_session() as session:
+            result = await session.execute(
+                select(ErrorLog).order_by(ErrorLog.created_at.desc()).limit(limit)
+            )
+            rows = result.scalars().all()
+            rows.reverse()
+    except Exception:
+        return "خطأ في قراءة سجل الأخطاء."
+
+    if not rows:
+        return "لا توجد أخطاء."
+
+    parts = []
+    for r in rows:
+        ts = r.created_at.strftime("%Y-%m-%d %H:%M")
+        uid = f" (👤 {r.user_id})" if r.user_id else ""
+        src = f"[{r.source}]" if r.source else ""
+        parts.append(f"[{ts}] {src}{uid}\n{r.error_text or r.traceback or '—'}")
+
+    return "\n\n".join(parts)
+
+
+async def clear_errors_db() -> None:
+    try:
+        async with async_session() as session:
+            await session.execute(delete(ErrorLog))
+            await session.commit()
+    except Exception:
+        pass
+
+
 # ─── AI action log ───
 
 
@@ -177,6 +222,18 @@ async def set_bot_setting(key: str, value: str) -> None:
             await session.commit()
     except Exception:
         pass
+
+
+async def get_news_channel_id() -> str | None:
+    return await get_bot_setting("news_channel_id")
+
+
+async def set_news_channel_id(channel_id: str) -> None:
+    await set_bot_setting("news_channel_id", channel_id)
+
+
+async def delete_news_channel_id() -> None:
+    await delete_bot_setting("news_channel_id")
 
 
 async def delete_bot_setting(key: str) -> None:

@@ -58,6 +58,11 @@ async def webhook_handler(request: web.Request) -> web.Response:
         await dp.feed_update(bot, update)
     except Exception as e:
         logger.exception("Webhook error: %s", e)
+        try:
+            from database.crud import save_error_db
+            await save_error_db("webhook", str(e)[:500])
+        except Exception:
+            pass
     return web.Response(status=200)
 
 
@@ -126,7 +131,16 @@ async def main() -> None:
         tb_str = "".join(tb[-5:])
         logger.exception("Unhandled error: %s", event.exception)
         try:
+            from database.crud import save_error_db
             user_id = None
+            if event.update and event.update.message:
+                user_id = event.update.message.from_user.id
+            elif event.update and event.update.callback_query:
+                user_id = event.update.callback_query.from_user.id
+            await save_error_db("global", str(event.exception)[:500], user_id=user_id, traceback=tb_str[:3000])
+        except Exception:
+            pass
+        try:
             if event.update and event.update.message:
                 user_id = event.update.message.from_user.id
             elif event.update and event.update.callback_query:

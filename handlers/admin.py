@@ -16,7 +16,7 @@ from database.crud import (
     cleanup_old_data, get_db_table_stats, _fmt_size,
     is_ai_active, set_ai_active, is_ai_hidden, set_ai_hidden,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard, ai_settings_keyboard, main_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, bot_controls_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, news_channel_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard, ai_settings_keyboard, main_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -106,6 +106,10 @@ class RemoveNewsTemplateState(StatesGroup):
 
 class QuickNewsState(StatesGroup):
     waiting_content = State()
+
+
+class NewsChannelState(StatesGroup):
+    waiting_channel = State()
 
 
 class ReviewState(StatesGroup):
@@ -846,7 +850,7 @@ async def unban_all_handler(message: Message) -> None:
 
 # ─── أزرار الكيبورد الرئيسي للمسؤول ───
 
-@router.message(SuperAdminFilter(), F.text == "📚 إدارة المواد")
+@router.message(SuperAdminFilter(), F.text == "📚 نَافِذَةُ المَوَادَ")
 async def panel_button(message: Message, state: FSMContext) -> None:
     try:
         from handlers.materials import materials_entry
@@ -860,8 +864,22 @@ async def panel_button(message: Message, state: FSMContext) -> None:
 async def stop_bot_prompt(message: Message) -> None:
     from database.crud import is_bot_active
     if not is_bot_active():
+        toggle_btn = "▶️ تشغيل البوت"
+        from database.crud import set_bot_active
+        set_bot_active(True)
+        await message.answer("✅ تم تشغيل البوت.", reply_markup=settings_keyboard(bot_active=True))
         return
     await message.answer("اختر نوع الإيقاف:", reply_markup=stop_choice_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل البوت")
+async def start_bot_kb(message: Message) -> None:
+    from database.crud import set_bot_active, is_bot_active
+    if is_bot_active():
+        await message.answer("اختر نوع الإيقاف:", reply_markup=stop_choice_keyboard())
+        return
+    set_bot_active(True)
+    await message.answer("✅ تم تشغيل البوت.", reply_markup=settings_keyboard(bot_active=True))
 
 
 @router.message(SuperAdminFilter(), F.text == "🔇 إيقاف صامت")
@@ -895,13 +913,6 @@ async def stop_bot_with_notify(message: Message) -> None:
     )
 
 
-@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل البوت")
-async def start_bot_kb(message: Message) -> None:
-    from database.crud import set_bot_active
-    set_bot_active(True)
-    await message.answer("✅ تم تشغيل البوت.", reply_markup=settings_keyboard(bot_active=True))
-
-
 @router.message(AdminFilter(), F.text.startswith("📩 الطلبات المرسلة"))
 async def messages_queue_button(message: Message, state: FSMContext) -> None:
     try:
@@ -909,8 +920,9 @@ async def messages_queue_button(message: Message, state: FSMContext) -> None:
     except Exception as e:
         tb = traceback.format_exc()
         logger.exception("Error in messages_queue_button")
-        from database.crud import save_error
+        from database.crud import save_error, save_error_db
         save_error("messages_queue_button", tb[-1000:])
+        await save_error_db("messages_queue_button", str(e)[:500], user_id=message.from_user.id, traceback=tb[:2000])
         try:
             from aiogram.enums import ParseMode
             await message.answer(
@@ -1033,9 +1045,10 @@ async def show_news_templates(message: Message) -> None:
 
 @router.message(AdminFilter(), F.text == "📰 الأخبار")
 async def news_button(message: Message, state: FSMContext) -> None:
-    from config import settings
-    if not settings.NEWS_CHANNEL_ID:
-        await message.answer("❌ لم يتم تعيين قناة الأخبار.\nتواصل مع السوبر administrator لإعدادها.")
+    from database.crud import get_news_channel_id
+    ch = await get_news_channel_id()
+    if not ch:
+        await message.answer("❌ لم يتم تعيين قناة الأخبار.\nاذهب إلى 📡 القنوات والأخبار ← 📰 تخصيص الأخبار ← 📡 قناة الأخبار لتعيينها.")
         return
     await state.set_state(NewsState.waiting_template)
     await message.answer("📰 اختر قالب الخبر:", reply_markup=await news_keyboard())
@@ -1049,17 +1062,18 @@ async def quick_news_start(message: Message, state: FSMContext) -> None:
 
 @router.message(QuickNewsState.waiting_content, AdminFilter())
 async def quick_news_send(message: Message, state: FSMContext) -> None:
-    from database.crud import save_sent_news
+    from database.crud import save_sent_news, get_news_channel_id
     text = message.text.strip()
     if not text:
         await message.answer("❌ المحتوى لا يمكن أن يكون فارغًا.")
         return
-    if not settings.NEWS_CHANNEL_ID:
+    ch = await get_news_channel_id()
+    if not ch:
         await message.answer("❌ لم يتم تعيين قناة الأخبار.")
         await state.clear()
         return
     try:
-        sent = await message.bot.send_message(settings.NEWS_CHANNEL_ID, f"📰 {text}")
+        sent = await message.bot.send_message(ch, f"📰 {text}")
         await save_sent_news(channel_message_id=sent.message_id, content=f"📰 {text}")
         await message.answer("✅ تم نشر الخبر في القناة.", reply_markup=await news_keyboard())
     except Exception as e:
@@ -1085,11 +1099,14 @@ async def news_template_chosen(message: Message, state: FSMContext) -> None:
 @router.message(NewsState.waiting_content, AdminFilter())
 async def news_content_sent(message: Message, state: FSMContext) -> None:
     from aiogram.enums import ParseMode
-    from config import settings
-    from database.crud import save_sent_news
+    from database.crud import save_sent_news, get_news_channel_id
     data = await state.get_data()
     template = data.get("news_template", "")
-    channel = settings.NEWS_CHANNEL_ID
+    channel = await get_news_channel_id()
+    if not channel:
+        await message.answer("❌ لم يتم تعيين قناة الأخبار.")
+        await state.clear()
+        return
     content = message.text or message.caption or ""
 
     full_text = f"<b>{template}</b>\n\n{content}"
@@ -1130,20 +1147,10 @@ async def news_content_sent(message: Message, state: FSMContext) -> None:
 
 # ─── تخصيص قوالب الأخبار ───
 
-@router.message(SuperAdminFilter(), F.text == "📡 إدارة القنوات")
+@router.message(SuperAdminFilter(), F.text == "📡 القنوات والأخبار")
 async def channels_menu_admin(message: Message, state: FSMContext) -> None:
     from handlers.channels import channels_menu
     await channels_menu(message, state)
-
-
-@router.message(SuperAdminFilter(), F.text == "📡 تخصيص الأخبار")
-async def customize_news_button(message: Message, state: FSMContext) -> None:
-    await state.clear()
-    templates = await load_templates()
-    text = "📡 قوالب الأخبار الحالية:\n\n"
-    for i, t in enumerate(templates, 1):
-        text += f"{i}. {t}\n"
-    await message.answer(text, reply_markup=customize_news_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🗑 آخر الأخبار")
@@ -1163,7 +1170,6 @@ async def delete_news_list(message: Message, state: FSMContext) -> None:
 
 @router.callback_query(SuperAdminFilter(), F.data.startswith("delnews:"))
 async def delete_news_confirm(callback: CallbackQuery, state: FSMContext) -> None:
-    from config import settings
     from database.crud import get_recent_sent_news, delete_sent_news
     news_id = int(callback.data.split(":")[1])
     news_list = await get_recent_sent_news(limit=10)
@@ -1184,16 +1190,19 @@ async def delete_news_confirm(callback: CallbackQuery, state: FSMContext) -> Non
 
 @router.callback_query(SuperAdminFilter(), F.data.startswith("confirm_delnews:"))
 async def delete_news_execute(callback: CallbackQuery, state: FSMContext) -> None:
-    from config import settings
-    from database.crud import get_recent_sent_news, delete_sent_news
+    from database.crud import get_news_channel_id, get_recent_sent_news, delete_sent_news
     news_id = int(callback.data.split(":")[1])
     news_list = await get_recent_sent_news(limit=10)
     news = next((n for n in news_list if n.id == news_id), None)
     if not news:
         await callback.answer("❌ الخبر غير موجود.", show_alert=True)
         return
+    channel = await get_news_channel_id()
+    if not channel:
+        await callback.answer("❌ لم يتم تعيين قناة الأخبار.", show_alert=True)
+        return
     try:
-        channel_id = int(settings.NEWS_CHANNEL_ID) if settings.NEWS_CHANNEL_ID.lstrip("-").isdigit() else settings.NEWS_CHANNEL_ID
+        channel_id = int(channel) if channel.lstrip("-").isdigit() else channel
         await callback.bot.delete_message(chat_id=channel_id, message_id=news.channel_message_id)
         await delete_sent_news(news_id)
         await callback.message.edit_text("✅ تم حذف الخبر من القناة.")
@@ -1209,11 +1218,71 @@ async def delete_news_cancel(callback: CallbackQuery, state: FSMContext) -> None
     await callback.answer()
 
 
+# ─── إدارة قناة الأخبار ───
+
+@router.message(SuperAdminFilter(), F.text == "📡 قناة الأخبار")
+async def news_channel_menu(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.update_data(in_news_channel=True)
+    await message.answer("📡 إدارة قناة الأخبار:", reply_markup=news_channel_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "➕ تعيين قناة الأخبار")
+async def set_news_channel_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(NewsChannelState.waiting_channel)
+    await message.answer(
+        "✏️ أرسل معرف القناة (مثال: @channel أو -1001234567890):",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(SuperAdminFilter(), F.text == "🗑 إزالة قناة الأخبار")
+async def delete_news_channel(message: Message) -> None:
+    from database.crud import delete_news_channel_id
+    await delete_news_channel_id()
+    await message.answer("✅ تم إزالة قناة الأخبار.", reply_markup=news_channel_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "📋 عرض قناة الأخبار")
+async def view_news_channel(message: Message) -> None:
+    from database.crud import get_news_channel_id
+    ch = await get_news_channel_id()
+    if ch:
+        await message.answer(f"📡 قناة الأخبار الحالية:\n{ch}", reply_markup=news_channel_keyboard())
+    else:
+        await message.answer("❌ لم يتم تعيين قناة أخبار بعد.", reply_markup=news_channel_keyboard())
+
+
+@router.message(NewsChannelState.waiting_channel, SuperAdminFilter())
+async def set_news_channel_save(message: Message, state: FSMContext) -> None:
+    from database.crud import set_news_channel_id
+    text = message.text.strip()
+    match = re.search(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)", text)
+    channel_id = text
+    if match:
+        channel_id = f"@{match.group(1)}"
+    try:
+        await message.bot.get_chat(channel_id)
+    except Exception:
+        await message.answer("❌ لا يمكن الوصول للقناة. تأكد من إضافة البوت مشرفاً فيها.")
+        return
+    await set_news_channel_id(channel_id)
+    await message.answer(f"✅ تم تعيين قناة الأخبار:\n{channel_id}", reply_markup=news_channel_keyboard())
+    await state.clear()
+
+
 @router.message(SuperAdminFilter(), F.text == "⚙️ الإعدادات")
 async def settings_button(message: Message) -> None:
     from database.crud import is_bot_active
     bot_active = is_bot_active()
     await message.answer("⚙️ الإعدادات", reply_markup=settings_keyboard(bot_active=bot_active))
+
+
+@router.message(SuperAdminFilter(), F.text == "⚙️ إعدادات البوت")
+async def bot_controls_button(message: Message) -> None:
+    from database.crud import is_bot_active
+    bot_active = is_bot_active()
+    await message.answer("⚙️ إعدادات البوت", reply_markup=bot_controls_keyboard(bot_active=bot_active))
 
 
 @router.message(AdminFilter(), F.text == "🔄 تحديث")
@@ -1313,27 +1382,25 @@ async def ai_start(message: Message) -> None:
     await message.answer("🟢 تم تشغيل AI.", reply_markup=ai_settings_keyboard())
 
 
-@router.message(SuperAdminFilter(), F.text == "🙈 إخفاء الزر")
-async def ai_hide_button(message: Message) -> None:
-    set_ai_hidden(True)
-    await message.answer("🙈 تم إخفاء زر نَافِذَة الـ AI من المستخدمين.", reply_markup=ai_settings_keyboard())
+@router.message(SuperAdminFilter(), F.text.in_(["🙈 إخفاء الزر", "👁 إظهار الزر"]))
+async def ai_toggle_visibility(message: Message) -> None:
+    hidden = is_ai_hidden()
+    if hidden:
+        set_ai_hidden(False)
+        await message.answer("👁 تم إظهار زر نَافِذَة الـ AI للمستخدمين.", reply_markup=ai_settings_keyboard())
+    else:
+        set_ai_hidden(True)
+        await message.answer("🙈 تم إخفاء زر نَافِذَة الـ AI من المستخدمين.", reply_markup=ai_settings_keyboard())
 
 
-@router.message(SuperAdminFilter(), F.text == "👁 إظهار الزر")
-async def ai_show_button(message: Message) -> None:
-    set_ai_hidden(False)
-    await message.answer("👁 تم إظهار زر نَافِذَة الـ AI للمستخدمين.", reply_markup=ai_settings_keyboard())
+@router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل الأخطاء")
+async def errors_log_button(message: Message) -> None:
+    from database.crud import get_errors_db
+    errors = await get_errors_db(15)
+    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>")
 
 
-@router.message(SuperAdminFilter(), F.text == "📋 سجل الأخطاء")
-async def ai_errors_button(message: Message) -> None:
-    from database.crud import get_errors
-    from aiogram.enums import ParseMode
-    errors = get_errors(15)
-    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>", parse_mode=ParseMode.HTML)
-
-
-@router.message(SuperAdminFilter(), F.text == "📋 سجل AI")
+@router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل AI")
 async def ai_log_button(message: Message) -> None:
     from database.crud import get_ai_log
     log = await get_ai_log(5)
@@ -1912,7 +1979,7 @@ async def logs_show(message: Message, state: FSMContext) -> None:
     logs = await get_reply_logs(admin_id=admin_id, limit=50)
     if log_type == "materials":
         label_map = materials_actions
-        title = "📦 سجل إدارة المواد"
+        title = "📦 سجل نَافِذَةُ المَوَادَ"
     else:
         label_map = messages_actions
         title = "💬 سجل الطلبات"
@@ -1992,7 +2059,10 @@ async def show_next_unread(target, state: FSMContext) -> None:
     await state.set_state(ReviewState.browsing)
 
     from handlers.messages import _muted_admins
-    muted = target.from_user.id in _muted_admins if hasattr(target, 'from_user') and target.from_user else False
+    state_data = await state.get_data()
+    muted = state_data.get("muted")
+    if muted is None:
+        muted = target.from_user.id in _muted_admins if hasattr(target, 'from_user') and target.from_user else False
     inline_kb = message_review_keyboard(msg.id, msg.user_id)
     reply_kb = review_reply_keyboard(muted=muted, has_prev=current_idx > 0, has_next=current_idx < len(messages) - 1)
 
@@ -2026,8 +2096,9 @@ async def show_next_unread(target, state: FSMContext) -> None:
     except Exception:
         import traceback as tb_mod
         tb_str = tb_mod.format_exc()
-        from database.crud import save_error
+        from database.crud import save_error, save_error_db
         save_error("show_next_unread", tb_str[-1000:])
+        await save_error_db("show_next_unread", "فشل عرض الرسالة", traceback=tb_str[:2000])
         await bot.send_message(chat_id=chat_id, text=caption_clean, reply_markup=None)
         from aiogram.enums import ParseMode
         await bot.send_message(chat_id=chat_id, text=f"⚠️ خطأ في الأزرار:\n<code>{html_mod.escape(tb_str[-1500:])}</code>", parse_mode=ParseMode.HTML)
@@ -2064,13 +2135,12 @@ async def review_back(message: Message, state: FSMContext) -> None:
 async def review_mute(message: Message, state: FSMContext) -> None:
     admin_id = message.from_user.id
     from handlers.messages import _muted_admins
-    if admin_id in _muted_admins:
+    was_muted = admin_id in _muted_admins
+    if was_muted:
         _muted_admins.discard(admin_id)
-        status = "🔔 تم تشغيل الإشعارات"
     else:
         _muted_admins.add(admin_id)
-        status = "🔇 تم إيقاف الإشعارات"
-    await message.answer(status)
+    await state.update_data(muted=not was_muted)
     await show_next_unread(message, state)
 
 

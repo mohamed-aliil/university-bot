@@ -15,7 +15,7 @@ from database.crud import (
 )
 from datetime import datetime, timezone
 from filters import SuperAdminFilter
-from keyboards.reply import channels_keyboard, cancel_keyboard
+from keyboards.reply import channels_keyboard, required_channels_keyboard, customize_news_keyboard, cancel_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -34,14 +34,55 @@ class ChannelManageState(StatesGroup):
 CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
 
 
-@router.message(SuperAdminFilter(), F.text == "📡 إدارة القنوات")
+@router.message(SuperAdminFilter(), F.text == "🔙 رجوع")
+async def back_from_sub_menus(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("in_required_channels"):
+        await state.clear()
+        await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
+        return
+    if data.get("in_news_channel"):
+        from services.news import load_templates
+        from keyboards.reply import customize_news_keyboard
+        await state.clear()
+        await state.update_data(in_required_channels=True)
+        templates = await load_templates()
+        text = "📡 قوالب الأخبار الحالية:\n\n"
+        for i, t in enumerate(templates, 1):
+            text += f"{i}. {t}\n"
+        await message.answer(text, reply_markup=customize_news_keyboard())
+        return
+    from handlers.admin import back_to_main
+    await back_to_main(message, state)
+
+
+@router.message(SuperAdminFilter(), F.text == "📰 تخصيص الأخبار")
+async def customize_news_button(message: Message, state: FSMContext) -> None:
+    from services.news import load_templates
+    await state.clear()
+    await state.update_data(in_required_channels=True)
+    templates = await load_templates()
+    text = "📡 قوالب الأخبار الحالية:\n\n"
+    for i, t in enumerate(templates, 1):
+        text += f"{i}. {t}\n"
+    await message.answer(text, reply_markup=customize_news_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "📡 القنوات والأخبار")
 async def channels_menu(message: Message, state: FSMContext) -> None:
     logger.info(f"channels_menu called by {message.from_user.id}")
     await state.clear()
-    await message.answer("📡 إدارة القنوات:", reply_markup=await channels_keyboard())
+    await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
 
 
-@router.message(SuperAdminFilter(), F.text.startswith("🔒 إضافة قناة إجبارية"))
+@router.message(SuperAdminFilter(), F.text.startswith("🔒 القنوات الإجبارية"))
+async def required_channels_menu(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.update_data(in_required_channels=True)
+    await message.answer("🔒 إدارة القنوات الإجبارية:", reply_markup=required_channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "➕ إضافة قناة إجبارية")
 async def add_required_channel_start(message: Message, state: FSMContext) -> None:
     await state.set_state(ChannelManageState.waiting_required_channel)
     await message.answer(

@@ -235,3 +235,13 @@ class AILog(Base):
     user_name = Column(String(255), nullable=False)
     action = Column(String(100), nullable=False)
     created_at = Column(DateTime, default=_utcnow)
+
+
+class ErrorLog(Base):
+    __tablename__ = "error_logs"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    source = Column(String(255), nullable=True)
+    user_id = Column(BigInteger, nullable=True, index=True)
+    error_text = Column(Text, nullable=True)
+    traceback = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
