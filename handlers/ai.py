@@ -652,18 +652,26 @@ async def ai_smart_start(message: Message, state: FSMContext) -> None:
 
 @router.message(AIAdminState.smart_mode, AdminFilter(), F.photo)
 async def ai_smart_image(message: Message, state: FSMContext) -> None:
-    # Use a medium-sized photo (index -2) to avoid huge base64
-    photo = message.photo[-2] if len(message.photo) >= 2 else message.photo[-1]
-    file_info = await message.bot.get_file(photo.file_id)
-    file_bytes = await message.bot.download_file(file_info.file_path)
-    import base64
-    b64 = base64.b64encode(file_bytes.read()).decode()
-    prompt = "حلل هذه الصورة بالتفصيل باللغة العربية. ماذا ترى فيها؟"
-    answer = await call_groq_vision(prompt, b64)
-    if answer:
-        await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}", reply_markup=cancel_keyboard())
-    else:
-        await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.", reply_markup=cancel_keyboard())
+    try:
+        photo = message.photo[-2] if len(message.photo) >= 2 else message.photo[-1]
+        file_info = await message.bot.get_file(photo.file_id)
+        file_bytes = await message.bot.download_file(file_info.file_path)
+        import base64
+        b64 = base64.b64encode(file_bytes.read()).decode()
+        if len(b64) > 20_000_000:
+            await message.answer("⚠️ الصورة كبيرة جداً. أرسل صورة بدقة أقل.", reply_markup=cancel_keyboard())
+            return
+        prompt = "حلل هذه الصورة بالتفصيل باللغة العربية. ماذا ترى فيها؟"
+        answer = await call_groq_vision(prompt, b64)
+        if answer:
+            await safe_send(message, f"🧠 تحليل الصورة:\n\n{answer}", reply_markup=cancel_keyboard())
+        else:
+            await message.answer("⚠️ فشل تحليل الصورة. تحقق من سجل الأخطاء.", reply_markup=cancel_keyboard())
+    except Exception as e:
+        logger.exception("Image analysis error")
+        from database.crud import save_error
+        save_error("ai_smart_image", str(e)[:500])
+        await message.answer(f"⚠️ خطأ: {str(e)[:150]}", reply_markup=cancel_keyboard())
 
 
 @router.message(AIAdminState.smart_mode, AdminFilter(), F.document)
