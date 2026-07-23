@@ -1,6 +1,7 @@
 import asyncio
 import aiohttp
 import logging
+import re
 from config import settings
 
 logger = logging.getLogger(__name__)
@@ -220,6 +221,8 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
                             if choices:
                                 text = choices[0].get("message", {}).get("content", "")
                                 if text:
+                                    # Strip reasoning/thinking tags
+                                    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
                                     logger.info("Groq vision %s success (key=%s)", model, api_key[:8])
                                     return text.strip()
                 except asyncio.TimeoutError:
