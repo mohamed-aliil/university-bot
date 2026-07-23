@@ -9,7 +9,7 @@ AI_BUTTON_HIDDEN_FILE = Path(__file__).parent.parent / "data" / ".ai_hidden"
 def main_keyboard() -> ReplyKeyboardMarkup:
     kb = [
         [KeyboardButton(text="نَافِذَة التَّوَاصُل")],
-        [KeyboardButton(text="نَافِذَة الـمَوَادّ")],
+        [KeyboardButton(text="نَافِذَةُ المَوَادَ")],
     ]
     if not AI_BUTTON_HIDDEN_FILE.exists():
         kb.append([KeyboardButton(text="نَافِذَة الـ AI")])
@@ -53,7 +53,7 @@ def super_admin_keyboard(unread_count: int = 0, show_admins: bool = True) -> Rep
         [KeyboardButton(text="📚 إدارة المواد")],
         [KeyboardButton(text=msgs_btn), KeyboardButton(text="👥 الإدارة")],
         [KeyboardButton(text="💬 التواصل"), KeyboardButton(text="⚙️ الإعدادات")],
-        [KeyboardButton(text="🤖 الذكاء الاصطناعي"), KeyboardButton(text="🔄 تحديث")],
+        [KeyboardButton(text="🤖 نَافِذَة الـ AI"), KeyboardButton(text="🔄 تحديث")],
     ]
     return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 

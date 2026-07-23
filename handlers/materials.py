@@ -260,7 +260,7 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         user_obj = message.from_user
         if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):
             admin_buttons = ("📩 الطلبات المرسلة", "👥 الإدارة", "💬 التواصل", "⚙️ الإعدادات",
-                            "🤖 الذكاء الاصطناعي", "🔄 تحديث", "نَافِذَة الـ AI")
+                            "🤖 نَافِذَة الـ AI", "🔄 تحديث", "نَافِذَة الـ AI")
             if any(text.startswith(b) for b in admin_buttons):
                 await state.clear()
                 if text == "نَافِذَة الـ AI":
@@ -547,7 +547,7 @@ class SState(StatesGroup):
     browsing = State()
 
 
-@router.message(F.text == "نَافِذَة الـمَوَادّ")
+@router.message(F.text == "نَافِذَةُ المَوَادَ")
 async def student_browse(message: Message, state: FSMContext) -> None:
     user = message.from_user
     if user.id in settings.admin_ids or await is_admin_user(user.id):
@@ -564,7 +564,7 @@ async def student_browse(message: Message, state: FSMContext) -> None:
         return
     await state.set_state(SState.browsing)
     await state.update_data(folder_id=None)
-    await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
+    await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(folders, []))
 
 
 @router.message(SState.browsing, F.text == "🔙 رجوع")
@@ -583,7 +583,7 @@ async def student_back(message: Message, state: FSMContext) -> None:
                 await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
                 return
             folders = await get_folders()
-            await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(folders, []))
+            await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(folders, []))
             return
         await state.clear()
         user_obj = message.from_user
@@ -655,7 +655,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
             return
         from keyboards.reply import main_keyboard
         from handlers.messages import ContactState
-        if text in ("نَافِذَة التَّوَاصُل", "نَافِذَة الـمَوَادّ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة", "نَافِذَة الـ AI"):
+        if text in ("نَافِذَة التَّوَاصُل", "نَافِذَةُ المَوَادَ", "💬 التواصل", "⚙️ الإعدادات", "📩 الطلبات المرسلة", "نَافِذَة الـ AI"):
             await state.clear()
             if text == "نَافِذَة التَّوَاصُل":
                 await state.set_state(ContactState.waiting_for_message)
@@ -664,7 +664,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
                     reply_markup=communication_keyboard(),
                 )
                 return
-            if text == "نَافِذَة الـمَوَادّ":
+            if text == "نَافِذَةُ المَوَادَ":
                 from database.crud import is_materials_active
                 if not is_materials_active():
                     await message.answer("المواد غير متاحة حاليًا.", reply_markup=main_keyboard())
@@ -672,7 +672,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
                 top_folders = await get_folders(None)
                 await state.set_state(SState.browsing)
                 await state.update_data(folder_id=None)
-                await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(top_folders, []))
+                await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(top_folders, []))
                 return
             if text == "نَافِذَة الـ AI":
                 from handlers.ai import ai_user_start

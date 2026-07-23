@@ -71,10 +71,10 @@ class AIAdminState(StatesGroup):
     smart_mode = State()
 
 
-@router.message(AdminFilter(), F.text == "🤖 الذكاء الاصطناعي")
+@router.message(AdminFilter(), F.text == "🤖 نَافِذَة الـ AI")
 async def ai_admin_panel(message: Message, state: FSMContext) -> None:
     await state.clear()
-    await message.answer("🤖 إدارة الذكاء الاصطناعي:", reply_markup=ai_admin_keyboard())
+    await message.answer("🤖 نَافِذَة الـ AI:", reply_markup=ai_admin_keyboard())
 
 
 @router.message(AdminFilter(), F.text == "➕ إضافة سؤال/جواب")

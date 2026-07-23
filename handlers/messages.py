@@ -268,7 +268,7 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
                 )
         return
 
-    if message.text and message.text.strip() in ("نَافِذَة الـمَوَادّ",):
+    if message.text and message.text.strip() in ("نَافِذَةُ المَوَادَ",):
         await state.clear()
         from database.crud import is_materials_active
         if not is_materials_active():
@@ -278,7 +278,7 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
         top_folders = await get_folders(None)
         await state.set_state(SState.browsing)
         await state.update_data(folder_id=None)
-        await message.answer("نَافِذَة الـمَوَادّ:", reply_markup=student_kb(top_folders, []))
+        await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(top_folders, []))
         return
 
     from database.crud import is_bot_active
