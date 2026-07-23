@@ -654,12 +654,8 @@ async def ai_smart_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIAdminState.smart_mode)
     await state.update_data(admin_history=[])
     await message.answer(
-        "🧠 أرسل أي شيء للتحليل:\n"
-        "• 🖼 صورة → تحليلها\n"
-        "• 📄 PDF → حفظه كسياق علمي\n"
-        "• 📝 نص متطلبات (تفتح/يحتاج) → استخراج العلاقات\n"
-        "• 📝 نص عادي → محادثة ذكية مع أوامر\n\n"
-        "🔙 استخدم رجوع للخروج.",
+        "📬 أرسل صوراً للتحليل، أو ملفات PDF كسياق علمي، أو متطلبات لاستخراج العلاقات، أو أي نص للمحادثة والأوامر.\n\n"
+        "🔙 رجوع",
         reply_markup=smart_mode_keyboard(),
     )
 
