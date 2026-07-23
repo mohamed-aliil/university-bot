@@ -808,7 +808,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
     # Build conversation history
     history_lines = []
-    for turn in admin_history[-5:]:
+    for turn in admin_history:
         history_lines.append(f"المستخدم: {turn['user']}")
         history_lines.append(f"المساعد: {turn['assistant']}")
     history_context = "\n".join(history_lines)
@@ -861,8 +861,9 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
         return
 
-    # Save to history
+    # Save to history (keep last 5)
     admin_history.append({"user": q, "assistant": answer})
+    admin_history = admin_history[-5:]
     await state.update_data(admin_history=admin_history)
 
     if answer.startswith("[ADD_QA]"):
