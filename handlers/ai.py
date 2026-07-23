@@ -858,7 +858,8 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [ADD_REPLY] الكلمة | الرد ← إضافة رد سريع\n"
         "- [DEL_REPLY] الرقم ← حذف رد سريع\n"
         "- [LIST_REPLIES] ← عرض كل الردود السريعة\n"
-        "- [SEND_TO_ALL] الرسالة ← إرسال رسالة لكل المستخدمين\n\n"
+        "- [SEND_TO_ALL] الرسالة ← إرسال رسالة لكل المستخدمين (مع تأكيد)\n"
+        "- [SEND_MSG] user_id | الرسالة ← إرسال رسالة لمستخدم معين (مع تأكيد)\n\n"
         "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
         "استخدم الأمر المناسب من فوق.\n"
         "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n"
@@ -1138,6 +1139,26 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 reply_markup=kb,
             )
 
+    elif answer.startswith("[SEND_MSG]"):
+        parts = answer.replace("[SEND_MSG]", "", 1).strip().split("|")
+        if len(parts) >= 2 and parts[0].strip().isdigit():
+            uid = int(parts[0].strip())
+            msg = "|".join(parts[1:]).strip()
+            user = await get_user(uid)
+            uname = user.full_name if user else str(uid)
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data=f"sendmsg:confirm:{uid}"),
+                 InlineKeyboardButton(text="❌ إلغاء", callback_data="sendmsg:cancel")]
+            ])
+            await state.update_data(sendmsg_text=msg)
+            await message.answer(
+                f"📩 رسالة إلى {uname} ({uid}):\n\n{msg[:300]}\n\nهل أنت متأكد؟",
+                reply_markup=kb,
+            )
+        else:
+            await message.answer("❌ التنسيق: user_id | الرسالة", reply_markup=_rm)
+
     else:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
         clean = re.sub(r"<[^>]+>", "", clean)
@@ -1393,3 +1414,26 @@ async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
 @router.message(AdminFilter(), AIAdminState.waiting_prereqs)
 async def ai_admin_prereqs_parse(message: Message, state: FSMContext) -> None:
     await _ai_admin_parse_prereqs(message, state)
+
+
+# ─── AI send message callbacks ───
+
+@router.callback_query(AdminFilter(), F.data.startswith("sendmsg:confirm:"))
+async def ai_sendmsg_confirm(callback: CallbackQuery, state: FSMContext) -> None:
+    uid = int(callback.data.split(":")[2])
+    data = await state.get_data()
+    text = data.get("sendmsg_text", "")
+    await callback.message.edit_reply_markup(reply_markup=None)
+    try:
+        await callback.bot.send_message(chat_id=uid, text=text)
+        await callback.message.answer(f"✅ تم إرسال الرسالة إلى {uid}.")
+    except Exception as e:
+        await callback.message.answer(f"⚠️ فشل الإرسال: {str(e)[:100]}")
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data == "sendmsg:cancel")
+async def ai_sendmsg_cancel(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.message.edit_reply_markup(reply_markup=None)
+    await callback.message.answer("❌ تم إلغاء الإرسال.")
+    await callback.answer()
