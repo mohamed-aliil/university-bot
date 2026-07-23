@@ -14,8 +14,9 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
                              add_folder, remove_folder, rename_folder, add_content_item, remove_content_item,
                              update_content_item_title, add_content_link, remove_content_link, update_content_link,
-                             ban_user, unban_user, get_user,
-                             get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action)
+                             ban_user, unban_user, get_user, add_alias,
+                             get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action,
+                             add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users)
 from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from config import settings
@@ -853,7 +854,11 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [BAN] user_id ← حظر مستخدم\n"
         "- [UNBAN] user_id ← إلغاء حظر\n"
         "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة\n"
-        "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل\n\n"
+        "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل\n"
+        "- [ADD_REPLY] الكلمة | الرد ← إضافة رد سريع\n"
+        "- [DEL_REPLY] الرقم ← حذف رد سريع\n"
+        "- [LIST_REPLIES] ← عرض كل الردود السريعة\n"
+        "- [SEND_TO_ALL] الرسالة ← إرسال رسالة لكل المستخدمين\n\n"
         "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
         "استخدم الأمر المناسب من فوق.\n"
         "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n"
@@ -1087,6 +1092,51 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
             await message.answer(f"✅ تم حفظ: '{alias_name}' ← {course_name} ({course_code})", reply_markup=cancel_keyboard())
         else:
             await message.answer("❌ التنسيق: الاسم_البديل | كود_المادة | اسم_المادة", reply_markup=cancel_keyboard())
+
+    elif answer.startswith("[ADD_REPLY]"):
+        parts = answer.replace("[ADD_REPLY]", "", 1).strip().split("|")
+        if len(parts) >= 2:
+            trigger, response = parts[0].strip(), "|".join(parts[1:]).strip()
+            ar = await add_autoreply(trigger, response)
+            await message.answer(f"✅ تم إضافة رد سريع (رقم {ar.id}): {trigger}", reply_markup=_rm)
+        else:
+            await message.answer("❌ التنسيق: الكلمة | الرد", reply_markup=_rm)
+
+    elif answer.startswith("[DEL_REPLY]"):
+        parts = answer.replace("[DEL_REPLY]", "", 1).strip()
+        try:
+            rid = int(parts)
+            ok = await remove_autoreply(rid)
+            await message.answer(f"✅ تم حذف الرد السريع {rid}" if ok else "❌ الرقم غير موجود", reply_markup=_rm)
+        except ValueError:
+            await message.answer("❌ أرسل رقم الرد.", reply_markup=_rm)
+
+    elif answer.startswith("[LIST_REPLIES]"):
+        replies = await get_all_autoreplies()
+        if replies:
+            lines = [f"{ar.id}: {ar.trigger} ← {ar.response[:50]}" for ar in replies]
+            for i in range(0, len(lines), 10):
+                chunk = "\n".join(lines[i:i+10])
+                await message.answer(f"📋 الردود السريعة:\n{chunk}", reply_markup=_rm)
+        else:
+            await message.answer("❌ لا توجد ردود سريعة.", reply_markup=_rm)
+
+    elif answer.startswith("[SEND_TO_ALL]"):
+        text = answer.replace("[SEND_TO_ALL]", "", 1).strip()
+        if not text:
+            await message.answer("❌ أرسل نص الرسالة.", reply_markup=_rm)
+        else:
+            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+            kb = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data="broadcast:confirm"),
+                 InlineKeyboardButton(text="❌ إلغاء", callback_data="broadcast:cancel")]
+            ])
+            from aiogram.fsm.context import FSMContext
+            await state.update_data(broadcast_content={"type": "text", "text": text})
+            await message.answer(
+                f"📢 معاينة الرسالة:\n\n{text[:300]}\n\nهل أنت متأكد من إرسالها لكل المستخدمين؟",
+                reply_markup=kb,
+            )
 
     else:
         clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
