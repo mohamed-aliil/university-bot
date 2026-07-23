@@ -249,6 +249,13 @@ def cancel_keyboard() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+def smart_mode_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="🔙 رجوع")]],
+        resize_keyboard=True,
+    )
+
+
 def confirm_cleanup_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="✅ تأكيد التنظيف", callback_data="confirm_cleanup")

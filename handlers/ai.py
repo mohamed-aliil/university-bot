@@ -16,7 +16,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              update_content_item_title, add_content_link, remove_content_link, update_content_link,
                              ban_user, unban_user, get_user,
                              get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action)
-from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, agreement_keyboard
+from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from config import settings
 
@@ -638,14 +638,15 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 @router.message(AdminFilter(), F.text == "🧠 تحليل ذكي")
 async def ai_smart_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIAdminState.smart_mode)
+    await state.update_data(admin_history=[])
     await message.answer(
         "🧠 أرسل أي شيء للتحليل:\n"
         "• 🖼 صورة → تحليلها\n"
         "• 📄 PDF → حفظه كسياق علمي\n"
         "• 📝 نص متطلبات (تفتح/يحتاج) → استخراج العلاقات\n"
         "• 📝 نص عادي → محادثة ذكية مع أوامر\n\n"
-        "أو أرسل /exit للخروج.",
-        reply_markup=cancel_keyboard(),
+        "🔙 استخدم رجوع للخروج.",
+        reply_markup=smart_mode_keyboard(),
     )
 
 
@@ -766,6 +767,9 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
+    data = await state.get_data()
+    admin_history: list[dict] = data.get("admin_history", [])
+
     qa_list = await get_all_qa()
     qa_context = "\n".join(
         f"{qa.id}: س: {qa.question[:60]} → ج: {qa.answer[:60]}"
@@ -801,6 +805,16 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     except Exception:
         admin_aliases = []
     aliases_str = "\n".join(f"'{a.alias}' ← {a.course_name} ({a.course_code})" for a in admin_aliases) or "لا يوجد"
+
+    # Build conversation history
+    history_lines = []
+    for turn in admin_history[-5:]:
+        history_lines.append(f"المستخدم: {turn['user']}")
+        history_lines.append(f"المساعد: {turn['assistant']}")
+    history_context = "\n".join(history_lines)
+    history_note = ""
+    if history_context:
+        history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
 
     admin_system_prompt = (
         "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
@@ -839,12 +853,17 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         f"المتطلبات الدراسية: {prereq_count} علاقة\n"
         f"الأسماء البديلة:\n{aliases_str}\n"
         f"المجلدات:\n{folders_tree[:4000]}"
+        f"{history_note}"
     )
 
     answer = await call_gemini(q, system_prompt=admin_system_prompt)
     if not answer:
         await message.answer("⚠️ فشل.", reply_markup=cancel_keyboard())
         return
+
+    # Save to history
+    admin_history.append({"user": q, "assistant": answer})
+    await state.update_data(admin_history=admin_history)
 
     if answer.startswith("[ADD_QA]"):
         parts = answer.replace("[ADD_QA]", "", 1).strip().split("|")
