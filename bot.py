@@ -15,7 +15,7 @@ from config import settings
 from database.database import init_db
 from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_all_required_channels, set_channel_verified
 from handlers import start, messages, admin, materials, channels, ai
-from middlewares import ThrottlingMiddleware, SubscriptionMiddleware
+from middlewares import ThrottlingMiddleware, SubscriptionMiddleware, BotActiveMiddleware
 from utils.logger import setup_logger
 from keyboards.reply import main_keyboard
 
@@ -81,6 +81,8 @@ async def main() -> None:
     dp.include_router(ai.router)
     dp.include_router(messages.router)
     dp.include_router(channels.channel_router)
+    dp.message.middleware(BotActiveMiddleware())
+    dp.callback_query.middleware(BotActiveMiddleware())
     dp.message.middleware(SubscriptionMiddleware())
     dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
 

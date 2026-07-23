@@ -891,24 +891,10 @@ async def stop_bot_silent(message: Message) -> None:
 
 @router.message(SuperAdminFilter(), F.text == "📢 إيقاف مع إعلام")
 async def stop_bot_with_notify(message: Message) -> None:
-    from database.crud import set_bot_active, get_all_users
-    from config import settings
+    from database.crud import set_bot_active
     set_bot_active(False)
-    users = await get_all_users()
-    sent = 0
-    for u in users:
-        if u.user_id in settings.admin_ids:
-            continue
-        try:
-            await message.bot.send_message(
-                u.user_id,
-                "⛔ البوت متوقف حاليًا. يرجى المحاولة لاحقًا.",
-            )
-            sent += 1
-        except Exception:
-            pass
     await message.answer(
-        f"⛔ تم إيقاف البوت وإعلام {sent} مستخدم.",
+        "⛔ تم إيقاف البوت مع إعلام.\nالمستخدمون سيرون الإعلام عند استخدام البوت.",
         reply_markup=settings_keyboard(bot_active=False),
     )
 
