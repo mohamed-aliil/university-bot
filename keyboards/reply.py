@@ -35,7 +35,7 @@ def admin_keyboard(unread_count: int = 0) -> ReplyKeyboardMarkup:
             [KeyboardButton(text="📚 نَافِذَةُ المَوَادَ")],
             [KeyboardButton(text=msgs_btn)],
             [KeyboardButton(text="💬 التواصل")],
-            [KeyboardButton(text="🔄 تحديث")],
+            [KeyboardButton(text="🤖 نَافِذَة الـ AI"), KeyboardButton(text="🔄 تحديث")],
         ],
         resize_keyboard=True,
     )
@@ -147,14 +147,25 @@ def bot_controls_keyboard(bot_active: bool = True) -> ReplyKeyboardMarkup:
 
 
 def ai_settings_keyboard() -> ReplyKeyboardMarkup:
-    from database.crud import is_ai_hidden
+    from database.crud import is_ai_hidden, is_ai_active
+    active = is_ai_active()
     hidden = is_ai_hidden()
+    toggle_btn = "⏹ إيقاف AI" if active else "▶️ تشغيل AI"
     visibility_btn = "👁 إظهار الزر" if hidden else "🙈 إخفاء الزر"
     return ReplyKeyboardMarkup(
         keyboard=[
-            [KeyboardButton(text="⏹ إيقاف AI مع إعلام"), KeyboardButton(text="🔇 إيقاف AI صامت")],
-            [KeyboardButton(text="▶️ تشغيل AI")],
+            [KeyboardButton(text=toggle_btn)],
             [KeyboardButton(text=visibility_btn)],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def ai_stop_choice_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🔇 إيقاف AI صامت"), KeyboardButton(text="📢 إيقاف AI مع إعلام")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
@@ -168,10 +179,20 @@ async def channels_keyboard() -> ReplyKeyboardMarkup:
     status = f" ✅ ({count})" if count else ""
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="📡 القنوات المُراقبة")],
+            [KeyboardButton(text=f"القنوات الإجبارية{status}")],
+            [KeyboardButton(text="📰 تخصيص الأخبار")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def monitored_channels_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
             [KeyboardButton(text="➕ إضافة قناة"), KeyboardButton(text="➖ حذف قناة")],
             [KeyboardButton(text="📋 عرض القنوات")],
-            [KeyboardButton(text=f"🔒 القنوات الإجبارية{status}")],
-            [KeyboardButton(text="📰 تخصيص الأخبار")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
@@ -182,7 +203,7 @@ def required_channels_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="➕ إضافة قناة إجبارية"), KeyboardButton(text="➖ حذف قناة إجبارية")],
-            [KeyboardButton(text="📋 عرض القنوات الإجبارية")],
+            [KeyboardButton(text="عرض القنوات الإجبارية")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
@@ -269,8 +290,8 @@ def logs_type_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📦 سجلات المواد"), KeyboardButton(text="💬 سجلات الطلبات")],
-            [KeyboardButton(text="📋 سجلات المستخدمين"), KeyboardButton(text="📋 سجل الأخطاء")],
-            [KeyboardButton(text="📋 سجل AI")],
+            [KeyboardButton(text="📋 سجلات المستخدمين"), KeyboardButton(text="📋 سجل AI")],
+            [KeyboardButton(text="📋 سجل الأخطاء")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

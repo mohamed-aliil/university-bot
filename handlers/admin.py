@@ -16,7 +16,7 @@ from database.crud import (
     cleanup_old_data, get_db_table_stats, _fmt_size,
     is_ai_active, set_ai_active, is_ai_hidden, set_ai_hidden,
 )
-from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, bot_controls_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, news_channel_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard, ai_settings_keyboard, main_keyboard
+from keyboards.reply import cancel_keyboard, main_keyboard, moderator_keyboard, admin_keyboard, super_admin_keyboard, admin_panel_keyboard, permission_keyboard, admins_panel_keyboard, replies_panel_keyboard, bans_panel_keyboard, users_panel_keyboard, rank_keyboard, message_review_keyboard, admin_management_keyboard, communication_keyboard, settings_keyboard, bot_controls_keyboard, stop_choice_keyboard, admins_management_keyboard, users_management_keyboard, replies_management_keyboard, quick_reply_inline_keyboard, quick_reply_keyboard, news_keyboard, customize_news_keyboard, news_channel_keyboard, logs_type_keyboard, confirm_cleanup_keyboard, review_reply_keyboard, ai_settings_keyboard, ai_stop_choice_keyboard, main_keyboard
 from handlers.messages import ReplyState
 from services.news import load_templates, add_template, remove_template
 from config import settings
@@ -1363,10 +1363,20 @@ async def ai_settings_panel(message: Message) -> None:
     )
 
 
-@router.message(SuperAdminFilter(), F.text == "⏹ إيقاف AI مع إعلام")
+@router.message(SuperAdminFilter(), F.text.in_(["⏹ إيقاف AI", "▶️ تشغيل AI"]))
+async def ai_toggle(message: Message) -> None:
+    from database.crud import is_ai_active
+    if is_ai_active():
+        await message.answer("اختر نوع الإيقاف:", reply_markup=ai_stop_choice_keyboard())
+    else:
+        set_ai_active(True)
+        await message.answer("🟢 تم تشغيل AI.", reply_markup=ai_settings_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "📢 إيقاف AI مع إعلام")
 async def ai_stop_with_notify(message: Message) -> None:
     set_ai_active(False)
-    await message.answer("🔴 تم إيقاف AI. المستخدمون سيرون الإعلام عند ضغط زر AI.", reply_markup=ai_settings_keyboard())
+    await message.answer("🔴 تم إيقاف AI مع إعلام.", reply_markup=ai_settings_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🔇 إيقاف AI صامت")
@@ -1374,12 +1384,6 @@ async def ai_stop_silent(message: Message) -> None:
     from database.crud import set_ai_silent
     set_ai_silent()
     await message.answer("🔴 تم إيقاف AI بصمت.", reply_markup=ai_settings_keyboard())
-
-
-@router.message(SuperAdminFilter(), F.text == "▶️ تشغيل AI")
-async def ai_start(message: Message) -> None:
-    set_ai_active(True)
-    await message.answer("🟢 تم تشغيل AI.", reply_markup=ai_settings_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text.in_(["🙈 إخفاء الزر", "👁 إظهار الزر"]))
@@ -2020,10 +2024,13 @@ async def show_next_unread(target, state: FSMContext) -> None:
     if not admin_id:
         admin_id = (await state.get_data()).get("admin_id")
 
+    from handlers.messages import _muted_admins
+
     messages = await get_unread_messages()
     if not messages:
         await state.set_state(ReviewState.browsing)
-        reply_kb = review_reply_keyboard(muted=False, has_prev=False, has_next=False)
+        muted = admin_id in _muted_admins if admin_id else False
+        reply_kb = review_reply_keyboard(muted=muted, has_prev=False, has_next=False)
         await bot.send_message(chat_id=chat_id, text="✅ لا يوجد مرسلات.", reply_markup=reply_kb)
         return
 
@@ -2032,9 +2039,9 @@ async def show_next_unread(target, state: FSMContext) -> None:
 
     if current_idx >= len(messages):
         await state.set_state(ReviewState.browsing)
-        reply_kb = review_reply_keyboard(muted=False, has_prev=False, has_next=False)
+        muted = admin_id in _muted_admins if admin_id else False
+        reply_kb = review_reply_keyboard(muted=muted, has_prev=False, has_next=False)
         await bot.send_message(chat_id=chat_id, text="✅ انتهت المراجعة!\nلا يوجد مرسلات جدد.", reply_markup=reply_kb)
-        return
         return
 
     msg = messages[current_idx]
@@ -2058,11 +2065,7 @@ async def show_next_unread(target, state: FSMContext) -> None:
     await state.update_data(queue_index=current_idx, queue_total=len(messages))
     await state.set_state(ReviewState.browsing)
 
-    from handlers.messages import _muted_admins
-    state_data = await state.get_data()
-    muted = state_data.get("muted")
-    if muted is None:
-        muted = target.from_user.id in _muted_admins if hasattr(target, 'from_user') and target.from_user else False
+    muted = admin_id in _muted_admins if admin_id else False
     inline_kb = message_review_keyboard(msg.id, msg.user_id)
     reply_kb = review_reply_keyboard(muted=muted, has_prev=current_idx > 0, has_next=current_idx < len(messages) - 1)
 
@@ -2135,12 +2138,10 @@ async def review_back(message: Message, state: FSMContext) -> None:
 async def review_mute(message: Message, state: FSMContext) -> None:
     admin_id = message.from_user.id
     from handlers.messages import _muted_admins
-    was_muted = admin_id in _muted_admins
-    if was_muted:
+    if admin_id in _muted_admins:
         _muted_admins.discard(admin_id)
     else:
         _muted_admins.add(admin_id)
-    await state.update_data(muted=not was_muted)
     await show_next_unread(message, state)
 
 

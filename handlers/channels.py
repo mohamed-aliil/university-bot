@@ -15,7 +15,7 @@ from database.crud import (
 )
 from datetime import datetime, timezone
 from filters import SuperAdminFilter
-from keyboards.reply import channels_keyboard, required_channels_keyboard, customize_news_keyboard, cancel_keyboard
+from keyboards.reply import channels_keyboard, required_channels_keyboard, monitored_channels_keyboard, customize_news_keyboard, cancel_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -37,6 +37,10 @@ CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
 @router.message(SuperAdminFilter(), F.text == "🔙 رجوع")
 async def back_from_sub_menus(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
+    if data.get("in_monitored_channels"):
+        await state.clear()
+        await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
+        return
     if data.get("in_required_channels"):
         await state.clear()
         await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
@@ -75,11 +79,18 @@ async def channels_menu(message: Message, state: FSMContext) -> None:
     await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
 
 
-@router.message(SuperAdminFilter(), F.text.startswith("🔒 القنوات الإجبارية"))
+@router.message(SuperAdminFilter(), F.text == "📡 القنوات المُراقبة")
+async def monitored_channels_menu(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.update_data(in_monitored_channels=True)
+    await message.answer("📡 القنوات المُراقبة:", reply_markup=monitored_channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text.startswith("القنوات الإجبارية"))
 async def required_channels_menu(message: Message, state: FSMContext) -> None:
     await state.clear()
     await state.update_data(in_required_channels=True)
-    await message.answer("🔒 إدارة القنوات الإجبارية:", reply_markup=required_channels_keyboard())
+    await message.answer("إدارة القنوات الإجبارية:", reply_markup=required_channels_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "➕ إضافة قناة إجبارية")
@@ -153,20 +164,20 @@ async def add_required_channel_message(message: Message, state: FSMContext) -> N
     await state.clear()
 
 
-@router.message(SuperAdminFilter(), F.text == "📋 القنوات الإجبارية")
+@router.message(SuperAdminFilter(), F.text == "عرض القنوات الإجبارية")
 async def list_required_channels(message: Message) -> None:
     channels = await get_all_required_channels()
     if not channels:
-        await message.answer("❌ لا توجد قنوات إجبارية.", reply_markup=await channels_keyboard())
+        await message.answer("❌ لا توجد قنوات إجبارية.", reply_markup=required_channels_keyboard())
         return
-    text = "🔒 القنوات الإجبارية:\n\n"
+    text = "القنوات الإجبارية:\n\n"
     for i, ch in enumerate(channels, 1):
         text += f"{i}. {ch.chat_id}\n   🔗 {ch.invite_link}\n"
         if ch.custom_message:
             msg_preview = ch.custom_message[:50].replace("\n", " ")
             text += f"   📝 {msg_preview}...\n"
         text += "\n"
-    await message.answer(text, reply_markup=await channels_keyboard())
+    await message.answer(text, reply_markup=required_channels_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "➖ حذف قناة إجبارية")
