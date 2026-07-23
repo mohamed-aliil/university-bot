@@ -395,10 +395,29 @@ async def quick_reply_keyboard() -> ReplyKeyboardMarkup:
 def ai_admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
+            [KeyboardButton(text="📚 الأسئلة"), KeyboardButton(text="📰 المقالات")],
+            [KeyboardButton(text="🧠 تحليل ذكي")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def ai_qa_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
             [KeyboardButton(text="➕ إضافة سؤال/جواب"), KeyboardButton(text="➖ حذف سؤال/جواب")],
             [KeyboardButton(text="📋 عرض الأسئلة")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def ai_articles_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
             [KeyboardButton(text="📋 عرض المقالات"), KeyboardButton(text="📰 إضافة مقال")],
-            [KeyboardButton(text="🧠 تحليل ذكي")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

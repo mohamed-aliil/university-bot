@@ -17,7 +17,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              ban_user, unban_user, get_user, add_alias,
                              get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action,
                              add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users)
-from keyboards.reply import ai_admin_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
+from keyboards.reply import ai_admin_keyboard, ai_qa_keyboard, ai_articles_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from config import settings
 
@@ -75,6 +75,20 @@ class AIAdminState(StatesGroup):
 async def ai_admin_panel(message: Message, state: FSMContext) -> None:
     await state.clear()
     await message.answer("🤖 نَافِذَة الـ AI:", reply_markup=ai_admin_keyboard())
+
+
+# ─── QA folder ───
+
+@router.message(AdminFilter(), F.text == "📚 الأسئلة")
+async def ai_qa_folder(message: Message) -> None:
+    await message.answer("📚 إدارة الأسئلة:", reply_markup=ai_qa_keyboard())
+
+
+# ─── Articles folder ───
+
+@router.message(AdminFilter(), F.text == "📰 المقالات")
+async def ai_articles_folder(message: Message) -> None:
+    await message.answer("📰 إدارة المقالات:", reply_markup=ai_articles_keyboard())
 
 
 @router.message(AdminFilter(), F.text == "➕ إضافة سؤال/جواب")
