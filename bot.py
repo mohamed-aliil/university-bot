@@ -7,6 +7,7 @@ import traceback
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import ErrorEvent, Update, CallbackQuery
 from aiogram.filters import CommandStart
 from aiohttp import web

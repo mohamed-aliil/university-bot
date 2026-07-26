@@ -3,7 +3,8 @@ import html as html_mod
 import re
 import traceback
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardMarkup, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter, SuperAdminFilter, PermissionFilter
@@ -598,11 +599,15 @@ async def add_admin_confirm(message: Message, state: FSMContext) -> None:
     )
 
 
-@router.callback_query(SuperAdminFilter(), F.data.startswith("rank:"))
+@router.callback_query(SuperAdminFilter(), AddAdminRank.waiting_for_rank, F.data.startswith("rank:"))
 async def select_rank(callback: CallbackQuery, state: FSMContext) -> None:
     rank = callback.data.split(":", 1)[1]
     data = await state.get_data()
-    target_id = data["target_id"]
+    target_id = data.get("target_id")
+    if not target_id:
+        await callback.answer("❌ انتهت الجلسة. أعد المحاولة.", show_alert=True)
+        await state.clear()
+        return
     target_name = data.get("target_name", str(target_id))
 
     rank_names = {"super_admin": "🚀 سوبر", "admin": "👑 مشرف", "moderator": "🔰 مراقب"}
