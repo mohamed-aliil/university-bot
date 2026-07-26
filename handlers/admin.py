@@ -1807,40 +1807,11 @@ async def sendmsg_send(message: Message, state: FSMContext) -> None:
     target_name = data["target_name"]
 
     try:
-        if message.text:
-            await message.bot.send_message(chat_id=target_id, text=message.text)
-        elif message.photo:
-            await message.bot.send_photo(
-                chat_id=target_id, photo=message.photo[-1].file_id,
-                caption=message.caption or "",
-            )
-        elif message.video:
-            await message.bot.send_video(
-                chat_id=target_id, video=message.video.file_id,
-                caption=message.caption or "",
-            )
-        elif message.document:
-            await message.bot.send_document(
-                chat_id=target_id, document=message.document.file_id,
-                caption=message.caption or "",
-            )
-        elif message.voice:
-            await message.bot.send_voice(chat_id=target_id, voice=message.voice.file_id)
-        elif message.audio:
-            await message.bot.send_audio(chat_id=target_id, audio=message.audio.file_id, caption=message.caption or "")
-        elif message.animation:
-            await message.bot.send_animation(chat_id=target_id, animation=message.animation.file_id, caption=message.caption or "")
-        elif message.video_note:
-            await message.bot.send_video_note(chat_id=target_id, video_note=message.video_note.file_id)
-        elif message.sticker:
-            await message.bot.send_sticker(chat_id=target_id, sticker=message.sticker.file_id)
-        else:
-            await message.bot.send_message(chat_id=target_id, text="📩 رسالة من الإدارة.")
-
+        await message.copy_to(chat_id=target_id)
         await message.answer(f"✅ تم إرسال الرسالة إلى {target_name} بنجاح.", reply_markup=await admin_main_keyboard(message.from_user.id))
     except Exception as e:
         logger.error(f"Failed to send message to {target_id}: {e}")
-        await message.answer("❌ فشل الإرسال. قد يكون المستخدم أوقف البوت.", reply_markup=await admin_main_keyboard(message.from_user.id))
+        await message.answer(f"❌ فشل الإرسال: {e}", reply_markup=await admin_main_keyboard(message.from_user.id))
 
     await state.clear()
 
@@ -1857,33 +1828,31 @@ async def broadcast_start(message: Message, state: FSMContext) -> None:
 
 @router.message(BroadcastState.waiting_for_msg, PermissionFilter("can_manage"))
 async def broadcast_preview(message: Message, state: FSMContext) -> None:
-    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-    preview_text = message.text or message.caption or "📢 رسالة"
+    preview_text = message.text or message.caption or "📢 وسائط"
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data="broadcast:confirm"),
          InlineKeyboardButton(text="❌ إلغاء", callback_data="broadcast:cancel")]
     ])
-    content_data = {
-        "type": "text",
-        "text": message.text,
-        "caption": message.caption,
-        "photo": message.photo[-1].file_id if message.photo else None,
-        "video": message.video.file_id if message.video else None,
-        "document": message.document.file_id if message.document else None,
-        "voice": message.voice.file_id if message.voice else None,
-    }
-    await state.update_data(broadcast_content=content_data)
+    await state.update_data(
+        broadcast_from_chat=message.chat.id,
+        broadcast_message_id=message.message_id,
+        broadcast_preview=preview_text[:200],
+    )
     await message.answer(
         f"📢 معاينة الرسالة:\n\n{preview_text[:200]}\n\nهل أنت متأكد من إرسالها لكل المستخدمين؟",
         reply_markup=kb,
     )
-    await state.set_state(BroadcastState.waiting_for_msg)
 
 
 @router.callback_query(PermissionFilter("can_manage"), F.data == "broadcast:confirm")
 async def broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
-    content = data.get("broadcast_content", {})
+    from_chat = data.get("broadcast_from_chat")
+    msg_id = data.get("broadcast_message_id")
+    if not from_chat or not msg_id:
+        await callback.answer("❌ لا توجد رسالة للإرسال.", show_alert=True)
+        await state.clear()
+        return
     from database.crud import get_all_users
     users = await get_all_users()
     sent = 0
@@ -1892,18 +1861,11 @@ async def broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     status_msg = await callback.message.answer("📢 جاري الإرسال...")
     for u in users:
         try:
-            if content.get("text"):
-                await callback.bot.send_message(chat_id=u.user_id, text=content["text"])
-            elif content.get("photo"):
-                await callback.bot.send_photo(chat_id=u.user_id, photo=content["photo"], caption=content.get("caption") or "")
-            elif content.get("video"):
-                await callback.bot.send_video(chat_id=u.user_id, video=content["video"], caption=content.get("caption") or "")
-            elif content.get("document"):
-                await callback.bot.send_document(chat_id=u.user_id, document=content["document"], caption=content.get("caption") or "")
-            elif content.get("voice"):
-                await callback.bot.send_voice(chat_id=u.user_id, voice=content["voice"])
-            else:
-                await callback.bot.send_message(chat_id=u.user_id, text="📢 رسالة إدارية.")
+            await callback.bot.copy_message(
+                chat_id=u.user_id,
+                from_chat_id=from_chat,
+                message_id=msg_id,
+            )
             sent += 1
         except Exception:
             failed += 1
