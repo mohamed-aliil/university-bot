@@ -955,7 +955,8 @@ async def admin_management_button(message: Message, state: FSMContext) -> None:
 
 
 @router.message(AdminFilter(), F.text == "💬 التواصل")
-async def communication_button(message: Message) -> None:
+async def communication_button(message: Message, state: FSMContext) -> None:
+    await state.clear()
     await message.answer("💬 اختر ما تريد:", reply_markup=communication_keyboard())
 
 
