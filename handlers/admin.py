@@ -2155,27 +2155,35 @@ async def review_publish_cb(callback: CallbackQuery, state: FSMContext) -> None:
         return
     ch_str = channels[0].chat_id
     channel_id = int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
-    caption = "📩 رسالة من أحد الطلاب"
+    original_text = msg.content or msg.caption or ""
+    channel_text = "من الخاص"
+    if original_text:
+        channel_text += f"\n\n{original_text}"
     try:
         if msg.message_type == "photo" and msg.file_id:
-            await callback.bot.send_photo(chat_id=channel_id, photo=msg.file_id, caption=caption)
+            await callback.bot.send_photo(chat_id=channel_id, photo=msg.file_id, caption=channel_text)
         elif msg.message_type == "video" and msg.file_id:
-            await callback.bot.send_video(chat_id=channel_id, video=msg.file_id, caption=caption)
+            await callback.bot.send_video(chat_id=channel_id, video=msg.file_id, caption=channel_text)
         elif msg.message_type == "document" and msg.file_id:
-            await callback.bot.send_document(chat_id=channel_id, document=msg.file_id, caption=caption)
+            await callback.bot.send_document(chat_id=channel_id, document=msg.file_id, caption=channel_text)
         elif msg.message_type == "audio" and msg.file_id:
-            await callback.bot.send_audio(chat_id=channel_id, audio=msg.file_id, caption=caption)
+            await callback.bot.send_audio(chat_id=channel_id, audio=msg.file_id, caption=channel_text)
         elif msg.message_type == "voice" and msg.file_id:
             await callback.bot.send_voice(chat_id=channel_id, voice=msg.file_id)
+            if original_text:
+                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
         elif msg.message_type == "sticker" and msg.file_id:
             await callback.bot.send_sticker(chat_id=channel_id, sticker=msg.file_id)
+            if original_text:
+                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
         elif msg.message_type == "animation" and msg.file_id:
-            await callback.bot.send_animation(chat_id=channel_id, animation=msg.file_id, caption=caption)
+            await callback.bot.send_animation(chat_id=channel_id, animation=msg.file_id, caption=channel_text)
         elif msg.message_type == "video_note" and msg.file_id:
             await callback.bot.send_video_note(chat_id=channel_id, video_note=msg.file_id)
+            if original_text:
+                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
         else:
-            text = msg.content or msg.caption or "رسالة"
-            await callback.bot.send_message(chat_id=channel_id, text=f"{caption}\n\n{text}")
+            await callback.bot.send_message(chat_id=channel_id, text=channel_text)
         await mark_message_read(msg_id)
         await callback.answer("✅ تم نشر الرسالة في القناة.", show_alert=True)
         await show_next_unread(callback.message, state)
