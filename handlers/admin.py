@@ -328,9 +328,7 @@ async def forward_to_channel_handler(callback: CallbackQuery) -> None:
 
     last_msg = user_messages[0]
     original_text = last_msg.content or last_msg.caption or ""
-    channel_text = "من الخاص"
-    if original_text:
-        channel_text += f"\n\n{original_text}"
+    channel_text = f"💬 رسالة واردة عبر بوت القناة:\n\n{original_text}\n\n— شاكرين تواصلكم ومشاركتكم." if original_text else "💬 رسالة واردة عبر بوت القناة.\n— شاكرين تواصلكم ومشاركتكم."
 
     try:
         if last_msg.message_type == "text":
@@ -2147,9 +2145,7 @@ async def review_publish_cb(callback: CallbackQuery, state: FSMContext) -> None:
     ch_str = channels[0].chat_id
     channel_id = int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
     original_text = msg.content or msg.caption or ""
-    channel_text = "من الخاص"
-    if original_text:
-        channel_text += f"\n\n{original_text}"
+    channel_text = f"💬 رسالة واردة عبر بوت القناة:\n\n{original_text}\n\n— شاكرين تواصلكم ومشاركتكم." if original_text else "💬 رسالة واردة عبر بوت القناة.\n— شاكرين تواصلكم ومشاركتكم."
     try:
         if msg.message_type == "photo" and msg.file_id:
             await callback.bot.send_photo(chat_id=channel_id, photo=msg.file_id, caption=channel_text)
