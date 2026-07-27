@@ -409,7 +409,8 @@ def message_review_keyboard(msg_id: int, user_id: int, user_name: str = "") -> I
     builder = InlineKeyboardBuilder()
     builder.button(text="💬 رد", callback_data=f"review_reply:{msg_id}:{user_id}")
     builder.button(text="🗑 حذف", callback_data=f"review_delete:{msg_id}")
-    builder.adjust(2)
+    builder.button(text="📢 نشر", callback_data=f"review_publish:{msg_id}:{user_id}")
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 

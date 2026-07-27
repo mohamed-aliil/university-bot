@@ -622,6 +622,12 @@ async def get_unread_messages() -> list[Message]:
         return list(result.scalars().all())
 
 
+async def get_message_by_id(msg_id: int) -> Message | None:
+    async with async_session() as session:
+        result = await session.execute(select(Message).where(Message.id == msg_id))
+        return result.scalar_one_or_none()
+
+
 async def mark_message_read(message_id: int) -> None:
     async with async_session() as session:
         result = await session.execute(select(Message).where(Message.id == message_id))
