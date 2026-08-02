@@ -326,6 +326,64 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
                 logger.error("Failed to send traceback to admin %s: %s", admin_id, e2)
 
 
+def _ai_notify_keyboard():
+    from aiogram.utils.keyboard import InlineKeyboardBuilder
+    builder = InlineKeyboardBuilder()
+    builder.button(text="📨 إرسال للمشرفين", callback_data="ai_notify:yes")
+    builder.button(text="❌ لا ترسل", callback_data="ai_notify:no")
+    builder.adjust(1, 1)
+    return builder.as_markup()
+
+
+@router.callback_query(AIState.waiting_for_question, F.data == "ai_notify:yes")
+async def ai_notify_yes_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    data = await state.get_data()
+    from types import SimpleNamespace
+    from database.crud import save_message
+    from handlers.messages import forward_to_admins
+    history: list = data.get("history", [])
+    q = data.get("pending_notify_q") or ""
+    ai_context = "\n".join(
+        f"المستخدم: {turn['user']}\nالمساعد: {turn['assistant']}"
+        for turn in history[-5:]
+    )
+    content = f"[طلب AI]\n{q}\n\nسجل المحادثة:\n{ai_context}"
+    msg = await save_message(user_id=callback.from_user.id, message_type="text", content=content)
+    fake = SimpleNamespace(
+        from_user=callback.from_user,
+        text=content,
+        caption=None, photo=None, video=None, document=None, audio=None,
+        voice=None, sticker=None, animation=None, video_note=None,
+        bot=callback.bot,
+        chat=callback.message.chat,
+    )
+    await forward_to_admins(fake, "text", msg.id)
+    await state.update_data(pending_admin_notify=False, pending_notify_q=None)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer(
+        "✅ تم إبلاغ المشرفين، سيردون عليك قريباً إن شاء الله.",
+        reply_markup=ai_user_keyboard(),
+    )
+
+
+@router.callback_query(AIState.waiting_for_question, F.data == "ai_notify:no")
+async def ai_notify_no_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    await callback.answer()
+    await state.update_data(pending_admin_notify=False, pending_notify_q=None)
+    try:
+        await callback.message.delete()
+    except Exception:
+        pass
+    await callback.message.answer(
+        "حسناً، لن أرسل أي شيء. كمّل أسئلتك وأنا معك.",
+        reply_markup=ai_user_keyboard(),
+    )
+
+
 async def _ai_user_question(message: Message, state: FSMContext) -> None:
     q = (message.text or message.caption or "").strip()
     if not q:
@@ -341,27 +399,15 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
     # Check if AI previously offered to notify admins and user is confirming
     if data.get("pending_admin_notify"):
-        confirm_words = ["نعم", "اي", "أي", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات"]
+        confirm_words = ["نعم", "اي", "أي", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات", "ارسل", "ابعت"]
         if any(w in q.lower() for w in confirm_words):
-            await state.update_data(pending_admin_notify=False)
-            from handlers.messages import forward_to_admins
-            from database.crud import save_message
-            ai_context = "\n".join(
-                f"المستخدم: {turn['user']}\nالمساعد: {turn['assistant']}"
-                for turn in history[-5:]
+            await message.answer(
+                "حسناً، هل تريد مني إرسال طلبك إلى المشرفين الآن؟",
+                reply_markup=_ai_notify_keyboard(),
             )
-            original_q = data.get("pending_notify_q", q)
-            msg = await save_message(
-                user_id=message.from_user.id,
-                message_type="text",
-                content=f"[طلب AI]\n{original_q}\n\nسجل المحادثة:\n{ai_context}",
-            )
-            await forward_to_admins(message, "text", msg.id)
-            await message.answer("✅ تم إبلاغ المشرفين، سيردون عليك قريباً إن شاء الله.", reply_markup=ai_user_keyboard())
             return
-        else:
-            await state.update_data(pending_admin_notify=False)
-            # fall through to normal AI processing
+        await state.update_data(pending_admin_notify=False, pending_notify_q=None)
+        # fall through to normal AI processing
 
     # Build static context from Q&A, materials, articles, and prerequisites
     try:
@@ -505,18 +551,17 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         f"📰 المقالات:\n{articles_context}\n\n"
         f"{pdf_context}"
         f"🔗 المتطلبات:\n{prereqs_context}\n\n"
-        "📌 تعليمات بسيطة:\n"
-        "- رد بكلام متصل طبيعي مو على شكل نقاط أو تعداد.\n"
-        "- افهم السؤال حتى لو فيه أخطاء إملائية.\n"
-        "- استخدم قاعدة المعرفة والمواد والمقالات عند الإجابة — وإذا كانت المعلومة موجودة فيها انقل الحقائق والأرقام كما هي بدون تحريف.\n"
-        "- عندما يسألك عن محتويات مادة معينة، ابحث في المقالات عن تلك المادة واذكر المحتويات منها.\n"
-        "- عندما تذكر توزيع الدرجات، انقل الأرقام كما هي من المقال دون تحويل (مثلاً 20 درجة وليس 20%).\n"
-        "- إذا ما لقيت المعلومة في المقالات أو المواد، جاوب من معلوماتك العامة طبيعي.\n"
-        "- عندما يسألك عن مجلد أو مادة معينة، ابحث في قائمة المواد أعلاه وأجب منه.\n"
-        "- إذا عرفت الإجابة جاوب. إذا برا الكلية جاوب طبيعي.\n"
-        "- إذا السؤال يحتاج مشرف (تسجيل، شكوى، طلب مادة)، جاوب طبيعي ثم في النهاية اسأل: "
-        "'هل تريدني أن أبلغ المشرفين بهذا الطلب؟'\n"
-        "- إذا استخدم المستخدم اسم مادة غريب وانت عارفها، اسأله هل يقصدها. لو قال نعم اكتب:\n"
+"📌 تعليمات بسيطة:\n"
+        "- رد بكلام متصل سلس طبيعي كأنك صديق قريب، بدون أي نقاط أو تعداد أو تنسيق.\n"
+        "- كن غير مقيد ومرن؛ جاوب مباشرة ولا تعقد الأمور. وإذا كانت المعلومة في قاعدة المعرفة أو المواد أو المقالات انقلها كما هي دون تحريف.\n"
+        "- إذا كان السؤال عن محتوى مادة معينة أو توزيع درجاتها، التزم بما ورد في مقالها حصراً وانقل الأرقام كما هي (مثلاً 20 درجة وليس 20%).\n"
+        "- إذا ما لقيت المعلومة في المقالات أو المواد، جاوب من معلوماتك العامة بشكل طبيعي.\n"
+        "- لو السؤال عام أو برا الكلية جاوب طبيعي مثل أي محادثة.\n"
+        "- لا تعرض إبلاغ المشرفين إلا في الحالات التي لا تستطيع حلها بنفسك نهائياً (مثل: تسجيل، حظر، شكوى، طلبات إدارية بمخصوص). لا تعرضه كثيراً على الأسئلة العادية.\n"
+        "- حاول دائماً حل المشكلة بنفسك وبمعلوماتك قبل التفكير في إبلاغ المشرفين.\n"
+        "- إذا كان لا بد من إبلاغ المشرفين، جاوب طبيعي وفي نهاية الرد اسأل: "
+        "'هل تريدني أن أرسل هذا الطلب إلى المشرفين؟'\n"
+        "- إذا استخدم المستخدم اسم مادة غريب وانت عارفها، اسأله هل يقصده. لو قال نعم اكتب:\n"
         "[SAVE_ALIAS] الاسم | كود_المادة | اسم_المادة\n"
     )
 
@@ -633,18 +678,11 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             if not (await state.get_data()).get("pending_admin_notify"):
                 await state.update_data(pending_admin_notify=True, pending_notify_q=q)
         elif any(w in q for w in ["قول للمشرف", "بلغ المشرف", "كلم المشرف", "ابلغ المشرف"]):
-            from handlers.messages import forward_to_admins
-            from database.crud import save_message
-            ai_context = "\n".join(
-                f"المستخدم: {turn['user']}\nالمساعد: {turn['assistant']}"
-                for turn in history[-5:]
+            await state.update_data(pending_admin_notify=True, pending_notify_q=q)
+            await message.answer(
+                "حسناً، هل تريد مني إرسال طلبك إلى المشرفين الآن؟",
+                reply_markup=_ai_notify_keyboard(),
             )
-            msg = await save_message(
-                user_id=message.from_user.id,
-                message_type="text",
-                content=f"[طلب AI]\n{q}\n\nسجل المحادثة:\n{ai_context}",
-            )
-            await forward_to_admins(message, "text", msg.id)
     else:
         await message.answer(
             "⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.",
