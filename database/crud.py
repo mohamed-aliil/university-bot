@@ -298,6 +298,40 @@ async def update_channel_message(channel_id: int, custom_message: str | None) ->
             await session.commit()
 
 
+# ─── Publish channels (where the 📢 نشر button sends messages) ───
+
+async def add_publish_channel(chat_id: str, title: str | None = None):
+    """Add a publish channel. Returns the new PublishChannel object."""
+    async with async_session() as session:
+        from .models import PublishChannel
+        pc = PublishChannel(chat_id=chat_id, title=title)
+        session.add(pc)
+        await session.commit()
+        return pc
+
+
+async def get_all_publish_channels():
+    """Return list of all PublishChannel objects."""
+    async with async_session() as session:
+        from .models import PublishChannel
+        result = await session.execute(select(PublishChannel).order_by(PublishChannel.id))
+        return result.scalars().all()
+
+
+async def get_publish_channel_by_id(channel_id: int):
+    async with async_session() as session:
+        from .models import PublishChannel
+        result = await session.execute(select(PublishChannel).where(PublishChannel.id == channel_id))
+        return result.scalar_one_or_none()
+
+
+async def remove_publish_channel(channel_id: int) -> None:
+    async with async_session() as session:
+        from .models import PublishChannel
+        await session.execute(delete(PublishChannel).where(PublishChannel.id == channel_id))
+        await session.commit()
+
+
 # ─── Channel verification (per user, cached in DB) ───
 
 

@@ -11,11 +11,12 @@ from database.crud import (
     get_monitored_channel_by_username, get_monitored_channel_by_channel_id,
     add_content_item, add_content_link, get_folders, add_folder,
     add_required_channel, get_all_required_channels, remove_required_channel,
+    add_publish_channel, get_all_publish_channels, remove_publish_channel,
     update_channel_message,
 )
 from datetime import datetime, timezone
 from filters import SuperAdminFilter
-from keyboards.reply import channels_keyboard, required_channels_keyboard, monitored_channels_keyboard, customize_news_keyboard, cancel_keyboard
+from keyboards.reply import channels_keyboard, required_channels_keyboard, publish_channels_keyboard, monitored_channels_keyboard, customize_news_keyboard, cancel_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -29,6 +30,8 @@ class ChannelManageState(StatesGroup):
     waiting_required_channel = State()
     waiting_required_message = State()
     waiting_required_delete = State()
+    waiting_publish_channel = State()
+    waiting_publish_delete = State()
 
 
 CHANNEL_REGEX = re.compile(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)")
@@ -42,6 +45,10 @@ async def back_from_sub_menus(message: Message, state: FSMContext) -> None:
         await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
         return
     if data.get("in_required_channels"):
+        await state.clear()
+        await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
+        return
+    if data.get("in_publish_channels"):
         await state.clear()
         await message.answer("📡 القنوات والأخبار:", reply_markup=await channels_keyboard())
         return
@@ -210,6 +217,108 @@ async def delete_required_channel_confirm(message: Message, state: FSMContext) -
     await message.answer(
         f"✅ تم حذف القناة الإجبارية: {ch.chat_id}",
         reply_markup=await channels_keyboard(),
+    )
+    await state.clear()
+
+
+# ─── Publish channels (where 📢 نشر sends messages) ───
+
+@router.message(SuperAdminFilter(), F.text == "📣 قنوات النشر")
+async def publish_channels_menu(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    await state.update_data(in_publish_channels=True)
+    await message.answer("📣 قنوات النشر:", reply_markup=publish_channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "➕ إضافة قناة نشر")
+async def add_publish_channel_start(message: Message, state: FSMContext) -> None:
+    await state.set_state(ChannelManageState.waiting_publish_channel)
+    await message.answer(
+        "✏️ أرسل رابط القناة أو المعرف أو ID (مثال: @qanat أو https://t.me/qanat أو -100123456):\n\n"
+        "⚠️ تأكد من إضافة البوت مشرفاً في القناة حتى يتم النشر فيها.",
+        reply_markup=cancel_keyboard(),
+    )
+
+
+@router.message(ChannelManageState.waiting_publish_channel, SuperAdminFilter())
+async def add_publish_channel_process(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    chat_id = None
+    channel_username = None
+    match = re.search(r"(?:https?://)?t\.me/([a-zA-Z_]\w+)", text)
+    if match:
+        channel_username = match.group(1)
+        chat_id = f"@{channel_username}"
+    elif text.startswith("-100") or text.lstrip("-").isdigit():
+        chat_id = text
+    elif text.startswith("@"):
+        channel_username = text[1:]
+        chat_id = text
+    else:
+        await message.answer("❌ رابط غير صالح. أرسل رابط قناة أو معرف (@username) أو ID.")
+        return
+
+    try:
+        chat = await message.bot.get_chat(chat_id)
+        stored_id = str(chat.id)
+        title = chat.title or channel_username or chat_id
+    except Exception as e:
+        stored_id = chat_id
+        title = channel_username or chat_id
+
+    pc = await add_publish_channel(chat_id=stored_id, title=title)
+    await message.answer(
+        f"✅ تم إضافة قناة النشر:\n"
+        f"📌 {pc.title}\n"
+        f"🔗 {pc.chat_id}\n\n"
+        f"زر 📢 نشر سيرسل الرسائل إلى هذه القناة.",
+        reply_markup=publish_channels_keyboard(),
+    )
+    await state.clear()
+
+
+@router.message(SuperAdminFilter(), F.text == "📋 عرض قنوات النشر")
+async def list_publish_channels(message: Message) -> None:
+    channels = await get_all_publish_channels()
+    if not channels:
+        await message.answer("❌ لا توجد قنوات نشر.", reply_markup=publish_channels_keyboard())
+        return
+    text = "📣 قنوات النشر:\n\n"
+    for i, ch in enumerate(channels, 1):
+        text += f"{i}. {ch.title or ch.chat_id}\n   📌 {ch.chat_id}\n\n"
+    await message.answer(text, reply_markup=publish_channels_keyboard())
+
+
+@router.message(SuperAdminFilter(), F.text == "➖ حذف قناة نشر")
+async def delete_publish_channel_start(message: Message, state: FSMContext) -> None:
+    channels = await get_all_publish_channels()
+    if not channels:
+        await message.answer("❌ لا توجد قنوات نشر للحذف.", reply_markup=publish_channels_keyboard())
+        return
+    text = "📣 اختر قناة النشر للحذف:\n\n"
+    for i, ch in enumerate(channels, 1):
+        text += f"{i}. {ch.title or ch.chat_id}\n"
+    await state.set_state(ChannelManageState.waiting_publish_delete)
+    await state.update_data(publish_channels_list=channels)
+    await message.answer(text + "\nأرسل رقم القناة:", reply_markup=cancel_keyboard())
+
+
+@router.message(ChannelManageState.waiting_publish_delete, SuperAdminFilter())
+async def delete_publish_channel_confirm(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    channels = data.get("publish_channels_list", [])
+    try:
+        idx = int(message.text.strip()) - 1
+        if idx < 0 or idx >= len(channels):
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ رقم غير صالح.")
+        return
+    ch = channels[idx]
+    await remove_publish_channel(ch.id)
+    await message.answer(
+        f"✅ تم حذف قناة النشر: {ch.title or ch.chat_id}",
+        reply_markup=publish_channels_keyboard(),
     )
     await state.clear()
 

@@ -63,6 +63,15 @@ class RequiredChannel(Base):
     created_at = Column(DateTime, default=_utcnow)
 
 
+class PublishChannel(Base):
+    __tablename__ = "publish_channels"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    chat_id = Column(String, nullable=False)
+    title = Column(String, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+
+
 class Message(Base):
     __tablename__ = "messages"
 

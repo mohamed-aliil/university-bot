@@ -177,6 +177,7 @@ async def channels_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📡 القنوات المُراقبة")],
             [KeyboardButton(text="القنوات الإجبارية")],
+            [KeyboardButton(text="📣 قنوات النشر")],
             [KeyboardButton(text="📰 تخصيص الأخبار")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
@@ -200,6 +201,17 @@ def required_channels_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="➕ إضافة قناة إجبارية"), KeyboardButton(text="➖ حذف قناة إجبارية")],
             [KeyboardButton(text="عرض القنوات الإجبارية")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def publish_channels_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="➕ إضافة قناة نشر"), KeyboardButton(text="➖ حذف قناة نشر")],
+            [KeyboardButton(text="📋 عرض قنوات النشر")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

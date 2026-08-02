@@ -309,55 +309,21 @@ async def mute_user_notifications_handler(callback: CallbackQuery) -> None:
 
 @router.callback_query(AdminFilter(), F.data.startswith("forward:"))
 async def forward_to_channel_handler(callback: CallbackQuery) -> None:
-    from database.crud import get_user_messages, get_all_required_channels
     _, user_id, user_name = callback.data.split(":", 2)
     user_id = int(user_id)
 
-    channels = await get_all_required_channels()
-    if not channels:
-        await callback.answer("❌ لا توجد قناة إجبارية للنشر.", show_alert=True)
-        return
-
-    ch_str = channels[0].chat_id
-    channel_id = int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
-
+    from database.crud import get_user_messages
     user_messages = await get_user_messages(user_id)
     if not user_messages:
         await callback.answer("❌ لا توجد رسائل لهذا المستخدم.", show_alert=True)
         return
 
-    last_msg = user_messages[0]
-    original_text = last_msg.content or last_msg.caption or ""
-    channel_text = f"💬 رسالة واردة عبر بوت القناة:\n\n{original_text}\n\n— شاكرين تواصلكم ومشاركتكم." if original_text else "💬 رسالة واردة عبر بوت القناة.\n— شاكرين تواصلكم ومشاركتكم."
+    channel_id = await _publish_channel_target(callback, f"notify:{user_id}")
+    if channel_id is None:
+        return
 
     try:
-        if last_msg.message_type == "text":
-            await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        elif last_msg.message_type == "photo" and last_msg.file_id:
-            await callback.bot.send_photo(chat_id=channel_id, photo=last_msg.file_id, caption=channel_text)
-        elif last_msg.message_type == "video" and last_msg.file_id:
-            await callback.bot.send_video(chat_id=channel_id, video=last_msg.file_id, caption=channel_text)
-        elif last_msg.message_type == "document" and last_msg.file_id:
-            await callback.bot.send_document(chat_id=channel_id, document=last_msg.file_id, caption=channel_text)
-        elif last_msg.message_type == "audio" and last_msg.file_id:
-            await callback.bot.send_audio(chat_id=channel_id, audio=last_msg.file_id, caption=channel_text)
-        elif last_msg.message_type == "voice" and last_msg.file_id:
-            await callback.bot.send_voice(chat_id=channel_id, voice=last_msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        elif last_msg.message_type == "sticker" and last_msg.file_id:
-            await callback.bot.send_sticker(chat_id=channel_id, sticker=last_msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        elif last_msg.message_type == "animation" and last_msg.file_id:
-            await callback.bot.send_animation(chat_id=channel_id, animation=last_msg.file_id, caption=channel_text)
-        elif last_msg.message_type == "video_note" and last_msg.file_id:
-            await callback.bot.send_video_note(chat_id=channel_id, video_note=last_msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        else:
-            await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-
+        await _publish_msg_to_channel(callback.bot, channel_id, user_messages[0])
         await save_admin_action(
             admin_id=callback.from_user.id,
             admin_name=callback.from_user.full_name or "مشرف",
@@ -2129,54 +2095,127 @@ async def review_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.answer()
 
 
+async def _publish_channel_target(callback: CallbackQuery, payload: str) -> str | int | None:
+    """Return the single publish channel target, or prompt a choice when several exist.
+
+    payload is the data needed later (mr:<msg_id> or notify:<user_id>). Returns
+    None when the choice prompt was shown (or no channels) and the caller should stop.
+    """
+    from database.crud import get_all_publish_channels
+    channels = await get_all_publish_channels()
+    if not channels:
+        await callback.answer(
+            "❌ لا توجد قنوات نشر.\nأضفها من: الإعدادات → القنوات والأخبار → قنوات النشر.",
+            show_alert=True,
+        )
+        return None
+    if len(channels) == 1:
+        ch_str = channels[0].chat_id
+        return int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
+    builder = InlineKeyboardBuilder()
+    for ch in channels:
+        label = ch.title or ch.chat_id
+        builder.button(text=label, callback_data=f"pubpick:{payload}:{ch.id}")
+    builder.adjust(1)
+    await callback.message.answer("📣 اختر قناة النشر:", reply_markup=builder.as_markup())
+    await callback.answer()
+    return None
+
+
+async def _publish_msg_to_channel(bot, channel_id, msg) -> None:
+    """Send a stored Message into the publish channel with the anonymous header."""
+    original_text = msg.content or msg.caption or ""
+    if original_text:
+        channel_text = f"💬 رسالة واردة عبر بوت القناة:\n\n{original_text}\n\n— شاكرين تواصلكم ومشاركتكم."
+    else:
+        channel_text = "💬 رسالة واردة عبر بوت القناة.\n— شاكرين تواصلكم ومشاركتكم."
+    mtype = msg.message_type
+    fid = msg.file_id
+    if mtype == "photo" and fid:
+        await bot.send_photo(chat_id=channel_id, photo=fid, caption=channel_text)
+    elif mtype == "video" and fid:
+        await bot.send_video(chat_id=channel_id, video=fid, caption=channel_text)
+    elif mtype == "document" and fid:
+        await bot.send_document(chat_id=channel_id, document=fid, caption=channel_text)
+    elif mtype == "audio" and fid:
+        await bot.send_audio(chat_id=channel_id, audio=fid, caption=channel_text)
+    elif mtype == "voice" and fid:
+        await bot.send_voice(chat_id=channel_id, voice=fid)
+        if original_text:
+            await bot.send_message(chat_id=channel_id, text=channel_text)
+    elif mtype == "sticker" and fid:
+        await bot.send_sticker(chat_id=channel_id, sticker=fid)
+        if original_text:
+            await bot.send_message(chat_id=channel_id, text=channel_text)
+    elif mtype == "animation" and fid:
+        await bot.send_animation(chat_id=channel_id, animation=fid, caption=channel_text)
+    elif mtype == "video_note" and fid:
+        await bot.send_video_note(chat_id=channel_id, video_note=fid)
+        if original_text:
+            await bot.send_message(chat_id=channel_id, text=channel_text)
+    else:
+        await bot.send_message(chat_id=channel_id, text=channel_text)
+
+
 @router.callback_query(AdminFilter(), F.data.startswith("review_publish:"))
 async def review_publish_cb(callback: CallbackQuery, state: FSMContext) -> None:
     parts = callback.data.split(":")
     msg_id = int(parts[1])
-    from database.crud import get_message_by_id, get_all_required_channels
+    from database.crud import get_message_by_id
     msg = await get_message_by_id(msg_id)
     if not msg:
         await callback.answer("❌ الرسالة غير موجودة.", show_alert=True)
         return
-    channels = await get_all_required_channels()
-    if not channels:
-        await callback.answer("❌ لا توجد قناة إجبارية للنشر.", show_alert=True)
+    channel_id = await _publish_channel_target(callback, f"mr:{msg_id}")
+    if channel_id is None:
         return
-    ch_str = channels[0].chat_id
-    channel_id = int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
-    original_text = msg.content or msg.caption or ""
-    channel_text = f"💬 رسالة واردة عبر بوت القناة:\n\n{original_text}\n\n— شاكرين تواصلكم ومشاركتكم." if original_text else "💬 رسالة واردة عبر بوت القناة.\n— شاكرين تواصلكم ومشاركتكم."
     try:
-        if msg.message_type == "photo" and msg.file_id:
-            await callback.bot.send_photo(chat_id=channel_id, photo=msg.file_id, caption=channel_text)
-        elif msg.message_type == "video" and msg.file_id:
-            await callback.bot.send_video(chat_id=channel_id, video=msg.file_id, caption=channel_text)
-        elif msg.message_type == "document" and msg.file_id:
-            await callback.bot.send_document(chat_id=channel_id, document=msg.file_id, caption=channel_text)
-        elif msg.message_type == "audio" and msg.file_id:
-            await callback.bot.send_audio(chat_id=channel_id, audio=msg.file_id, caption=channel_text)
-        elif msg.message_type == "voice" and msg.file_id:
-            await callback.bot.send_voice(chat_id=channel_id, voice=msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        elif msg.message_type == "sticker" and msg.file_id:
-            await callback.bot.send_sticker(chat_id=channel_id, sticker=msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        elif msg.message_type == "animation" and msg.file_id:
-            await callback.bot.send_animation(chat_id=channel_id, animation=msg.file_id, caption=channel_text)
-        elif msg.message_type == "video_note" and msg.file_id:
-            await callback.bot.send_video_note(chat_id=channel_id, video_note=msg.file_id)
-            if original_text:
-                await callback.bot.send_message(chat_id=channel_id, text=channel_text)
-        else:
-            await callback.bot.send_message(chat_id=channel_id, text=channel_text)
+        await _publish_msg_to_channel(callback.bot, channel_id, msg)
         await mark_message_read(msg_id)
         await callback.answer("✅ تم نشر الرسالة في القناة.", show_alert=True)
         await show_next_unread(callback.message, state)
     except Exception as e:
         logger.error("review_publish failed: %s", e)
         await callback.answer("❌ فشل النشر. تأكد من أن البوت مشرف في القناة.", show_alert=True)
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("pubpick:"))
+async def pubpick_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    _, kind, ident, pc_id = callback.data.split(":", 3)
+    from database.crud import get_publish_channel_by_id, get_message_by_id, get_user_messages
+    pc = await get_publish_channel_by_id(int(pc_id))
+    if not pc:
+        await callback.answer("❌ قناة النشر غير موجودة.", show_alert=True)
+        return
+    ch_str = pc.chat_id
+    channel_id = int(ch_str) if ch_str.lstrip("-").isdigit() else ch_str
+    try:
+        if kind == "mr":
+            msg = await get_message_by_id(int(ident))
+            if not msg:
+                await callback.answer("❌ الرسالة غير موجودة.", show_alert=True)
+                return
+            await _publish_msg_to_channel(callback.bot, channel_id, msg)
+            await mark_message_read(int(ident))
+            await callback.answer("✅ تم نشر الرسالة في القناة.", show_alert=True)
+            await show_next_unread(callback.message, state)
+        else:
+            msgs = await get_user_messages(int(ident))
+            if not msgs:
+                await callback.answer("❌ لا توجد رسائل لهذا المستخدم.", show_alert=True)
+                return
+            await _publish_msg_to_channel(callback.bot, channel_id, msgs[0])
+            await save_admin_action(
+                admin_id=callback.from_user.id,
+                admin_name=callback.from_user.full_name or "مشرف",
+                action_type="forward",
+                details="تحويل رسالة مستخدم إلى القناة",
+            )
+            await callback.message.answer("✅ تم تحويل الرسالة إلى القناة بنجاح.")
+    except Exception as e:
+        logger.error("pubpick failed: %s", e)
+        await callback.answer("❌ فشل النشر في القناة. تأكد من أن البوت مشرف فيها.", show_alert=True)
+    await callback.answer()
 
 
 @router.callback_query(AdminFilter(), F.data.startswith("review_delete:"))
