@@ -1349,14 +1349,22 @@ async def ai_toggle_visibility(message: Message) -> None:
 async def errors_log_button(message: Message) -> None:
     from database.crud import get_errors_db
     errors = await get_errors_db(15)
-    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{errors}</code>")
+    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{html_mod.escape(errors)}</code>")
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل AI")
 async def ai_log_button(message: Message) -> None:
     from database.crud import get_ai_log
     log = await get_ai_log(5)
-    await message.answer(f"📋 سجل AI (آخر 5):\n\n<code>{log}</code>")
+    await message.answer(f"📋 سجل AI (آخر 5):\n\n<code>{html_mod.escape(log)}</code>")
+
+
+@router.message(SuperAdminFilter(), F.text == "🗑 مسح الأخطاء")
+async def clear_errors_button(message: Message) -> None:
+    from database.crud import clear_errors, clear_errors_db
+    clear_errors()
+    await clear_errors_db()
+    await message.answer("✅ تم مسح سجل الأخطاء.", reply_markup=logs_type_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
