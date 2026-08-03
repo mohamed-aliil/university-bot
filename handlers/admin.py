@@ -1348,23 +1348,32 @@ async def ai_toggle_visibility(message: Message) -> None:
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل الأخطاء")
 async def errors_log_button(message: Message) -> None:
     from database.crud import get_errors_db
+    from keyboards.reply import error_log_keyboard
     errors = await get_errors_db(15)
-    await message.answer(f"📋 آخر الأخطاء:\n\n<code>{html_mod.escape(errors)}</code>")
+    await message.answer(
+        f"📋 آخر الأخطاء:\n\n<code>{html_mod.escape(errors)}</code>",
+        reply_markup=error_log_keyboard(),
+    )
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل AI")
 async def ai_log_button(message: Message) -> None:
     from database.crud import get_ai_log
-    log = await get_ai_log(5)
-    await message.answer(f"📋 سجل AI (آخر 5):\n\n<code>{html_mod.escape(log)}</code>")
+    from handlers.ai import safe_send
+    log = await get_ai_log()
+    await safe_send(message, f"📋 سجل AI (جميع السجلات):\n\n{log}")
 
 
-@router.message(SuperAdminFilter(), F.text == "🗑 مسح الأخطاء")
-async def clear_errors_button(message: Message) -> None:
+@router.callback_query(SuperAdminFilter(), F.data == "clear_errors_confirm")
+async def clear_errors_cb(callback: CallbackQuery) -> None:
     from database.crud import clear_errors, clear_errors_db
     clear_errors()
     await clear_errors_db()
-    await message.answer("✅ تم مسح سجل الأخطاء.", reply_markup=logs_type_keyboard())
+    try:
+        await callback.message.edit_text("✅ تم حذف جميع سجلات الأخطاء.")
+    except Exception:
+        await callback.message.answer("✅ تم حذف جميع سجلات الأخطاء.")
+    await callback.answer()
 
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")

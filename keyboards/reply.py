@@ -299,11 +299,17 @@ def logs_type_keyboard() -> ReplyKeyboardMarkup:
         keyboard=[
             [KeyboardButton(text="📦 سجلات المواد"), KeyboardButton(text="💬 سجلات الطلبات")],
             [KeyboardButton(text="📋 سجلات المستخدمين"), KeyboardButton(text="📋 سجل AI")],
-            [KeyboardButton(text="📋 سجل الأخطاء"), KeyboardButton(text="🗑 مسح الأخطاء")],
+            [KeyboardButton(text="📋 سجل الأخطاء")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,
     )
+
+
+def error_log_keyboard() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="🗑 حذف السجلات", callback_data="clear_errors_confirm")
+    return builder.as_markup()
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:

@@ -179,12 +179,13 @@ async def log_ai_action(user_id: int, user_name: str, action: str) -> None:
         pass
 
 
-async def get_ai_log(limit: int = 5) -> str:
+async def get_ai_log(limit: int | None = None) -> str:
     try:
         async with async_session() as session:
-            result = await session.execute(
-                select(AILog).order_by(AILog.created_at.desc()).limit(limit)
-            )
+            stmt = select(AILog).order_by(AILog.created_at.desc())
+            if limit is not None:
+                stmt = stmt.limit(limit)
+            result = await session.execute(stmt)
             rows = result.scalars().all()
             rows.reverse()
     except Exception:
