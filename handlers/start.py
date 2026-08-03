@@ -57,10 +57,11 @@ async def start_handler(message: Message) -> None:
             return
 
         await message.answer(
-            f"مرحباً {user.first_name} 🙋‍♂️\n"
-            "بوابتك الرسمية للحصول على الشيتات والملخصات وتبادل العون الأكاديمي؛\n"
-            "أرسل استفسارك أو مساهمتك لنشرها ومساعدة زملائك الآن،\n"
-            "وسيتولى فريق الإشراف الرد عليك فوراً.",
+            f"مرحباً {user.first_name} في نافذة.\n"
+            "يمكنكم إرسال الاستفسارات عن طريق نَافِذَةُ التَّوَاصُلِ، أو الحصول على الشيتات عن طريق نَافِذَةُ المَوَادِّ.\n"
+            "\n"
+            "تابع قناتنا الرسمية ليصلك كل جديد:\n"
+            "https://t.me/NafidhaView",
             reply_markup=main_keyboard(),
         )
     except Exception as e:
