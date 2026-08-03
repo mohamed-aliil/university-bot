@@ -306,10 +306,14 @@ def logs_type_keyboard() -> ReplyKeyboardMarkup:
     )
 
 
-def error_log_keyboard() -> InlineKeyboardMarkup:
-    builder = InlineKeyboardBuilder()
-    builder.button(text="🗑 حذف السجلات", callback_data="clear_errors_confirm")
-    return builder.as_markup()
+def errors_view_keyboard() -> ReplyKeyboardMarkup:
+    return ReplyKeyboardMarkup(
+        keyboard=[
+            [KeyboardButton(text="🗑 حذف السجلات")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ],
+        resize_keyboard=True,
+    )
 
 
 def cancel_keyboard() -> InlineKeyboardMarkup:

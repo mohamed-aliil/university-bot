@@ -732,6 +732,11 @@ async def back_to_main(message: Message, state: FSMContext) -> None:
         from handlers.materials import handle_back
         await handle_back(message, state)
         return
+    data = await state.get_data()
+    if data.get("in_errors_view"):
+        await state.clear()
+        await message.answer("📋 اختر نوع السجلات:", reply_markup=logs_type_keyboard())
+        return
     await state.clear()
     await message.answer("🔧 القائمة الرئيسية:", reply_markup=await admin_main_keyboard(message.from_user.id))
 
@@ -1346,13 +1351,14 @@ async def ai_toggle_visibility(message: Message) -> None:
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجل الأخطاء")
-async def errors_log_button(message: Message) -> None:
+async def errors_log_button(message: Message, state: FSMContext) -> None:
     from database.crud import get_errors_db
-    from keyboards.reply import error_log_keyboard
+    from keyboards.reply import errors_view_keyboard
     errors = await get_errors_db(15)
+    await state.update_data(in_errors_view=True)
     await message.answer(
         f"📋 آخر الأخطاء:\n\n<code>{html_mod.escape(errors)}</code>",
-        reply_markup=error_log_keyboard(),
+        reply_markup=errors_view_keyboard(),
     )
 
 
@@ -1364,16 +1370,13 @@ async def ai_log_button(message: Message) -> None:
     await safe_send(message, f"📋 سجل AI (جميع السجلات):\n\n{log}")
 
 
-@router.callback_query(SuperAdminFilter(), F.data == "clear_errors_confirm")
-async def clear_errors_cb(callback: CallbackQuery) -> None:
+@router.message(SuperAdminFilter(), F.text == "🗑 حذف السجلات")
+async def clear_errors_button(message: Message) -> None:
     from database.crud import clear_errors, clear_errors_db
     clear_errors()
     await clear_errors_db()
-    try:
-        await callback.message.edit_text("✅ تم حذف جميع سجلات الأخطاء.")
-    except Exception:
-        await callback.message.answer("✅ تم حذف جميع سجلات الأخطاء.")
-    await callback.answer()
+    from keyboards.reply import errors_view_keyboard
+    await message.answer("✅ تم حذف جميع سجلات الأخطاء.", reply_markup=errors_view_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🧹 تنظيف قاعدة البيانات")
