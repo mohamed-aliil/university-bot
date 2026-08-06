@@ -2360,6 +2360,10 @@ async def restore_apply_document(message: Message, state: FSMContext) -> None:
             return
 
         async with engine.begin() as conn:
+            from database.database import Base as _Base
+            import database.models as _models  # noqa: F401
+            _order = {t.name: i for i, t in enumerate(_Base.metadata.sorted_tables)}
+            names.sort(key=lambda n: _order.get(n[:-5], len(_order)))
             for n in names:
                 table = n[:-5]
                 payload = _json.loads(zf.read(n).decode("utf-8"))
