@@ -572,12 +572,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await message.bot.send_chat_action(message.chat.id, "typing")
     except Exception:
         pass
-    wait_msg = await message.answer("⏳ جاري التفكير في إجابتك...")
     answer = await call_gemini(user_prompt, system_prompt=system_prompt)
-    try:
-        await wait_msg.delete()
-    except Exception:
-        pass
     if answer:
         # Process [SAVE_ALIAS] command from AI response
         save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)
