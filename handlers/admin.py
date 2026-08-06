@@ -2438,7 +2438,7 @@ async def restore_apply_document(message: Message, state: FSMContext) -> None:
 
                 ph = ", ".join(f":p{i}" for i in range(len(cols)))
                 colstr = ", ".join(f'"{c}"' for c in cols)
-                insert = _text(f'INSERT INTO "{table}" ({colstr}) VALUES ({ph})')
+                insert = _text(f'INSERT INTO "{table}" ({colstr}) VALUES ({ph}) ON CONFLICT DO NOTHING')
                 for p in params:
                     await conn.execute(insert, {f"p{i}": v for i, v in enumerate(p)})
 
