@@ -17,6 +17,22 @@ logger = logging.getLogger(__name__)
 # Cooldown: don't re-prompt the same user more than once per 30 seconds
 _last_prompt: dict[int, float] = {}
 
+# Cache of required channels with a TTL (seconds) to avoid a DB hit per message
+_channels_cache: list | None = None
+_channels_cache_time: float = 0.0
+_channels_cache_ttl = 60.0
+
+
+async def _get_channels_cached():
+    global _channels_cache, _channels_cache_time
+    now = time_module.time()
+    if (_channels_cache is not None
+            and now - _channels_cache_time < _channels_cache_ttl):
+        return _channels_cache
+    _channels_cache = await get_all_required_channels()
+    _channels_cache_time = now
+    return _channels_cache
+
 
 class SubscriptionMiddleware(BaseMiddleware):
     async def __call__(self, handler, event, data):
@@ -29,7 +45,7 @@ class SubscriptionMiddleware(BaseMiddleware):
         if user.id in settings.admin_ids:
             return await handler(event, data)
 
-        channels = await get_all_required_channels()
+        channels = await _get_channels_cached()
         if not channels:
             return await handler(event, data)
 
