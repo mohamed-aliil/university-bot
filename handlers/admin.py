@@ -2364,6 +2364,11 @@ async def restore_apply_document(message: Message, state: FSMContext) -> None:
             import database.models as _models  # noqa: F401
             _order = {t.name: i for i, t in enumerate(_Base.metadata.sorted_tables)}
             names.sort(key=lambda n: _order.get(n[:-5], len(_order)))
+            for tname in reversed([n[:-5] for n in names]):
+                try:
+                    await conn.execute(_text(f"TRUNCATE TABLE \"{tname}\" CASCADE"))
+                except Exception:
+                    pass
             for n in names:
                 table = n[:-5]
                 payload = _json.loads(zf.read(n).decode("utf-8"))
