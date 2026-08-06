@@ -51,12 +51,15 @@ async def health(request: web.Request) -> web.Response:
 
 
 async def webhook_handler(request: web.Request) -> web.Response:
+    import time as _time
+    _t0 = _time.perf_counter()
     bot = request.app["bot"]
     dp = request.app["dp"]
     try:
         body = await request.read()
         update = Update.model_validate(json.loads(body))
         await dp.feed_update(bot, update)
+        logger.info("webhook update processed in %.0fms", (_time.perf_counter() - _t0) * 1000)
     except Exception as e:
         logger.exception("Webhook error: %s", e)
         try:
