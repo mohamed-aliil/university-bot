@@ -2380,12 +2380,12 @@ async def restore_apply_document(message: Message, state: FSMContext) -> None:
                         return None
                     if isinstance(v, dict) and "$bin" in v:
                         return _b64.b64decode(v["$bin"])
-                    if ctype == "date" and isinstance(v, str):
-                        return _dt.date.fromisoformat(v[:10])
-                    if ctype.startswith("time") and isinstance(v, str):
-                        return _dt.time.fromisoformat(v)
                     if "timestamp" in ctype and isinstance(v, str):
                         return _dt.datetime.fromisoformat(v)
+                    if ctype.startswith("time ") and isinstance(v, str):
+                        return _dt.time.fromisoformat(v)
+                    if ctype == "date" and isinstance(v, str):
+                        return _dt.date.fromisoformat(v[:10])
                     if ctype in ("json", "jsonb") and isinstance(v, str):
                         try:
                             return _json.loads(v)
