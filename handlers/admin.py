@@ -2401,6 +2401,41 @@ async def restore_apply_document(message: Message, state: FSMContext) -> None:
                 for row in rows:
                     params.append([_py(c, types.get(cols[i], "")) for i, c in enumerate(row)])
 
+                # topological order for self-referencing tables (e.g. folders.parent_id)
+                self_fk = None
+                if "parent_id" in cols or "folder_id" in cols:
+                    r2 = await conn.execute(_text(
+                        "SELECT kcu.column_name FROM information_schema.table_constraints tc "
+                        "JOIN information_schema.key_column_usage kcu "
+                        "ON tc.constraint_name = kcu.constraint_name "
+                        "JOIN information_schema.constraint_column_usage ccu "
+                        "ON tc.constraint_name = ccu.constraint_name "
+                        "WHERE tc.constraint_type='FOREIGN KEY' AND tc.table_name=:t "
+                        "AND ccu.table_name = tc.table_name"
+                    ), {"t": table})
+                    rows_fk = r2.fetchall()
+                    if rows_fk:
+                        self_fk = rows_fk[0][0]
+                if self_fk:
+                    pk_idx = cols.index("id")
+                    fk_idx = cols.index(self_fk)
+                    done = set()
+                    ordered = []
+                    remaining = list(params)
+                    while remaining:
+                        progressed = False
+                        for p in remaining:
+                            fk = p[fk_idx]
+                            if fk is None or fk in done:
+                                ordered.append(p)
+                                done.add(p[pk_idx])
+                                remaining.remove(p)
+                                progressed = True
+                        if not progressed:
+                            ordered.extend(remaining)
+                            break
+                    params = ordered
+
                 ph = ", ".join(f":p{i}" for i in range(len(cols)))
                 colstr = ", ".join(f'"{c}"' for c in cols)
                 insert = _text(f'INSERT INTO "{table}" ({colstr}) VALUES ({ph})')
