@@ -610,7 +610,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
     if text in ("/start",):
         await state.clear()
         from handlers.start import _admin_kb
-        from database.crud import get_or_create_user, is_admin_user
+        from database.crud import get_or_create_user
         user = message.from_user
         await get_or_create_user(
             user_id=user.id,
