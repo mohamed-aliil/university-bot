@@ -55,6 +55,10 @@ class AddReplyState(StatesGroup):
     waiting_for_response = State()
 
 
+class RestoreState(StatesGroup):
+    waiting_zip = State()
+
+
 class RemoveReplyState(StatesGroup):
     waiting_for_id = State()
 
@@ -2248,6 +2252,178 @@ async def review_delete_cb(callback: CallbackQuery, state: FSMContext) -> None:
     current_idx = data.get("queue_index", 0)
     await callback.answer("✅ تم حذف الرسالة.", show_alert=True)
     await show_next_unread(callback.message, state)
+
+
+@router.message(SuperAdminFilter(), F.text == "/backup")
+async def backup_db_command(message: Message) -> None:
+    import json as _json
+    import os as _os
+    import tempfile as _tmp
+    import zipfile as _zip
+    import datetime as _dt
+    from aiogram.types import FSInputFile
+
+    if not settings.DATABASE_URL.startswith("postgresql"):
+        await message.answer("❌ هذا الأمر يعمل مع قاعدة بيانات Postgres فقط.")
+        return
+    status = await message.answer("⏳ جاري عمل نسخة احتياطية من قاعدة البيانات...")
+
+    def _conv(v):
+        if v is None:
+            return None
+        if isinstance(v, (_dt.datetime, _dt.date, _dt.time)):
+            return v.isoformat()
+        if isinstance(v, (int, float, str, bool)):
+            return v
+        if isinstance(v, (bytes, bytearray, memoryview)):
+            return {"$bin": __import__("base64").b64encode(bytes(v)).decode()}
+        return str(v)
+
+    try:
+        from sqlalchemy import text as _text
+        from sqlalchemy.ext.asyncio import create_async_engine
+        url = settings.DATABASE_URL.replace("postgresql://", "postgresql+asyncpg://", 1)
+        engine = create_async_engine(url)
+        tmp_dir = _tmp.mkdtemp(prefix="botkey_backup_")
+        async with engine.begin() as conn:
+            tables = (await conn.execute(_text(
+                "SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename"
+            ))).scalars().all()
+            for t in tables:
+                cols = [r[0] for r in (await conn.execute(_text(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t ORDER BY ordinal_position"
+                ), {"t": t})).all()]
+                rows = (await conn.execute(_text(f'SELECT * FROM "{t}"'))).all()
+                payload = {"columns": cols, "rows": [[_conv(c) for c in r] for r in rows]}
+                with open(_os.path.join(tmp_dir, f"{t}.json"), "w", encoding="utf-8") as f:
+                    _json.dump(payload, f, ensure_ascii=False)
+        await engine.dispose()
+
+        stamp = _dt.datetime.now().strftime("%Y%m%d_%H%M")
+        zip_path = _os.path.join(_tmp.gettempdir(), f"botkey_backup_{stamp}.zip")
+        with _zip.ZipFile(zip_path, "w", _zip.ZIP_DEFLATED) as zf:
+            for name in _os.listdir(tmp_dir):
+                zf.write(_os.path.join(tmp_dir, name), arcname=name)
+            zf.writestr("INFO.txt", f"نسخة احتياطية لنافذة بوت\nالتاريخ: {stamp}\nالجداول: {', '.join(tables)}\n")
+        try:
+            await status.delete()
+        except Exception:
+            pass
+        await message.answer_document(
+            FSInputFile(zip_path, filename=f"botkey_backup_{stamp}.zip"),
+            caption="📦 نسخة احتياطية كاملة من قاعدة البيانات.\nاحتفظ بها في مكان آمن.",
+        )
+    except Exception as e:
+        import traceback as _tb
+        logger.error("backup failed: %s", e)
+        try:
+            await status.edit_text(f"❌ فشل عمل النسخة الاحتياطية:\n<code>{html_mod.escape(str(e)[:500])}</code>")
+        except Exception:
+            await message.answer(f"❌ فشل عمل النسخة الاحتياطية: {str(e)[:200]}")
+
+
+@router.message(SuperAdminFilter(), F.text == "/restore")
+async def restore_start_command(message: Message, state: FSMContext) -> None:
+    if not settings.DATABASE_URL.startswith("postgresql"):
+        await message.answer("❌ هذا الأمر يعمل مع قاعدة بيانات Postgres فقط.")
+        return
+    await state.set_state(RestoreState.waiting_zip)
+    await message.answer(
+        "📦 أرسل ملف النسخة الاحتياطية (zip) الذي حصلت عليه من /backup.\n"
+        "⚠️ انتبه: سيتم إدخال البيانات في قاعدة البيانات الحالية (يفضل قاعدة فارغة)."
+    )
+
+
+@router.message(RestoreState.waiting_zip, SuperAdminFilter(), F.document)
+async def restore_apply_document(message: Message, state: FSMContext) -> None:
+    import json as _json
+    import zipfile as _zip
+    import io as _io
+    import base64 as _b64
+    import datetime as _dt
+    from sqlalchemy import text as _text
+    from database.database import engine
+
+    doc = message.document
+    if not (doc.file_name or "").lower().endswith(".zip"):
+        await message.answer("❌ أرسل ملف .zip فقط.")
+        return
+
+    status = await message.answer("⏳ جاري استرجاع البيانات...")
+    try:
+        buf = await message.bot.download(doc)
+        raw = buf.read()
+        zf = _zip.ZipFile(_io.BytesIO(raw))
+        names = [n for n in zf.namelist() if n.endswith(".json") and n != "manifest.json"]
+        if not names:
+            await message.answer("❌ الملف لا يحتوي على جداول.")
+            return
+
+        async with engine.begin() as conn:
+            for n in names:
+                table = n[:-5]
+                payload = _json.loads(zf.read(n).decode("utf-8"))
+                cols = payload["columns"]
+                rows = payload["rows"]
+                if not rows:
+                    continue
+                # column types for correct conversion
+                types = {}
+                for r in (await conn.execute(_text(
+                    "SELECT column_name, data_type FROM information_schema.columns "
+                    "WHERE table_schema='public' AND table_name=:t"
+                ), {"t": table})).all():
+                    types[r[0]] = r[1]
+
+                def _py(v, ctype):
+                    if v is None:
+                        return None
+                    if isinstance(v, dict) and "$bin" in v:
+                        return _b64.b64decode(v["$bin"])
+                    if ctype == "date" and isinstance(v, str):
+                        return _dt.date.fromisoformat(v[:10])
+                    if ctype.startswith("time") and isinstance(v, str):
+                        return _dt.time.fromisoformat(v)
+                    if "timestamp" in ctype and isinstance(v, str):
+                        return _dt.datetime.fromisoformat(v)
+                    if ctype in ("json", "jsonb") and isinstance(v, str):
+                        try:
+                            return _json.loads(v)
+                        except Exception:
+                            return v
+                    return v
+
+                params = []
+                for row in rows:
+                    params.append([_py(c, types.get(cols[i], "")) for i, c in enumerate(row)])
+
+                ph = ", ".join(f":p{i}" for i in range(len(cols)))
+                colstr = ", ".join(f'"{c}"' for c in cols)
+                insert = _text(f'INSERT INTO "{table}" ({colstr}) VALUES ({ph})')
+                for p in params:
+                    await conn.execute(insert, {f"p{i}": v for i, v in enumerate(p)})
+
+                # reset auto-increment sequences
+                if "id" in cols:
+                    try:
+                        await conn.execute(_text(
+                            f"SELECT setval(pg_get_serial_sequence('{table}','id'), "
+                            f"COALESCE((SELECT max(id) FROM \"{table}\"), 1))"
+                        ))
+                    except Exception:
+                        pass
+        try:
+            await status.delete()
+        except Exception:
+            pass
+        await message.answer("✅ تم استرجاع البيانات بنجاح!", reply_markup=await admin_main_keyboard(message.from_user.id))
+    except Exception as e:
+        logger.error("restore failed: %s", e)
+        try:
+            await status.edit_text(f"❌ فشل الاسترجاع:\n<code>{html_mod.escape(str(e)[:500])}</code>")
+        except Exception:
+            await message.answer(f"❌ فشل الاسترجاع: {str(e)[:200]}")
+    await state.clear()
 
 
 @router.message(SuperAdminFilter(), F.text == "/resetdata")

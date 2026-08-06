@@ -8,7 +8,16 @@ os.makedirs("data", exist_ok=True)
 _url = settings.DATABASE_URL
 if _url.startswith("postgresql://") and "+asyncpg" not in _url:
     _url = _url.replace("postgresql://", "postgresql+asyncpg://", 1)
-engine = create_async_engine(_url, echo=False, pool_pre_ping=True)
+
+_connect_args = {}
+if _url.startswith("postgresql+asyncpg"):
+    import re as _re
+    _m = _re.search(r"(?:\?|&)sslmode=([a-z]+)", _url)
+    if _m:
+        _connect_args["ssl"] = _m.group(1)
+        _url = _re.sub(r"[?&]sslmode=[a-z]+", "", _url)
+
+engine = create_async_engine(_url, echo=False, pool_pre_ping=True, connect_args=_connect_args)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
