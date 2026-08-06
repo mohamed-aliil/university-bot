@@ -17,6 +17,9 @@ if _url.startswith("postgresql+asyncpg"):
         _connect_args["ssl"] = _m.group(1)
         _url = _re.sub(r"[?&]sslmode=[a-z]+", "", _url)
 
+    if "pooler.supabase.com" in _url:
+        _connect_args["statement_cache_size"] = 0
+
 engine = create_async_engine(_url, echo=False, pool_pre_ping=True, connect_args=_connect_args)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
