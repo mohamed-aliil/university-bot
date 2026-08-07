@@ -439,6 +439,22 @@ async def ai_user_back(message: Message, state: FSMContext) -> None:
 
 @router.message(AIState.waiting_for_question)
 async def ai_user_question(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    if data.get("ai_busy"):
+        # A previous question is still being answered in the background.
+        # Don't block this update (and the user's next buttons) waiting 9s.
+        await message.answer(
+            "⏳ لقد استلمت رسالتك، أفكر في سؤالك الآن...\n"
+            "اكتب سؤالك بعد الانتهاء أو اضغط 🔙 رجوع.",
+            reply_markup=ai_user_keyboard(),
+        )
+        return
+    await state.update_data(ai_busy=True)
+    await message.bot.send_chat_action(message.chat.id, "typing")
+    asyncio.create_task(_ai_bg_question(message, state))
+
+
+async def _ai_bg_question(message: Message, state: FSMContext) -> None:
     try:
         await _ai_user_question(message, state)
     except Exception as e:
@@ -461,6 +477,11 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
                 await message.bot.send_message(admin_id, f"⚠️ خطأ في AI:\n{tb[:3500]}", parse_mode=None)
             except Exception as e2:
                 logger.error("Failed to send traceback to admin %s: %s", admin_id, e2)
+    finally:
+        try:
+            await state.update_data(ai_busy=False)
+        except Exception:
+            pass
 
 
 def _ai_notify_keyboard():

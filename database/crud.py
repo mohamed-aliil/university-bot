@@ -2,6 +2,7 @@ from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
 from services.ai_context import clear_ai_context
+from services.ttl_cache import ttl_cache, invalidate_cache
 from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, ErrorLog, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
@@ -384,12 +385,18 @@ def set_ai_hidden(hidden: bool) -> None:
         AI_BUTTON_HIDDEN_FILE.unlink(missing_ok=True)
 
 async def get_user(user_id: int) -> User | None:
+    return await _get_user_cached(user_id)
+
+
+@ttl_cache("get_user", ttl=10.0)
+async def _get_user_cached(user_id: int) -> User | None:
     async with async_session() as session:
         result = await session.execute(select(User).where(User.user_id == user_id))
         return result.scalar_one_or_none()
 
 
 async def create_user(user_id: int, full_name: str, username: str | None = None) -> User:
+    invalidate_cache("get_user")
     async with async_session() as session:
         user = User(user_id=user_id, full_name=full_name, username=username)
         session.add(user)
@@ -399,6 +406,7 @@ async def create_user(user_id: int, full_name: str, username: str | None = None)
 
 
 async def update_user(user_id: int, **kwargs) -> User | None:
+    invalidate_cache("get_user")
     async with async_session() as session:
         result = await session.execute(select(User).where(User.user_id == user_id))
         user = result.scalar_one_or_none()
@@ -607,6 +615,7 @@ async def is_admin_user(user_id: int) -> bool:
 
 
 async def add_autoreply(trigger: str, response: str) -> AutoReply:
+    invalidate_cache("get_all_autoreplies")
     async with async_session() as session:
         ar = AutoReply(trigger=trigger, response=response)
         session.add(ar)
@@ -616,6 +625,7 @@ async def add_autoreply(trigger: str, response: str) -> AutoReply:
 
 
 async def remove_autoreply(reply_id: int) -> bool:
+    invalidate_cache("get_all_autoreplies")
     async with async_session() as session:
         result = await session.execute(select(AutoReply).where(AutoReply.id == reply_id))
         ar = result.scalar_one_or_none()
@@ -627,6 +637,11 @@ async def remove_autoreply(reply_id: int) -> bool:
 
 
 async def get_all_autoreplies() -> list[AutoReply]:
+    return await _get_all_autoreplies_cached()
+
+
+@ttl_cache("get_all_autoreplies", ttl=15.0)
+async def _get_all_autoreplies_cached() -> list[AutoReply]:
     async with async_session() as session:
         result = await session.execute(select(AutoReply))
         return list(result.scalars().all())
