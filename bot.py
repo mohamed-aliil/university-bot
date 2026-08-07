@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import os
+import time as _time
 import traceback
 
 from aiogram import Bot, Dispatcher
@@ -51,7 +52,6 @@ async def health(request: web.Request) -> web.Response:
 
 
 async def webhook_handler(request: web.Request) -> web.Response:
-    import time as _time
     _t0 = _time.perf_counter()
     bot = request.app["bot"]
     dp = request.app["dp"]
