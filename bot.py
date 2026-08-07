@@ -71,6 +71,51 @@ async def webhook_handler(request: web.Request) -> web.Response:
 _chat_locks: dict[int, asyncio.Lock] = {}
 _chat_locks_guard = asyncio.Lock()
 
+# Slow-update watchdog: reports to admins + error log when an update takes too long
+_SLOW_MS = 3000
+_last_slow_report: float = 0.0
+_slow_report_interval = 60.0  # seconds between admin notifications
+
+
+def _update_summary(update: Update) -> str:
+    if update.message:
+        m = update.message
+        who = (m.from_user.full_name or m.from_user.username or str(m.from_user.id)) if m.from_user else "?"
+        txt = (m.text or m.caption or "")[:60]
+        return f"رسالة من {who}: {txt or m.content_type}"
+    if update.callback_query:
+        c = update.callback_query
+        who = (c.from_user.full_name or c.from_user.username or str(c.from_user.id)) if c.from_user else "?"
+        return f"زر من {who}: {c.data or ''}"
+    if update.channel_post:
+        return f"منشور قناة: {(update.channel_post.text or '')[:60]}"
+    return update.model_dump(exclude_none=True)
+
+
+async def _notify_admins(bot, text: str) -> None:
+    for admin_id in settings.admin_ids:
+        try:
+            await bot.send_message(admin_id, text, parse_mode=None)
+        except Exception:
+            pass
+
+
+async def _report_slow(bot, update, ms: float) -> None:
+    global _last_slow_report
+    try:
+        await save_error_db("SLOW_UPDATE", f"update took {ms:.0f}ms: {_update_summary(update)}")
+    except Exception:
+        pass
+    now = _time.monotonic()
+    if now - _last_slow_report < _slow_report_interval:
+        return
+    _last_slow_report = now
+    await _notify_admins(
+        bot,
+        f"⚠️ بطء في معالجة تحديث ({ms:.0f}ms)\n\n{_update_summary(update)}\n\n"
+        f"حدّ البطء: {_SLOW_MS}ms. تفاصيل إضافية في سجل الأخطاء.",
+    )
+
 
 def _get_chat_lock(update: Update) -> asyncio.Lock:
     chat_id: int | None = None
@@ -92,18 +137,31 @@ async def process_update(app, bot, dp, update, _t0) -> None:
             await dp.feed_update(bot, update)
         except Exception as e:
             logger.exception("Webhook error: %s", e)
+            await _report_error(bot, update, e)
         return
     async with lock:
         try:
             await dp.feed_update(bot, update)
-            logger.info("webhook update processed in %.0fms", (_time.perf_counter() - _t0) * 1000)
+            ms = (_time.perf_counter() - _t0) * 1000
+            logger.info("webhook update processed in %.0fms", ms)
+            if ms > _SLOW_MS:
+                await _report_slow(bot, update, ms)
         except Exception as e:
             logger.exception("Webhook error: %s", e)
-            try:
-                from database.crud import save_error_db
-                await save_error_db("webhook", str(e)[:500])
-            except Exception:
-                pass
+            await _report_error(bot, update, e)
+
+
+async def _report_error(bot, update, e: Exception) -> None:
+    try:
+        from database.crud import save_error_db
+        await save_error_db("webhook", str(e)[:500], traceback=traceback.format_exc()[:2000])
+    except Exception:
+        pass
+    await _notify_admins(
+        bot,
+        f"❌ خطأ أثناء معالجة تحديث:\n{e}\n\n{_update_summary(update)}\n\n"
+        f"انظر سجل الأخطاء للتفاصيل الكاملة.",
+    )
 
 
 async def main() -> None:

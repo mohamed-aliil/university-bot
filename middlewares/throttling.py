@@ -26,8 +26,11 @@ class ThrottlingMiddleware(BaseMiddleware):
 
         if user_id in self.users:
             last_time = self.users[user_id]
-            if now - last_time < self.rate_limit:
-                return None
+            wait = self.rate_limit - (now - last_time)
+            if wait > 0:
+                # Wait instead of dropping so the user's message is never lost.
+                await asyncio.sleep(wait)
+                now = asyncio.get_event_loop().time()
 
         self.users[user_id] = now
         return await handler(event, data)
