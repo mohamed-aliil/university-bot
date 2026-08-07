@@ -19,12 +19,149 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users)
 from keyboards.reply import ai_admin_keyboard, ai_qa_keyboard, ai_articles_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
+from services.ai_context import get_cached_context, clear_ai_context
 from config import settings
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 MAX_MSG_LEN = 4000  # Leave room for safety
+
+
+async def _build_static_context() -> dict:
+    try:
+        qa_list = await get_all_qa()
+    except Exception as e:
+        logger.error("AI: get_all_qa failed: %s", e)
+        qa_list = []
+    qa_context = "\n".join(
+        f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
+    ) if qa_list else "لا توجد أسئلة مضافة بعد."
+
+    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0) -> str:
+        if depth > 10:
+            return ""
+        prefix = "  " * indent + "• "
+        lines = []
+        folders = await get_folders(parent_id)
+        for f in folders:
+            lines.append(f"{prefix}📁 {f.name}")
+            child = await build_tree(f.id, indent + 1, depth + 1)
+            if child:
+                lines.append(child)
+            items = await get_content_items(f.id)
+            for item in items:
+                links = await get_content_links(item.id)
+                link_str = ""
+                if links:
+                    link_str = " → ".join(l.link[:50] for l in links[:3])
+                    if len(links) > 3:
+                        link_str += f" (+{len(links)-3})"
+                title = item.title or "محتوى"
+                lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
+        return "\n".join(lines)
+
+    try:
+        if await get_folders(None):
+            materials_context = await build_tree(None)
+        else:
+            materials_context = "لا توجد مواد بعد."
+    except Exception as e:
+        logger.error("AI: build_tree failed: %s", e)
+        materials_context = "حدث خطأ أثناء بناء شجرة المواد."
+    if len(materials_context) > 6000:
+        materials_context = materials_context[:6000] + "\n... (يوجد المزيد)"
+
+    try:
+        articles_list = await get_all_articles()
+    except Exception as e:
+        logger.error("AI: get_all_articles failed: %s", e)
+        articles_list = []
+    articles_context = ""
+    for a in articles_list:
+        c = a.content[:2000]
+        articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
+
+    try:
+        prereqs_list = await get_all_prerequisites()
+    except Exception as e:
+        logger.error("AI: get_all_prerequisites failed: %s", e)
+        prereqs_list = []
+
+    # Load PDF context files
+    try:
+        pdfs = await get_all_pdfs()
+        pdf_context = ""
+        for p in pdfs:
+            pdf_context += f"\n📄 {p.name}: "
+            try:
+                with open(p.file_path, "rb") as pf:
+                    raw = pf.read()
+                text = raw.decode("utf-8", errors="ignore")[:1500]
+                pdf_context += text[:500] + "...\n"
+            except Exception:
+                pdf_context += "(تعذر قراءة الملف)\n"
+        if pdfs:
+            pdf_context = "📚 الملفات السياقية:\n" + pdf_context + "\n"
+    except Exception:
+        pdf_context = ""
+
+    # Build two views: forward (what a course opens) and backward (what a course needs)
+    forward_map: dict[str, list[tuple[str, str]]] = {}
+    backward_map: dict[str, list[tuple[str, str]]] = {}
+    for p in prereqs_list:
+        key = f"{p.prerequisite_name} ({p.prerequisite_code})"
+        val = (p.course_name, p.course_code)
+        forward_map.setdefault(key, []).append(val)
+        key2 = f"{p.course_name} ({p.course_code})"
+        val2 = (p.prerequisite_name, p.prerequisite_code)
+        backward_map.setdefault(key2, []).append(val2)
+
+    forward_lines = []
+    for course, opens in forward_map.items():
+        names = [f"{n} ({c})" for n, c in opens]
+        forward_lines.append(f"{course} ← تفتح → {', '.join(names)}")
+    backward_lines = []
+    for course, needs in backward_map.items():
+        names = [f"{n} ({c})" for n, c in needs]
+        backward_lines.append(f"{course} ← تحتاج → {', '.join(names)}")
+
+    prereqs_context = ""
+    if forward_lines:
+        prereqs_context += "📌 المواد والمواد التي تفتحها:\n" + "\n".join(forward_lines)
+        prereqs_context += "\n\n"
+    if backward_lines:
+        prereqs_context += "📌 المواد ومتطلباتها القبلية:\n" + "\n".join(backward_lines)
+    if not prereqs_context:
+        prereqs_context = "لا توجد متطلبات دراسية محفوظة."
+
+    # Build aliases context
+    try:
+        aliases_list = await get_all_aliases()
+    except Exception:
+        aliases_list = []
+    aliases_context = ""
+    for a in aliases_list:
+        aliases_context += f"- '{a.alias}' ← {a.course_name} ({a.course_code})\n"
+    if aliases_list:
+        aliases_context = "📌 الأسماء البديلة للمواد (المستخدمون يسألون بها):\n" + aliases_context
+
+    return {
+        "qa": qa_context,
+        "materials": materials_context,
+        "articles": articles_context,
+        "pdf": pdf_context,
+        "prereqs": prereqs_context,
+        "aliases": aliases_context,
+    }
+
+
+def _clear_context_cache() -> None:
+    clear_ai_context()
+
+
+async def get_static_context() -> dict:
+    return await get_cached_context(_build_static_context)
 
 
 async def safe_send(message: Message, text: str, reply_markup=None) -> None:
@@ -409,124 +546,24 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await state.update_data(pending_admin_notify=False, pending_notify_q=None)
         # fall through to normal AI processing
 
-    # Build static context from Q&A, materials, articles, and prerequisites
+    # Build static context from Q&A, materials, articles, and prerequisites.
+    # This is cached (TTL) to avoid ~60+ sequential DB queries on every question.
     try:
-        qa_list = await get_all_qa()
+        ctx = await get_static_context()
+        qa_context = ctx["qa"]
+        materials_context = ctx["materials"]
+        articles_context = ctx["articles"]
+        pdf_context = ctx["pdf"]
+        prereqs_context = ctx["prereqs"]
+        aliases_context = ctx["aliases"]
     except Exception as e:
-        logger.error("AI: get_all_qa failed: %s", e)
-        qa_list = []
-    qa_context = "\n".join(
-        f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
-    ) if qa_list else "لا توجد أسئلة مضافة بعد."
-
-    # Build full materials tree recursively with links (max depth 10)
-    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0) -> str:
-        if depth > 10:
-            return ""
-        prefix = "  " * indent + "• "
-        lines = []
-        folders = await get_folders(parent_id)
-        for f in folders:
-            lines.append(f"{prefix}📁 {f.name}")
-            child = await build_tree(f.id, indent + 1, depth + 1)
-            if child:
-                lines.append(child)
-            items = await get_content_items(f.id)
-            for item in items:
-                links = await get_content_links(item.id)
-                link_str = ""
-                if links:
-                    link_str = " → ".join(l.link[:50] for l in links[:3])
-                    if len(links) > 3:
-                        link_str += f" (+{len(links)-3})"
-                title = item.title or "محتوى"
-                lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
-        return "\n".join(lines)
-
-    try:
-        if await get_folders(None):
-            materials_context = await build_tree(None)
-        else:
-            materials_context = "لا توجد مواد بعد."
-    except Exception as e:
-        logger.error("AI: build_tree failed: %s", e)
-        materials_context = "حدث خطأ أثناء بناء شجرة المواد."
-    if len(materials_context) > 6000:
-        materials_context = materials_context[:6000] + "\n... (يوجد المزيد)"
-
-    try:
-        articles_list = await get_all_articles()
-    except Exception as e:
-        logger.error("AI: get_all_articles failed: %s", e)
-        articles_list = []
-    articles_context = ""
-    for a in articles_list:
-        c = a.content[:2000]
-        articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
-
-    try:
-        prereqs_list = await get_all_prerequisites()
-    except Exception as e:
-        logger.error("AI: get_all_prerequisites failed: %s", e)
-        prereqs_list = []
-
-    # Load PDF context files
-    try:
-        pdfs = await get_all_pdfs()
+        logger.error("AI: get_static_context failed: %s", e)
+        qa_context = "لا توجد أسئلة مضافة بعد."
+        materials_context = "لا توجد مواد بعد."
+        articles_context = ""
         pdf_context = ""
-        for p in pdfs:
-            pdf_context += f"\n📄 {p.name}: "
-            try:
-                with open(p.file_path, "rb") as pf:
-                    raw = pf.read()
-                text = raw.decode("utf-8", errors="ignore")[:1500]
-                pdf_context += text[:500] + "...\n"
-            except Exception:
-                pdf_context += "(تعذر قراءة الملف)\n"
-        if pdfs:
-            pdf_context = "📚 الملفات السياقية:\n" + pdf_context + "\n"
-    except Exception:
-        pdf_context = ""
-
-    # Build two views: forward (what a course opens) and backward (what a course needs)
-    forward_map: dict[str, list[tuple[str, str]]] = {}
-    backward_map: dict[str, list[tuple[str, str]]] = {}
-    for p in prereqs_list:
-        key = f"{p.prerequisite_name} ({p.prerequisite_code})"
-        val = (p.course_name, p.course_code)
-        forward_map.setdefault(key, []).append(val)
-        key2 = f"{p.course_name} ({p.course_code})"
-        val2 = (p.prerequisite_name, p.prerequisite_code)
-        backward_map.setdefault(key2, []).append(val2)
-
-    forward_lines = []
-    for course, opens in forward_map.items():
-        names = [f"{n} ({c})" for n, c in opens]
-        forward_lines.append(f"{course} ← تفتح → {', '.join(names)}")
-    backward_lines = []
-    for course, needs in backward_map.items():
-        names = [f"{n} ({c})" for n, c in needs]
-        backward_lines.append(f"{course} ← تحتاج → {', '.join(names)}")
-
-    prereqs_context = ""
-    if forward_lines:
-        prereqs_context += "📌 المواد والمواد التي تفتحها:\n" + "\n".join(forward_lines)
-        prereqs_context += "\n\n"
-    if backward_lines:
-        prereqs_context += "📌 المواد ومتطلباتها القبلية:\n" + "\n".join(backward_lines)
-    if not prereqs_context:
         prereqs_context = "لا توجد متطلبات دراسية محفوظة."
-
-    # Build aliases context
-    try:
-        aliases_list = await get_all_aliases()
-    except Exception:
-        aliases_list = []
-    aliases_context = ""
-    for a in aliases_list:
-        aliases_context += f"- '{a.alias}' ← {a.course_name} ({a.course_code})\n"
-    if aliases_list:
-        aliases_context = "📌 الأسماء البديلة للمواد (المستخدمون يسألون بها):\n" + aliases_context
+        aliases_context = ""
 
     # Build conversation history
     history_lines = []

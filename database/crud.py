@@ -1,6 +1,7 @@
 from pathlib import Path
 from sqlalchemy import select, delete, func, text
 from .database import async_session
+from services.ai_context import clear_ai_context
 from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, ErrorLog, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"
@@ -799,6 +800,7 @@ async def reset_all_data() -> dict:
 # ─── Materials System (recursive tree) ───
 
 async def add_folder(name: str, parent_id: int = None) -> Folder:
+    clear_ai_context()
     async with async_session() as session:
         f = Folder(name=name, parent_id=parent_id)
         session.add(f)
@@ -808,6 +810,7 @@ async def add_folder(name: str, parent_id: int = None) -> Folder:
 
 
 async def remove_folder(folder_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(Folder, folder_id)
         if not obj:
@@ -832,6 +835,7 @@ async def get_folder(folder_id: int) -> Folder | None:
 
 
 async def rename_folder(folder_id: int, new_name: str) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         f = await session.get(Folder, folder_id)
         if not f:
@@ -842,6 +846,7 @@ async def rename_folder(folder_id: int, new_name: str) -> bool:
 
 
 async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
+    clear_ai_context()
     async with async_session() as session:
         ci = ContentItem(folder_id=folder_id, title=title)
         session.add(ci)
@@ -851,6 +856,7 @@ async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
 
 
 async def remove_content_item(item_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(ContentItem, item_id)
         if not obj:
@@ -874,6 +880,7 @@ async def get_content_item(item_id: int) -> ContentItem | None:
 
 
 async def add_content_link(content_item_id: int, link: str, channel_username: str = None, channel_message_id: int = None) -> ContentLink:
+    clear_ai_context()
     async with async_session() as session:
         cl = ContentLink(content_item_id=content_item_id, link=link, channel_username=channel_username, channel_message_id=channel_message_id)
         session.add(cl)
@@ -891,6 +898,7 @@ async def get_content_links(content_item_id: int) -> list[ContentLink]:
 
 
 async def remove_content_link(link_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(ContentLink, link_id)
         if not obj:
@@ -901,6 +909,7 @@ async def remove_content_link(link_id: int) -> bool:
 
 
 async def update_content_item_title(item_id: int, title: str) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(ContentItem, item_id)
         if not obj:
@@ -911,6 +920,7 @@ async def update_content_item_title(item_id: int, title: str) -> bool:
 
 
 async def update_content_link(link_id: int, new_link: str) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(ContentLink, link_id)
         if not obj:
@@ -1098,6 +1108,7 @@ def _fmt_size(bytes_val: int) -> str:
 
 
 async def add_qa(question: str, answer: str) -> QAPair:
+    clear_ai_context()
     async with async_session() as session:
         qa = QAPair(question=question, answer=answer)
         session.add(qa)
@@ -1107,6 +1118,7 @@ async def add_qa(question: str, answer: str) -> QAPair:
 
 
 async def delete_qa(qa_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         result = await session.execute(select(QAPair).where(QAPair.id == qa_id))
         qa = result.scalar_one_or_none()
@@ -1124,6 +1136,7 @@ async def get_all_qa() -> list[QAPair]:
 
 
 async def save_pdf_context(name: str, file_path: str) -> PDFContext:
+    clear_ai_context()
     async with async_session() as session:
         pdf = PDFContext(name=name, file_path=file_path)
         session.add(pdf)
@@ -1133,6 +1146,7 @@ async def save_pdf_context(name: str, file_path: str) -> PDFContext:
 
 
 async def delete_pdf_context(pdf_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         result = await session.execute(select(PDFContext).where(PDFContext.id == pdf_id))
         pdf = result.scalar_one_or_none()
@@ -1152,6 +1166,7 @@ async def get_all_pdfs() -> list[PDFContext]:
 # ─── Articles ───
 
 async def add_article(title: str, content: str) -> Article:
+    clear_ai_context()
     async with async_session() as session:
         article = Article(title=title, content=content)
         session.add(article)
@@ -1161,6 +1176,7 @@ async def add_article(title: str, content: str) -> Article:
 
 
 async def delete_article(article_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         result = await session.execute(select(Article).where(Article.id == article_id))
         article = result.scalar_one_or_none()
@@ -1180,12 +1196,14 @@ async def get_all_articles() -> list[Article]:
 # ─── Course Prerequisites ───
 
 async def clear_prerequisites() -> None:
+    clear_ai_context()
     async with async_session() as session:
         await session.execute(delete(CoursePrerequisite))
         await session.commit()
 
 
 async def add_prerequisite(course_code: str, course_name: str, prerequisite_code: str, prerequisite_name: str) -> CoursePrerequisite:
+    clear_ai_context()
     async with async_session() as session:
         cp = CoursePrerequisite(
             course_code=course_code,
@@ -1222,6 +1240,7 @@ async def get_courses_opened_by(prerequisite_code: str) -> list[CoursePrerequisi
 
 
 async def add_alias(alias: str, course_code: str, course_name: str) -> CourseAlias:
+    clear_ai_context()
     async with async_session() as session:
         ca = CourseAlias(alias=alias.strip(), course_code=course_code, course_name=course_name)
         session.add(ca)
@@ -1245,6 +1264,7 @@ async def get_all_aliases() -> list[CourseAlias]:
 
 
 async def delete_alias(alias_id: int) -> bool:
+    clear_ai_context()
     async with async_session() as session:
         obj = await session.get(CourseAlias, alias_id)
         if not obj:
