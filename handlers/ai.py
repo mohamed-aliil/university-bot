@@ -16,7 +16,7 @@ from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, dele
                              update_content_item_title, add_content_link, remove_content_link, update_content_link,
                              ban_user, unban_user, get_user, add_alias,
                              get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action,
-                             add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users)
+                             add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users, get_all_materials)
 from keyboards.reply import ai_admin_keyboard, ai_qa_keyboard, ai_articles_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from services.ai_context import get_cached_context, clear_ai_context
@@ -38,20 +38,20 @@ async def _build_static_context() -> dict:
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
-    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0) -> str:
+    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0, folders=None) -> str:
         if depth > 10:
             return ""
         prefix = "  " * indent + "• "
         lines = []
-        folders = await get_folders(parent_id)
-        for f in folders:
+        children = [f for f in folders if (f.parent_id == parent_id if parent_id is not None else f.parent_id is None)]
+        for f in children:
             lines.append(f"{prefix}📁 {f.name}")
-            child = await build_tree(f.id, indent + 1, depth + 1)
+            child = await build_tree(f.id, indent + 1, depth + 1, folders)
             if child:
                 lines.append(child)
-            items = await get_content_items(f.id)
+            items = [i for i in item_list if i.folder_id == f.id]
             for item in items:
-                links = await get_content_links(item.id)
+                links = [l for l in link_list if l.content_item_id == item.id]
                 link_str = ""
                 if links:
                     link_str = " → ".join(l.link[:50] for l in links[:3])
@@ -62,10 +62,11 @@ async def _build_static_context() -> dict:
         return "\n".join(lines)
 
     try:
-        if await get_folders(None):
-            materials_context = await build_tree(None)
-        else:
-            materials_context = "لا توجد مواد بعد."
+        materials_data = await get_all_materials()
+        folder_list = list(materials_data["folders"])
+        item_list = list(materials_data["items"])
+        link_list = list(materials_data["links"])
+        materials_context = await build_tree(None, folders=folder_list) if folder_list else "لا توجد مواد بعد."
     except Exception as e:
         logger.error("AI: build_tree failed: %s", e)
         materials_context = "حدث خطأ أثناء بناء شجرة المواد."

@@ -849,6 +849,16 @@ async def get_folder(folder_id: int) -> Folder | None:
         return await session.get(Folder, folder_id)
 
 
+async def get_all_materials() -> dict:
+    """Fetch the entire materials tree in 3 queries total (folders, items,
+    links) instead of one query per node/child. Used by the AI context builder."""
+    async with async_session() as session:
+        folders = (await session.execute(select(Folder))).scalars().all()
+        items = (await session.execute(select(ContentItem))).scalars().all()
+        links = (await session.execute(select(ContentLink))).scalars().all()
+    return {"folders": list(folders), "items": list(items), "links": list(links)}
+
+
 async def rename_folder(folder_id: int, new_name: str) -> bool:
     clear_ai_context()
     async with async_session() as session:
