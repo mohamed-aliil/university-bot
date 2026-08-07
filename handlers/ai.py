@@ -35,7 +35,7 @@ async def _build_static_context() -> dict:
         logger.error("AI: get_all_qa failed: %s", e)
         qa_list = []
     qa_context = "\n".join(
-        f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list[:30]
+        f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
     async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0) -> str:
@@ -78,8 +78,8 @@ async def _build_static_context() -> dict:
         logger.error("AI: get_all_articles failed: %s", e)
         articles_list = []
     articles_context = ""
-    for a in articles_list[:4]:  # keep top 4 newest articles to shrink prompt
-        c = a.content[:800]
+    for a in articles_list:
+        c = a.content[:2000]
         articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
 
     try:
