@@ -55,19 +55,55 @@ async def webhook_handler(request: web.Request) -> web.Response:
     _t0 = _time.perf_counter()
     bot = request.app["bot"]
     dp = request.app["dp"]
+    update: Update | None = None
     try:
         body = await request.read()
         update = Update.model_validate(json.loads(body))
-        await dp.feed_update(bot, update)
-        logger.info("webhook update processed in %.0fms", (_time.perf_counter() - _t0) * 1000)
     except Exception as e:
-        logger.exception("Webhook error: %s", e)
-        try:
-            from database.crud import save_error_db
-            await save_error_db("webhook", str(e)[:500])
-        except Exception:
-            pass
+        logger.exception("Webhook parse error: %s", e)
+        return web.Response(status=200)
+
+    app = request.app
+    asyncio.create_task(process_update(app, bot, dp, update, _t0))
     return web.Response(status=200)
+
+
+_chat_locks: dict[int, asyncio.Lock] = {}
+_chat_locks_guard = asyncio.Lock()
+
+
+def _get_chat_lock(update: Update) -> asyncio.Lock:
+    chat_id: int | None = None
+    if update.message:
+        chat_id = update.message.chat.id
+    elif update.callback_query and update.callback_query.message:
+        chat_id = update.callback_query.message.chat.id
+    if chat_id is None:
+        return None
+    if chat_id not in _chat_locks:
+        _chat_locks[chat_id] = asyncio.Lock()
+    return _chat_locks[chat_id]
+
+
+async def process_update(app, bot, dp, update, _t0) -> None:
+    lock = _get_chat_lock(update)
+    if lock is None:
+        try:
+            await dp.feed_update(bot, update)
+        except Exception as e:
+            logger.exception("Webhook error: %s", e)
+        return
+    async with lock:
+        try:
+            await dp.feed_update(bot, update)
+            logger.info("webhook update processed in %.0fms", (_time.perf_counter() - _t0) * 1000)
+        except Exception as e:
+            logger.exception("Webhook error: %s", e)
+            try:
+                from database.crud import save_error_db
+                await save_error_db("webhook", str(e)[:500])
+            except Exception:
+                pass
 
 
 async def main() -> None:
