@@ -5,6 +5,8 @@ import os
 import time as _time
 import traceback
 
+from services.gemini import LAST_AI_MS
+
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
@@ -15,7 +17,7 @@ from aiohttp import web
 
 from config import settings
 from database.database import init_db
-from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_all_required_channels, set_channel_verified
+from database.crud import set_admin, set_permission, get_user, set_bot_active, set_materials_active, is_admin_user, get_all_required_channels, set_channel_verified, save_error_db
 from handlers import start, messages, admin, materials, channels, ai
 from middlewares import ThrottlingMiddleware, SubscriptionMiddleware, BotActiveMiddleware
 from utils.logger import setup_logger
@@ -81,15 +83,59 @@ def _update_summary(update: Update) -> str:
     if update.message:
         m = update.message
         who = (m.from_user.full_name or m.from_user.username or str(m.from_user.id)) if m.from_user else "?"
+        uid = m.from_user.id if m.from_user else "?"
         txt = (m.text or m.caption or "")[:60]
-        return f"رسالة من {who}: {txt or m.content_type}"
+        return f"رسالة من {who} (id:{uid}, chat:{m.chat.id}): {txt or m.content_type}"
     if update.callback_query:
         c = update.callback_query
         who = (c.from_user.full_name or c.from_user.username or str(c.from_user.id)) if c.from_user else "?"
-        return f"زر من {who}: {c.data or ''}"
+        uid = c.from_user.id if c.from_user else "?"
+        return f"زر من {who} (id:{uid}): {c.data or ''}"
     if update.channel_post:
         return f"منشور قناة: {(update.channel_post.text or '')[:60]}"
     return update.model_dump(exclude_none=True)
+
+
+def _update_meta(update: Update) -> dict:
+    meta = {"update_type": "unknown", "content_preview": "", "text": ""}
+    if update.message:
+        m = update.message
+        meta["update_type"] = "message"
+        meta["user_id"] = m.from_user.id if m.from_user else None
+        meta["chat_id"] = m.chat.id
+        meta["content"] = (m.text or m.caption or "")[:120] or m.content_type
+    elif update.callback_query:
+        c = update.callback_query
+        meta["update_type"] = "callback_query"
+        meta["user_id"] = c.from_user.id if c.from_user else None
+        meta["chat_id"] = c.message.chat.id if c.message else None
+        meta["content"] = (c.data or "")[:120]
+    elif update.channel_post:
+        meta["update_type"] = "channel_post"
+        meta["chat_id"] = update.channel_post.chat.id
+        meta["content"] = (update.channel_post.text or "")[:60]
+    return meta
+
+
+def _slow_detail(update: Update, ms: float, ai_ms: float, ai_model: str) -> str:
+    meta = _update_meta(update)
+    detail = f"بطء {ms:.0f}ms ({meta['update_type']}, user={meta.get('user_id')}, chat={meta.get('chat_id')}): {meta['content']}"
+    if ai_ms > 0:
+        share = ai_ms / ms * 100 if ms > 0 else 0
+        detail += f"\n◾ مرحلة النموذج: {ai_ms:.0f}ms = {share:.0f}% من الزمن (النموذج: {ai_model})"
+        if share > 50:
+            detail += f"\n◾ التحليل: المسبب الرئيسي هو استجابة نموذج AI ({ai_ms:.0f}ms). باقي المعالجة {max(0.0, ms - ai_ms):.0f}ms فقط."
+    else:
+        detail += "\n◾ مرحلة النموذج: لم يُستدعَ AI"
+        detail += "\n◾ التحليل: المسبب الرئيسي هو قاعدة البيانات/المعالجة البرمجية (استعلامات متسلسلة أو تحميل سيرفر)."
+    detail += "\n\nTECH_JSON: " + json.dumps({
+        "code": "SLOW_UPDATE",
+        "total_ms": round(ms, 1),
+        "ai_ms": round(ai_ms, 1),
+        "ai_model": ai_model,
+        **meta,
+    }, ensure_ascii=False)
+    return detail
 
 
 async def _notify_admins(bot, text: str) -> None:
@@ -100,10 +146,11 @@ async def _notify_admins(bot, text: str) -> None:
             pass
 
 
-async def _report_slow(bot, update, ms: float) -> None:
+async def _report_slow(bot, update, ms: float, ai_ms: float, ai_model: str) -> None:
     global _last_slow_report
+    detail = _slow_detail(update, ms, ai_ms, ai_model)
     try:
-        await save_error_db("SLOW_UPDATE", f"update took {ms:.0f}ms: {_update_summary(update)}")
+        await save_error_db("SLOW_UPDATE", detail, user_id=_update_meta(update).get("user_id"))
     except Exception:
         pass
     now = _time.monotonic()
@@ -112,7 +159,7 @@ async def _report_slow(bot, update, ms: float) -> None:
     _last_slow_report = now
     await _notify_admins(
         bot,
-        f"⚠️ بطء في معالجة تحديث ({ms:.0f}ms)\n\n{_update_summary(update)}\n\n"
+        f"⚠️ بطء في معالجة تحديث ({ms:.0f}ms)\n\n{detail}\n\n"
         f"حدّ البطء: {_SLOW_MS}ms. تفاصيل إضافية في سجل الأخطاء.",
     )
 
@@ -141,11 +188,17 @@ async def process_update(app, bot, dp, update, _t0) -> None:
         return
     async with lock:
         try:
+            ai_before = LAST_AI_MS.get("ms", 0.0)
             await dp.feed_update(bot, update)
             ms = (_time.perf_counter() - _t0) * 1000
-            logger.info("webhook update processed in %.0fms", ms)
+            ai_after = LAST_AI_MS.get("ms", 0.0)
+            ai_ms = ai_after - ai_before
+            if ai_ms < 0 or ai_ms > ms:
+                ai_ms = ai_after
+            ai_model = LAST_AI_MS.get("model", "?")
+            logger.info("webhook update processed in %.0fms (AI: %.0fms, %s)", ms, ai_ms, ai_model)
             if ms > _SLOW_MS:
-                await _report_slow(bot, update, ms)
+                await _report_slow(bot, update, ms, ai_ms, ai_model)
         except Exception as e:
             logger.exception("Webhook error: %s", e)
             await _report_error(bot, update, e)
@@ -154,7 +207,17 @@ async def process_update(app, bot, dp, update, _t0) -> None:
 async def _report_error(bot, update, e: Exception) -> None:
     try:
         from database.crud import save_error_db
-        await save_error_db("webhook", str(e)[:500], traceback=traceback.format_exc()[:2000])
+        meta = _update_meta(update)
+        detail = (
+            f"❌ {e}\n\n"
+            f"{_update_summary(update)}\n\nTECH_JSON: " + json.dumps(meta, ensure_ascii=False)
+        )
+        await save_error_db(
+            "webhook",
+            detail[:2000],
+            user_id=meta.get("user_id"),
+            traceback=traceback.format_exc()[:3000],
+        )
     except Exception:
         pass
     await _notify_admins(
@@ -182,7 +245,7 @@ async def main() -> None:
     dp.message.middleware(BotActiveMiddleware())
     dp.callback_query.middleware(BotActiveMiddleware())
     dp.message.middleware(SubscriptionMiddleware())
-    dp.message.middleware(ThrottlingMiddleware(rate_limit=1.0))
+    dp.message.middleware(ThrottlingMiddleware(rate_limit=0.25))
 
     @dp.callback_query(lambda c: c.data == "verify_subscription")
     async def verify_subscription_callback(callback: CallbackQuery) -> None:

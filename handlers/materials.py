@@ -1,5 +1,6 @@
 import logging
 import re
+import asyncio
 from aiogram import Router, F
 from aiogram.types import Message, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -19,6 +20,14 @@ from keyboards.reply import main_keyboard, communication_keyboard
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+_BG_TASKS: set = set()
+
+
+def _spawn(coro) -> None:
+    task = asyncio.create_task(coro)
+    _BG_TASKS.add(task)
+    task.add_done_callback(_BG_TASKS.discard)
 
 LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 
@@ -97,10 +106,8 @@ def student_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
 
 
 async def render_admin(message: Message, folder_id: int = None) -> None:
-    folders = await get_folders(folder_id)
-    items = await get_content_items(folder_id) if folder_id else []
+    folders, items, f = await _tree_view(folder_id)
     if folder_id:
-        f = await get_folder(folder_id)
         name = f.name if f else "?"
         msg = f"📍 {name}\n"
         if items:
@@ -109,7 +116,7 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
         await message.answer(msg, reply_markup=rename_kb)
         await message.answer("─" * 5, reply_markup=build_kb(folders, items))
     else:
-        await message.answer("📚 المواد:", reply_markup=build_kb(folders, items))
+        await message.answer("📚 المواد:", reply_markup=build_kb(folders, []))
 
 
 @router.message(AdminFilter(), F.text == "📚 إعدادات المواد")
@@ -187,8 +194,7 @@ async def add_item_title_save(message: Message, state: FSMContext) -> None:
 @router.message(AdminFilter(), F.text == "➖ حذف")
 async def delete_prompt(message: Message, state: FSMContext) -> None:
     fid = (await state.get_data()).get("folder_id")
-    folders = await get_folders(fid)
-    items = await get_content_items(fid) if fid else []
+    folders, items, _ = await _tree_view(fid)
     if not folders and not items:
         await message.answer("❌ لا يوجد شيء لحذفه هنا.")
         return
@@ -207,8 +213,7 @@ async def delete_by_name(message: Message, state: FSMContext) -> None:
     if not name:
         return
     fid = (await state.get_data()).get("folder_id")
-    folders = await get_folders(fid)
-    items = await get_content_items(fid) if fid else []
+    folders, items, _ = await _tree_view(fid)
     folder_match = [f for f in folders if f.name == name]
     item_match = [i for i in items if (i.title or "محتوى") == name]
     if not folder_match and not item_match:
@@ -234,8 +239,7 @@ async def delete_by_name(message: Message, state: FSMContext) -> None:
 async def admin_navigate(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     pid = (await state.get_data()).get("folder_id")
-    folders = await get_folders(pid)
-    items = await get_content_items(pid) if pid else []
+    folders, items, _ = await _tree_view(pid)
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
     if folder_match:
@@ -328,6 +332,15 @@ async def confirm_delete_item_cb(callback: CallbackQuery, state: FSMContext) -> 
     await callback.answer()
 
 
+async def _forward_with_log(message: Message, item_id: int, text: str) -> None:
+    try:
+        from database.crud import save_or_replace_user_message
+        await save_or_replace_user_message(user_id=message.from_user.id, content=text)
+    except Exception:
+        pass
+    await forward_item(message.from_user.id, item_id, message.bot)
+
+
 async def forward_item(user_id: int, item_id: int, bot) -> None:
     from database.crud import get_content_links
     from database.database import async_session
@@ -344,29 +357,28 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
         await bot.send_message(chat_id=user_id, text="❌ لا توجد روابط لهذا المحتوى.")
         return
     async def forward_one(link):
-        ch = link.channel_username
-        mid = link.channel_message_id
-        if ch and mid:
-            try:
-                fid = int(ch) if ch.lstrip("-").isdigit() else ch
-                await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
-                return
-            except Exception:
-                pass
         try:
+            ch = link.channel_username
+            mid = link.channel_message_id
+            if ch and mid:
+                try:
+                    fid = int(ch) if ch.lstrip("-").isdigit() else ch
+                    await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
+                    return
+                except Exception as exc:
+                    logger.warning("copy_message channel failed (%s/%s) for user %s: %s", ch, mid, user_id, exc)
             m = LINK_REGEX.search(link.link)
             if m:
                 ch2, mid2 = m.group(1), int(m.group(2))
                 fid2 = int(ch2) if ch2.lstrip("-").isdigit() else f"@{ch2}"
                 await bot.copy_message(chat_id=user_id, from_chat_id=fid2, message_id=mid2)
                 return
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("copy_message link failed (%s) for user %s: %s", link.link, user_id, exc)
         await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
 
-    for l in links:
-        await forward_one(l)
-    logger.info(f"Forwarded {len(links)} links for content item {item_id} to user {user_id}")
+    await asyncio.gather(*(forward_one(l) for l in links))
+    logger.info("Forwarded %d links for content item %s to user %s in parallel", len(links), item_id, user_id)
 
 
 # ─── Edit content (ReplyKeyboard with inline cancel) ───
@@ -541,6 +553,16 @@ async def handle_back(message: Message, state: FSMContext) -> None:
         await message.answer("🔝 القائمة الرئيسية", reply_markup=await main_kb(message.from_user.id))
 
 
+async def _tree_view(folder_id: int | None) -> tuple[list, list, object | None]:
+    """One bulk fetch (cached): returns (folders, items, folder) for nav."""
+    from database.crud import get_all_materials
+    data = await get_all_materials()
+    folders = [f for f in data["folders"] if f.parent_id == folder_id]
+    items = [i for i in data["items"] if i.folder_id == folder_id] if folder_id is not None else []
+    f = next((x for x in data["folders"] if x.id == folder_id), None) if folder_id is not None else None
+    return folders, items, f
+
+
 # ─── Student ───
 
 class SState(StatesGroup):
@@ -558,7 +580,7 @@ async def student_browse(message: Message, state: FSMContext) -> None:
     if not is_materials_active():
         await message.answer("❌ ميزة المواد متوقفة.")
         return
-    folders = await get_folders()
+    folders, _, _ = await _tree_view(None)
     if not folders:
         await message.answer("❌ لا توجد مواد بعد.")
         return
@@ -577,12 +599,10 @@ async def student_back(message: Message, state: FSMContext) -> None:
             pid = f.parent_id if f else None
             await state.update_data(folder_id=pid)
             if pid:
-                subs = await get_folders(pid)
-                items = await get_content_items(pid)
-                pf = await get_folder(pid)
+                subs, items, pf = await _tree_view(pid)
                 await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
                 return
-            folders = await get_folders()
+            folders, _, _ = await _tree_view(None)
             await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(folders, []))
             return
         await state.clear()
@@ -627,25 +647,21 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
 
     data = await state.get_data()
     pid = data.get("folder_id")
-    folders = await get_folders(pid)
-    items = await get_content_items(pid) if pid is not None else []
+    folders, items, _ = await _tree_view(pid)
 
     folder_match = [f for f in folders if f.name == text]
     item_match = [i for i in items if (i.title or "محتوى") == text]
     if folder_match:
         fid = folder_match[0].id
         await state.update_data(folder_id=fid)
-        subs = await get_folders(fid)
-        content = await get_content_items(fid)
-        f = await get_folder(fid)
+        subs, content, f = await _tree_view(fid)
         await message.answer(f"📍 {f.name}", reply_markup=student_kb(subs, content))
     elif item_match:
         try:
-            from database.crud import save_or_replace_user_message
-            await save_or_replace_user_message(user_id=message.from_user.id, content=text)
+            await message.bot.send_chat_action(message.chat.id, "typing")
         except Exception:
             pass
-        await forward_item(message.from_user.id, item_match[0].id, message.bot)
+        _spawn(_forward_with_log(message, item_match[0].id, text))
     else:
         user_obj = message.from_user
         if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):

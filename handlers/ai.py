@@ -54,9 +54,9 @@ async def _build_static_context() -> dict:
                 links = [l for l in link_list if l.content_item_id == item.id]
                 link_str = ""
                 if links:
-                    link_str = " → ".join(l.link[:50] for l in links[:3])
-                    if len(links) > 3:
-                        link_str += f" (+{len(links)-3})"
+                    link_str = " → ".join(l.link for l in links[:5])
+                    if len(links) > 5:
+                        link_str += f" (+{len(links)-5} رابط إضافي يُطلب بالسؤال عنها)"
                 title = item.title or "محتوى"
                 lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
         return "\n".join(lines)
@@ -70,8 +70,8 @@ async def _build_static_context() -> dict:
     except Exception as e:
         logger.error("AI: build_tree failed: %s", e)
         materials_context = "حدث خطأ أثناء بناء شجرة المواد."
-    if len(materials_context) > 6000:
-        materials_context = materials_context[:6000] + "\n... (يوجد المزيد)"
+    if len(materials_context) > 9000:
+        materials_context = materials_context[:9000] + "\n... (يوجد المزيد)"
 
     try:
         articles_list = await get_all_articles()
@@ -80,8 +80,10 @@ async def _build_static_context() -> dict:
         articles_list = []
     articles_context = ""
     for a in articles_list:
-        c = a.content[:2000]
+        c = a.content[:12000]
         articles_context += f"\nعنوان: {a.title}\nمحتوى: {c}\n"
+    if len(articles_context) > 40000:
+        articles_context = articles_context[:40000] + "\n... (محتوى إضافي)"
 
     try:
         prereqs_list = await get_all_prerequisites()
@@ -611,12 +613,21 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         f"{pdf_context}"
         f"🔗 المتطلبات:\n{prereqs_context}\n\n"
 "📌 تعليمات بسيطة:\n"
-        "- رد بكلام متصل سلس طبيعي كأنك صديق قريب، بدون أي نقاط أو تعداد أو تنسيق.\n"
+        "- رد بكلام طبيعي متنوع: أحياناً كلام متصل سلس، وأحياناً نقاط مرقمة أو سطور منفصلة إن كان ذلك أوضح — تنوّع في الأسلوب بحسب السؤال ولا تجعل الرد قالباً واحداً دائماً.\n"
+        "- ممنوع تماماً كتابة أي تفكير داخلي أو تحليل أو خطوات تمهيدية مثل (دعني أفكر، الخطوة الأولى، سأتحقق الآن، هيا نفكر) أو وصف كيف توصلت للرد — أجب بالمطلوب فقط.\n"
+        "- رُد بلغة المستخدم: لو كتب بالإنجليزية رد بالإنجليزية، ولو بالسؤال بالعربية أو عامية رد بالعربية — العربية هي اللغة الأساسية.\n"
+        "- لا تدّعي أبداً أنك أرسلت ملفات أو روابط أو شيتات أو 'إليك الروابط' — لا ترسل أي رابط ولا تذكره؛ فقط اذكر اسم المحتوى إن وُجد، والملفات تصل المستخدم تلقائياً من النظام بعيداً عنك. إن لم يكن عندك محتوى معلوم لهذا الطلب فقل بصدق أنه غير موجود عندك دون أن تقدم روابط خارجية أو تدّعي إرسال شيء.\n"
         "- كن مرن وغير مقيد؛ جاوب مباشرة ولا تعقد الأمور.\n"
         "- القاعدة الأولى: حُلّ المشكلة بنفسك وأجب مباشرة من معلوماتك ومن قاعدة المعرفة والمواد والمقالات — لا تفكر في إبلاغ المشرفين أبداً.\n"
-        "- إذا كان السؤال عن محتوى مادة معينة أو توزيع درجاتها، التزم بما ورد في مقالها حصراً وانقل الأرقام كما هي (مثلاً 20 درجة وليس 20%) دون تحوير.\n"
-        "- إذا ما لقيت المعلومة في المواد أو المقالات، جاوب من معلوماتك العامة بشكل طبيعي.\n"
-        "- لو السؤال عام أو أكاديمي أو برا الكلية، جاوب عادي وكأنك صاحب له لا تسأل عن إبلاغ.\n"
+        "- في أسئلة الدراسة والمواد: افضل وأفضل إجابة دائماً هي من المقال أو المادة نفسها، اقرأها وافهمها وأجب منها باسلوبك.\n"
+        "- لمّا يطلب أحد الشيتات أو ملفات أو محتوى مادة: اذكر اسم المحتوى كما هو في شجرة المواد ولا تضع أي رابط إطلاقاً — الملف سيُرسل للمستخدم تلقائياً.\n"
+        "- مصدرك الأساسي الوحيد هو المقالة الخاصة بالموضوع: اقرأها جيداً وأجب منها ومنها فقط، وانقل ما فيها دون أي تحريف أو إضافة أو تغيير في الأرقام أو المعاني — المقالة هي الحقيقة الوحيدة عندك.\n"
+        "- لمّا تكون المعلومة موجودة في المقالة: التزم بها حرفياً وانقل الأرقام كما هي (مثلاً 20 درجة وليس 20%) دون تحوير أبداً.\n"
+        "- لو سؤال يخص مادة أو كلية: أجب فقط مما ورد في المقالات — إن كان السؤال عن شيء غير مذكور في أي مقالة قل بصراحة وببساطة أن هذه المعلومة غير موجودة عندك، ولا تختلق أي رقم أو تفصيل من ذاكرتك إطلاقاً ولا تُكمل الصورة بتخمين.\n"
+        "- لا تجمع بين معلوماتك العامة والمقالات؛ على سؤال عن مادة أو الكلية جزء إجابة إلزامي يكون مما في المقالة حرفياً.\n"
+        "- لو السؤال عام أو أكاديمي خارج مواد الكلية (رياضيات عامة، لغة، ثقافة عامة...): جاوب عادي من معرفتك ولا تعقد الأمور.\n"
+        "- لا تبالغ أبداً ولا تزيد كلاماً غير مطلوب؛ أجب بالمطلوب فقط.\n"
+        "- لو السؤال عام أو خارج مواد الكلية، جاوب عادي وكأنك صاحب له لا تسأل عن إبلاغ.\n"
         "- لا تعرض إبلاغ المشرفين إلا في أربع حالات منحصرة فقط: التسجيل/القبول، الحظر، شكوى رسمية، أو طلب إداري خاص. أي سؤال آخر: أجب مباشرة ولا تذكر المشرفين أبداً.\n"
         "- أغلب الأسئلة (±95%) عادية وأجب فيها بشكل مباشر كامل بدون أي عرض إبلاغ. المعرض نادر جداً.\n"
         "- وفي الحالات الأربع المنحصرة، جاوب بشكل طبيعي ثم في نهاية الرد فقط اسأل: "
@@ -649,74 +660,176 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                     pass
             except Exception:
                 pass
-        # Try to forward actual files from Telegram links in the answer (deduplicated)
+        # Forward actual files: match the requested content item in DB and copy its links
         forwarded = set()
-        for tme_link in re.findall(r"https?://t\.me/([a-zA-Z0-9_]+)/(\d+)", answer):
-            username, msg_id = tme_link[0], int(tme_link[1])
-            key = f"{username}/{msg_id}"
-            if key in forwarded:
-                continue
-            forwarded.add(key)
-            try:
-                chat = "@" + username
-                await message.bot.copy_message(
-                    chat_id=message.chat.id,
-                    from_chat_id=chat,
-                    message_id=msg_id,
-                )
-            except Exception as exc:
-                logger.warning("copy_message failed for %s/%s: %s", username, msg_id, exc)
-        # Strip Telegram links from displayed text (files already forwarded)
+        sent_files = 0
+        requested_items = []
+        try:
+            from database.crud import get_all_materials
+            materials_data = await get_all_materials()
+            search_space = (q or "").lower() + "\n" + (answer or "").lower()
+            for item in materials_data["items"]:
+                title = (item.title or "").strip()
+                if not title:
+                    continue
+                if title.lower() not in search_space:
+                    continue
+                item_links = [l for l in materials_data["links"] if l.content_item_id == item.id]
+                if not item_links:
+                    requested_items.append(title)
+                    continue
+                for link in item_links:
+                    ch = link.channel_username
+                    mid = link.channel_message_id
+                    key = f"{ch}/{mid}"
+                    if key in forwarded:
+                        continue
+                    forwarded.add(key)
+                    ok = False
+                    if ch and mid:
+                        try:
+                            fid = int(ch) if ch.lstrip("-").isdigit() else ch
+                            await message.bot.copy_message(
+                                chat_id=message.chat.id,
+                                from_chat_id=fid,
+                                message_id=mid,
+                            )
+                            ok = True
+                        except Exception as exc:
+                            logger.warning("copy_message channel failed (%s/%s) for user %s: %s", ch, mid, message.chat.id, exc)
+                    if not ok:
+                        try:
+                            m = LINK_REGEX.search(link.link)
+                            if m:
+                                ch2, mid2 = m.group(1), int(m.group(2))
+                                fid2 = int(ch2) if ch2.lstrip("-").isdigit() else f"@{ch2}"
+                                await message.bot.copy_message(
+                                    chat_id=message.chat.id,
+                                    from_chat_id=fid2,
+                                    message_id=mid2,
+                                )
+                                ok = True
+                        except Exception as exc:
+                            logger.warning("copy_message link failed (%s) for user %s: %s", link.link, message.chat.id, exc)
+                    if ok:
+                        sent_files += 1
+        except Exception as exc:
+            logger.warning("forward_items_from_answer failed: %s", exc)
+# Strip Telegram links from displayed text (files already forwarded)
         clean_answer = re.sub(r"https?://t\.me/\S+", "", answer).strip()
-        # Remove content inside <think> tags (reasoning output) first
-        clean_answer = re.sub(r"<think>.*?</think>", "", clean_answer, flags=re.DOTALL).strip()
+        # Remove content inside  thinking tags (reasoning output) first
+        clean_answer = re.sub(r"<thinking>.*?</thinking>", "", clean_answer, flags=re.DOTALL).strip()
+        clean_answer = re.sub(r"<output>.*?</output>", "", clean_answer, flags=re.DOTALL).strip()
         # Then strip any remaining HTML tags
         clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
         # Strip markdown bold markers ** **
         clean_answer = clean_answer.replace("**", "")
-        # Strip CoT: find [Output Generation] marker first
-        gen_match = re.search(r"\[Output Generation\].*?->\s*\"?(.*)", clean_answer, re.DOTALL)
-        if gen_match:
-            clean_answer = gen_match.group(1).strip().rstrip('"')
-        else:
-            # Fallback: remove from "Here's a thinking process" or similar to end of analysis
-            # Strategy: find the first Arabic-only paragraph after the thinking process
+        # Drop any CoT markdown sections like ##### Thinking / ##### Final
+        clean_answer = re.sub(r"#{3,}\s*(thinking|final|answer|reasoning|output).*?(?=#{3,}|$)", "", clean_answer, flags=re.DOTALL | re.IGNORECASE)
+        # Drop OpenAI-style  text blocks (thinking)
+        clean_answer = re.sub(r"\s*<{1}\s*(thinking|partial|final)\s*>\s*", "\n", clean_answer, flags=re.IGNORECASE)
+        # Strip CoT: handle [Output Generation] markers with or without arrow/colon
+        cot_marker = None
+        for pat in [
+            r"\[Output Generation\][^\n]*",
+            r"\[output generation\][^\n]*",
+            r"\(Output Generation\)[^\n]*",
+            r"##?\s*[Ff]inal [Aa]nswer[^\n]*",
+            r"##?\s*[Oo]utput[^\n]*",
+            r"\[[Ff]inal [Rr]esponse\][^\n]*",
+        ]:
+            m = re.search(pat, clean_answer)
+            if m:
+                cot_marker = m.start()
+                break
+        # If the text is dominated by reasoning-phase English headers, cut at the last marker
+        threat_hits = sum(1 for kw in (
+            "internal refinement", "formulate response", "check constraints",
+            "self-correction", "thinking process", "refined draft", "constraint check",
+            "i will output", "output generation", "analysis", "refinement",
+            "step by step", "final output",
+        ) if kw in clean_answer.lower())
+
+        dealt = False
+        # Case 1: explicit output marker found — keep only what follows it
+        if cot_marker is not None:
+            seg = clean_answer[cot_marker:]
+            arrow = re.search(r"[->:]\s*\"?(.*)$", seg, re.DOTALL)
+            if arrow and arrow.group(1).strip():
+                clean_answer = arrow.group(1).strip().rstrip('"')
+            elif seg.strip():
+                clean_answer = seg.strip()
+            else:
+                clean_answer = ""
+            dealt = True
+        # Case 2: strong reasoning signature without a marker — aggressive cleanup
+        elif threat_hits >= 2:
             paragraphs = re.split(r"\n\s*\n", clean_answer)
             answer_parts = []
             for p in paragraphs:
                 stripped = p.strip()
                 if not stripped:
                     continue
-                # Count Arabic vs non-Arabic chars
                 arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
-                total = len(stripped.strip())
-                # If mostly non-Arabic and looks like analysis, skip
-                if total > 0:
-                    arabic_ratio = arabic_count / total
-                else:
-                    arabic_ratio = 0
-                # Keep paragraph if: mostly Arabic, or it's short Arabic text
+                total = len(stripped)
+                arabic_ratio = (arabic_count / total) if total > 0 else 0
+                low = stripped.lower()
                 is_thinking = (
-                    re.match(r"^\d+\.\s", stripped)  # numbered "1. ..."
-                    or re.match(r"^-\s", stripped)   # bullet "- ..."
-                    or stripped.startswith("Here") 
-                    or stripped.startswith("Let")
-                    or stripped.startswith("Wait")
-                    or stripped.startswith("I'll")
-                    or stripped.startswith("Ok")
+                    re.match(r"^\d+\s*[.\-–)]", stripped)
+                    or re.match(r"^[•\-*]\s", stripped)
                     or arabic_ratio < 0.3
+                    or low.startswith(("here", "let", "wait", "i'll", "ok", "okay", "so", "note:", "check", "step", "internal", "formulate", "constraints", "draft:", "final answer:", "self-", "ready"))
+                    or "internal refinement" in low
+                    or "formulate response" in low
                 )
                 if not is_thinking:
                     answer_parts.append(stripped)
-            if answer_parts:
-                clean_answer = "\n\n".join(answer_parts)
-            else:
-                # Last resort: strip from first Arabic char
-                m = re.search(r"[\u0600-\u06FF]", clean_answer)
-                if m:
-                    clean_answer = clean_answer[m.start():].strip()
+            clean_answer = "\n\n".join(answer_parts) if answer_parts else ""
+            dealt = True
+
+        # Case 3: normal case — allow numbered/bulleted Arabic answers, just drop
+        # English reasoning-looking paragraphs (e.g. "Note:", "Check", low-arabic)
+        if not dealt:
+            paragraphs = re.split(r"\n\s*\n", clean_answer)
+            answer_parts = []
+            for p in paragraphs:
+                stripped = p.strip()
+                if not stripped:
+                    continue
+                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
+                total = len(stripped.strip())
+                arabic_ratio = (arabic_count / total) if total > 0 else 0
+                low = stripped.lower()
+                is_thinking = (
+                    arabic_ratio < 0.3
+                    or low.startswith(("here", "let", "wait", "i'll", "ok", "okay", "so", "first,", "then,", "note:", "check", "step", "internal", "formulate", "constraints", "draft:", "final answer:"))
+                    or "internal refinement" in low
+                    or "formulate response" in low
+                    or "check constraints" in low
+                    or "think step by step" in low
+                )
+                if not is_thinking:
+                    answer_parts.append(stripped)
+            clean_answer = "\n\n".join(answer_parts) if answer_parts else ""
+        # Remove t.me links one more time after filtering (e.g. pasted full links)
+        clean_answer = re.sub(r"https?://t\.me/\S+", "", clean_answer).strip()
         # Clean up double spaces / empty lines
+        clean_answer = re.sub(r"[ \t]{2,}", " ", clean_answer)
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
+
+        # Honesty guard: if the user asked for sheets/files but nothing was forwarded,
+        # strip any "I sent you links/files" claims from the answer and say it plainly.
+        asked_files = any(w in (q or "") for w in ["شيت", "شيتات", "شوية ملفات", "ملف", "ملفات", "سلایدات", "سلايدات", "محاضرات", "امتحانات", "pdf", "PDF", "روابط", "رابط"])
+        if asked_files and sent_files == 0:
+            for phrase in ["أرسلت لك الروابط", "أرسلت لك الملفات", "إليك الروابط", "إليك الملفات", "هذه الروابط", "المصادر اللي فوق", "الروابط التالية", "الروابط اللي بعتلك", "أقدم لك الروابط", "أرسلت لك بعض الروابط", "ستجد الروابط"]:
+                clean_answer = clean_answer.replace(phrase, "")
+            if requested_items:
+                names = "، ".join(requested_items[:3])
+                clean_answer = (clean_answer + f"\n\nملاحظة: ملفات {names} غير مرفقة حالياً في البوت، لكن بإمكانك البحث عنها في اليوتيوب أو مجموعات الفرقة.").strip()
+            else:
+                clean_answer = clean_answer.strip()
+        elif sent_files > 0:
+            clean_answer = clean_answer.strip()
 
         # Force the "ask permission" flow even if model ignores instructions
         had_notify_offer = False
@@ -915,6 +1028,11 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     if not q:
         return
 
+    try:
+        await message.bot.send_chat_action(message.chat.id, "typing")
+    except Exception:
+        pass
+
     data = await state.get_data()
     admin_history: list[dict] = data.get("admin_history", [])
 
@@ -922,34 +1040,40 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     _in_smart = current_state == AIAdminState.smart_mode.state
     _rm = None if _in_smart else cancel_keyboard()
 
-    qa_list = await get_all_qa()
+    qa_list, articles_list, prereqs_list, materials = await asyncio.gather(
+        get_all_qa(), get_all_articles(), get_all_prerequisites(), get_all_materials()
+    )
     qa_context = "\n".join(
         f"{qa.id}: س: {qa.question[:60]} → ج: {qa.answer[:60]}"
         for qa in qa_list[-20:]
     ) if qa_list else "لا يوجد"
 
-    articles_list = await get_all_articles()
     art_context = "\n".join(
         f"{a.id}: {a.title[:50]} ({len(a.content)} حرف)"
         for a in articles_list[-10:]
     ) if articles_list else "لا يوجد"
 
-    prereqs_list = await get_all_prerequisites()
     prereq_count = len(prereqs_list)
 
-    # Build folders/tree context for admin
-    async def _tf(parent_id: int = None, indent: int = 0) -> str:
-        lines = []
-        for f in await get_folders(parent_id):
+    # Build folders/tree context for admin (from one fetch, no recursion)
+    folders_by_parent: dict = {}
+    for f in materials["folders"]:
+        folders_by_parent.setdefault(f.parent_id, []).append(f)
+    items_by_folder: dict = {}
+    for it in materials["items"]:
+        items_by_folder.setdefault(it.folder_id, []).append(it)
+
+    lines: list[str] = []
+
+    def _walk(parent_id, indent: int) -> None:
+        for f in folders_by_parent.get(parent_id, []):
             lines.append(f"{'  ' * indent}• {f.name} (ID: {f.id})")
-            items = await get_content_items(f.id)
-            for it in items:
+            for it in items_by_folder.get(f.id, []):
                 lines.append(f"{'  ' * (indent+1)}📄 {it.title or 'محتوى'} (ID: {it.id})")
-            child = await _tf(f.id, indent + 1)
-            if child:
-                lines.append(child)
-        return "\n".join(lines)
-    folders_tree = await _tf()
+            _walk(f.id, indent + 1)
+
+    _walk(None, 0)
+    folders_tree = "\n".join(lines)
 
     # Build aliases context
     try:
@@ -1464,6 +1588,11 @@ async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
         await message.answer("❌ النص قصير جداً.")
         return
 
+    try:
+        await message.bot.send_chat_action(message.chat.id, "typing")
+    except Exception:
+        pass
+
     await message.answer("🤔 جاري تحليل الشجرة واستخراج العلاقات...")
     await clear_prerequisites()
 
@@ -1480,7 +1609,7 @@ async def _ai_admin_parse_prereqs(message: Message, state: FSMContext) -> None:
         "---\n\n"
         f"النص:\n{text}"
     )
-    answer = await call_gemini(prompt)
+    answer = await call_gemini(prompt, max_tokens=4096)
     if not answer:
         await message.answer("⚠️ فشل التحليل.", reply_markup=ai_admin_keyboard())
         await state.clear()

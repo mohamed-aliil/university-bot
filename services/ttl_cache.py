@@ -43,3 +43,19 @@ def invalidate_cache(name: str | None = None):
     drop = [k for k in _registry if k[0] == name]
     for k in drop:
         _registry.pop(k, None)
+
+
+def peek_cache(name: str):
+    """Return the currently-cached value for the first entry named `name`
+    (any args), or None when not cached. For in-place patching."""
+    for k, entry in _registry.items():
+        if k[0] == name:
+            return entry[1]
+    return None
+
+
+def patch_cache(name: str, value) -> None:
+    """Replace the cached value for all entries named `name`."""
+    for k in list(_registry.keys()):
+        if k[0] == name:
+            _registry[k] = (time.monotonic(), value)

@@ -47,7 +47,8 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
     return best
 
 
-async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
+async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024) -> str | None:
+    t0 = time.perf_counter()
     try:
         groq_keys = settings.groq_keys
         # Load balance: pick key with most available tokens
@@ -57,21 +58,27 @@ async def call_gemini(prompt: str, system_prompt: str = "") -> str | None:
             if not key:
                 break
             tried.add(key)
-            result = await _call_groq(prompt, system_prompt, key)
+            result = await _call_groq(prompt, system_prompt, key, max_tokens=max_tokens)
             if result:
+                LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
 
         # Fallback to Gemini keys
         for key in settings.gemini_keys:
-            result = await _call_gemini(prompt, system_prompt, key)
+            result = await _call_gemini(prompt, system_prompt, key, max_tokens=max_tokens)
             if result:
+                LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
     except Exception:
         logger.exception("call_gemini failed")
+    LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
     return None
 
 
-async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | None:
+LAST_AI_MS: dict = {"ms": 0.0, "model": ""}
+
+
+async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -93,7 +100,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
             "model": model,
             "messages": messages,
             "temperature": 0.7,
-            "max_tokens": 1024,
+            "max_tokens": max_tokens,
         }
         for attempt in range(3):  # Retry up to 3 times on 429
             try:
@@ -103,7 +110,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
                         "https://api.groq.com/openai/v1/chat/completions",
                         json=payload,
                         headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=30),
+                        timeout=aiohttp.ClientTimeout(total=45),
                     ) as resp:
                         if resp.status == 429:
                             body = await resp.text()
@@ -128,6 +135,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
                             if text:
                                 logger.info("Groq model %s used successfully (tokens: %s)", model,
                                              choices[0].get("usage", {}).get("total_tokens", "?"))
+                                LAST_AI_MS["model"] = model
                                 return text.strip()
             except asyncio.TimeoutError:
                 logger.warning("Groq %s timeout (attempt %d/3)", model, attempt + 1)
@@ -140,7 +148,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str) -> str | Non
     return None
 
 
-async def _call_gemini(prompt: str, system_prompt: str, api_key: str) -> str | None:
+async def _call_gemini(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     if system_prompt:
         full_prompt = f"{system_prompt}\n\nالرجاء الرد على ما يلي:\n{prompt}"
     else:
@@ -150,7 +158,10 @@ async def _call_gemini(prompt: str, system_prompt: str, api_key: str) -> str | N
 
     for model in MODELS:
         url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
-        payload = {"contents": [{"parts": [{"text": full_prompt}]}]}
+        payload = {
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -166,9 +177,188 @@ async def _call_gemini(prompt: str, system_prompt: str, api_key: str) -> str | N
                     if candidates:
                         text = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
                         if text:
+                            LAST_AI_MS["model"] = model
                             return text.strip()
         except Exception as e:
             logger.exception("Gemini %s failed: %s", model, e)
+            continue
+    return None
+
+
+async def call_gemini_stream(
+    prompt: str,
+    on_chunk,
+    system_prompt: str = "",
+    max_tokens: int = 1024,
+) -> str | None:
+    """Streaming variant: `on_chunk(text_delta)` is called as data arrives.
+    Falls back to non-streaming Groq, then Gemini keys."""
+    t0 = time.perf_counter()
+    buffer = []
+    try:
+        groq_keys = settings.groq_keys
+        tried: set[str] = set()
+        for _ in groq_keys:
+            key = await _pick_best_key(groq_keys, tried)
+            if not key:
+                break
+            tried.add(key)
+            result = await _call_groq_stream(prompt, system_prompt, key, on_chunk, max_tokens)
+            if result is not None:
+                buffer.append(result)
+                LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
+                return "".join(buffer)
+
+        # Fallback to Gemini keys (generative API also supports streaming)
+        for key in settings.gemini_keys:
+            result = await _call_gemini_stream(prompt, system_prompt, key, on_chunk, max_tokens)
+            if result is not None:
+                buffer.append(result)
+                LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
+                return "".join(buffer)
+    except Exception:
+        logger.exception("call_gemini_stream failed")
+    LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
+    return None
+
+
+async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_chunk, max_tokens: int = 1024) -> str | None:
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
+
+    MODELS = [
+        "openai/gpt-oss-20b",
+        "qwen/qwen3.6-27b",
+        "openai/gpt-oss-120b",
+        "gpt-oss-120b",
+    ]
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+
+    for model in MODELS:
+        payload = {
+            "model": model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": max_tokens,
+            "stream": True,
+        }
+        for attempt in range(3):
+            try:
+                await _wait_for_rate_limit(api_key)
+                full = []
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(
+                        "https://api.groq.com/openai/v1/chat/completions",
+                        json=payload,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=60),
+                    ) as resp:
+                        if resp.status == 429:
+                            body = await resp.text()
+                            logger.warning("Groq 429 stream %s (attempt %d/3): %s", model, attempt + 1, body[:100])
+                            if attempt < 2:
+                                await asyncio.sleep(2 ** attempt)
+                                continue
+                            break
+                        if resp.status != 200:
+                            body = await resp.text()
+                            if "decommissioned" in body or "deprecated" in body:
+                                break
+                            logger.warning("Groq stream %s error %s: %s", model, resp.status, body[:200])
+                            break
+                        async for line in resp.content:
+                            line = line.decode("utf-8", errors="ignore").strip()
+                            if not line.startswith("data:"):
+                                continue
+                            data = line[5:].strip()
+                            if data == "[DONE]":
+                                break
+                            import json
+                            try:
+                                chunk = json.loads(data)
+                            except Exception:
+                                continue
+                            choices = chunk.get("choices") or []
+                            if not choices:
+                                continue
+                            delta = (choices[0].get("delta") or {}).get("content")
+                            if delta:
+                                full.append(delta)
+                                try:
+                                    await on_chunk(delta)
+                                except Exception:
+                                    pass
+                text = "".join(full).strip()
+                if text:
+                    LAST_AI_MS["model"] = model
+                    return text
+                break
+            except asyncio.TimeoutError:
+                logger.warning("Groq stream %s timeout (attempt %d/3)", model, attempt + 1)
+                if attempt < 2:
+                    await asyncio.sleep(1)
+                    continue
+            except Exception as e:
+                logger.exception("Groq stream %s failed: %s", model, e)
+                break
+    return None
+
+
+async def _call_gemini_stream(prompt: str, system_prompt: str, api_key: str, on_chunk, max_tokens: int = 1024) -> str | None:
+    if system_prompt:
+        full_prompt = f"{system_prompt}\n\nالرجاء الرد على ما يلي:\n{prompt}"
+    else:
+        full_prompt = prompt
+
+    MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
+
+    for model in MODELS:
+        url = f"https://generativelanguage.googleapis.com/v1/models/{model}:streamGenerateContent?alt=sse&key={api_key}"
+        payload = {
+            "contents": [{"parts": [{"text": full_prompt}]}],
+            "generationConfig": {"maxOutputTokens": max_tokens},
+        }
+        try:
+            full = []
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url, json=payload, timeout=aiohttp.ClientTimeout(total=30)
+                ) as resp:
+                    if resp.status == 429:
+                        return None
+                    if resp.status != 200:
+                        continue
+                    async for raw_line in resp.content:
+                        line = raw_line.decode("utf-8", errors="ignore").strip()
+                        if not line.startswith("data:"):
+                            continue
+                        data = line[5:].strip()
+                        if not data:
+                            continue
+                        import json
+                        try:
+                            chunk = json.loads(data)
+                        except Exception:
+                            continue
+                        parts = ((chunk.get("candidates") or [{}])[0].get("content") or {}).get("parts") or []
+                        text = "".join(p.get("text", "") for p in parts)
+                        if text:
+                            full.append(text)
+                            try:
+                                await on_chunk(text)
+                            except Exception:
+                                pass
+            text = "".join(full).strip()
+            if text:
+                LAST_AI_MS["model"] = model
+                return text
+        except Exception as e:
+            logger.exception("Gemini stream %s failed: %s", model, e)
             continue
     return None
 

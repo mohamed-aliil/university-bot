@@ -1,4 +1,5 @@
 from pathlib import Path
+import asyncio
 from sqlalchemy import select, delete, func, text
 from .database import async_session
 from services.ai_context import clear_ai_context
@@ -128,10 +129,31 @@ def clear_errors() -> None:
 
 
 async def save_error_db(source: str, error_text: str, user_id: int | None = None, traceback: str | None = None) -> None:
+    attempt = 0
+    while True:
+        try:
+            async with async_session() as session:
+                session.add(ErrorLog(source=source[:255] if source else None, user_id=user_id, error_text=error_text[:2000] if error_text else None, traceback=traceback[:3000] if traceback else None))
+                await session.commit()
+            return
+        except Exception as exc:
+            attempt += 1
+            if attempt < 3:
+                await asyncio.sleep(0.3 * attempt)
+                continue
+            _write_error_log_fallback(source, error_text, user_id, traceback, exc)
+            return
+
+
+def _write_error_log_fallback(source: str, error_text: str, user_id: int | None, tb: str | None, exc: Exception) -> None:
     try:
-        async with async_session() as session:
-            session.add(ErrorLog(source=source[:255] if source else None, user_id=user_id, error_text=error_text[:2000] if error_text else None, traceback=traceback[:3000] if traceback else None))
-            await session.commit()
+        import os
+        os.makedirs("data", exist_ok=True)
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        line = f"\n[{ts}] source={source} user={user_id} db_error={exc}\n{error_text}\n{tb or ''}\n"
+        with open("data/error_log_local.txt", "a", encoding="utf-8") as f:
+            f.write(line)
     except Exception:
         pass
 
@@ -339,6 +361,11 @@ async def remove_publish_channel(channel_id: int) -> None:
 
 
 async def is_channel_verified(user_id: int) -> bool:
+    return await _is_channel_verified_cached(user_id)
+
+
+@ttl_cache("is_channel_verified", ttl=30.0)
+async def _is_channel_verified_cached(user_id: int) -> bool:
     try:
         async with async_session() as session:
             from .models import UserPreference
@@ -355,6 +382,7 @@ async def is_channel_verified(user_id: int) -> bool:
 
 
 async def set_channel_verified(user_id: int) -> None:
+    invalidate_cache("is_channel_verified")
     try:
         async with async_session() as session:
             from .models import UserPreference
@@ -814,6 +842,31 @@ async def reset_all_data() -> dict:
 
 # ─── Materials System (recursive tree) ───
 
+
+def _materials_tree() -> dict | None:
+    """Return the cached full tree dict (or None if not currently cached)."""
+    return peek_cache("get_all_materials")
+
+
+def _patch_materials_tree(tree: dict) -> None:
+    """Replace the in-memory materials tree with `tree` (keeps next views instant)."""
+    if tree is not None:
+        patch_cache("get_all_materials", tree)
+
+
+def _folder_ids_subtree(folder_id: int, tree: dict) -> set[int]:
+    """All folder ids under `folder_id` (including itself), keeping in-memory view right."""
+    ids = {folder_id}
+    stack = [folder_id]
+    while stack:
+        pid = stack.pop()
+        for f in tree["folders"]:
+            if f.parent_id == pid and f.id not in ids:
+                ids.add(f.id)
+                stack.append(f.id)
+    return ids
+
+
 async def add_folder(name: str, parent_id: int = None) -> Folder:
     clear_ai_context()
     async with async_session() as session:
@@ -821,7 +874,11 @@ async def add_folder(name: str, parent_id: int = None) -> Folder:
         session.add(f)
         await session.commit()
         await session.refresh(f)
-        return f
+    tree = _materials_tree()
+    if tree is not None:
+        tree["folders"].append(f)
+        _patch_materials_tree(tree)
+    return f
 
 
 async def remove_folder(folder_id: int) -> bool:
@@ -832,10 +889,22 @@ async def remove_folder(folder_id: int) -> bool:
             return False
         await session.delete(obj)
         await session.commit()
-        return True
+    tree = _materials_tree()
+    if tree is not None:
+        doomed = _folder_ids_subtree(folder_id, tree)
+        tree["folders"] = [f for f in tree["folders"] if f.id not in doomed]
+        tree["items"] = [it for it in tree["items"] if it.folder_id not in doomed]
+        tree["links"] = [ln for ln in tree["links"] if ln.content_item_id in {it.id for it in tree["items"]}]
+        _patch_materials_tree(tree)
+    return True
 
 
 async def get_folders(parent_id: int = None) -> list[Folder]:
+    return await _get_folders_cached(parent_id)
+
+
+@ttl_cache("get_folders", ttl=8.0)
+async def _get_folders_cached(parent_id: int = None) -> list[Folder]:
     async with async_session() as session:
         if parent_id is None:
             result = await session.execute(select(Folder).where(Folder.parent_id.is_(None)).order_by(Folder.name))
@@ -845,6 +914,11 @@ async def get_folders(parent_id: int = None) -> list[Folder]:
 
 
 async def get_folder(folder_id: int) -> Folder | None:
+    return await _get_folder_cached(folder_id)
+
+
+@ttl_cache("get_folder", ttl=10.0)
+async def _get_folder_cached(folder_id: int) -> Folder | None:
     async with async_session() as session:
         return await session.get(Folder, folder_id)
 
@@ -852,6 +926,11 @@ async def get_folder(folder_id: int) -> Folder | None:
 async def get_all_materials() -> dict:
     """Fetch the entire materials tree in 3 queries total (folders, items,
     links) instead of one query per node/child. Used by the AI context builder."""
+    return await _get_all_materials_cached()
+
+
+@ttl_cache("get_all_materials", ttl=60.0)
+async def _get_all_materials_cached() -> dict:
     async with async_session() as session:
         folders = (await session.execute(select(Folder))).scalars().all()
         items = (await session.execute(select(ContentItem))).scalars().all()
@@ -867,7 +946,14 @@ async def rename_folder(folder_id: int, new_name: str) -> bool:
             return False
         f.name = new_name
         await session.commit()
-        return True
+        await session.refresh(f)
+    tree = _materials_tree()
+    if tree is not None:
+        for x in tree["folders"]:
+            if x.id == folder_id:
+                x.name = new_name
+        _patch_materials_tree(tree)
+    return True
 
 
 async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
@@ -877,7 +963,11 @@ async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
         session.add(ci)
         await session.commit()
         await session.refresh(ci)
-        return ci
+    tree = _materials_tree()
+    if tree is not None:
+        tree["items"].append(ci)
+        _patch_materials_tree(tree)
+    return ci
 
 
 async def remove_content_item(item_id: int) -> bool:
@@ -888,10 +978,20 @@ async def remove_content_item(item_id: int) -> bool:
             return False
         await session.delete(obj)
         await session.commit()
-        return True
+    tree = _materials_tree()
+    if tree is not None:
+        tree["items"] = [it for it in tree["items"] if it.id != item_id]
+        tree["links"] = [ln for ln in tree["links"] if ln.content_item_id != item_id]
+        _patch_materials_tree(tree)
+    return True
 
 
 async def get_content_items(folder_id: int) -> list[ContentItem]:
+    return await _get_content_items_cached(folder_id)
+
+
+@ttl_cache("get_content_items", ttl=8.0)
+async def _get_content_items_cached(folder_id: int) -> list[ContentItem]:
     async with async_session() as session:
         result = await session.execute(
             select(ContentItem).where(ContentItem.folder_id == folder_id).order_by(ContentItem.id)
@@ -911,10 +1011,19 @@ async def add_content_link(content_item_id: int, link: str, channel_username: st
         session.add(cl)
         await session.commit()
         await session.refresh(cl)
-        return cl
+    tree = _materials_tree()
+    if tree is not None:
+        tree["links"].append(cl)
+        _patch_materials_tree(tree)
+    return cl
 
 
 async def get_content_links(content_item_id: int) -> list[ContentLink]:
+    return await _get_content_links_cached(content_item_id)
+
+
+@ttl_cache("get_content_links", ttl=10.0)
+async def _get_content_links_cached(content_item_id: int) -> list[ContentLink]:
     async with async_session() as session:
         result = await session.execute(
             select(ContentLink).where(ContentLink.content_item_id == content_item_id).order_by(ContentLink.created_at)
@@ -930,7 +1039,11 @@ async def remove_content_link(link_id: int) -> bool:
             return False
         await session.delete(obj)
         await session.commit()
-        return True
+    tree = _materials_tree()
+    if tree is not None:
+        tree["links"] = [ln for ln in tree["links"] if ln.id != link_id]
+        _patch_materials_tree(tree)
+    return True
 
 
 async def update_content_item_title(item_id: int, title: str) -> bool:
@@ -941,7 +1054,14 @@ async def update_content_item_title(item_id: int, title: str) -> bool:
             return False
         obj.title = title
         await session.commit()
-        return True
+        await session.refresh(obj)
+    tree = _materials_tree()
+    if tree is not None:
+        for it in tree["items"]:
+            if it.id == item_id:
+                it.title = title
+        _patch_materials_tree(tree)
+    return True
 
 
 async def update_content_link(link_id: int, new_link: str) -> bool:
@@ -952,7 +1072,13 @@ async def update_content_link(link_id: int, new_link: str) -> bool:
             return False
         obj.link = new_link
         await session.commit()
-        return True
+    tree = _materials_tree()
+    if tree is not None:
+        for ln in tree["links"]:
+            if ln.id == link_id:
+                ln.link = new_link
+        _patch_materials_tree(tree)
+    return True
 
 
 MATERIALS_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".materials_active"
@@ -1155,6 +1281,11 @@ async def delete_qa(qa_id: int) -> bool:
 
 
 async def get_all_qa() -> list[QAPair]:
+    return await _get_all_qa_cached()
+
+
+@ttl_cache("get_all_qa", ttl=8.0)
+async def _get_all_qa_cached() -> list[QAPair]:
     async with async_session() as session:
         result = await session.execute(select(QAPair).order_by(QAPair.created_at.desc()))
         return list(result.scalars().all())
@@ -1213,6 +1344,11 @@ async def delete_article(article_id: int) -> bool:
 
 
 async def get_all_articles() -> list[Article]:
+    return await _get_all_articles_cached()
+
+
+@ttl_cache("get_all_articles", ttl=8.0)
+async def _get_all_articles_cached() -> list[Article]:
     async with async_session() as session:
         result = await session.execute(select(Article).order_by(Article.created_at.desc()))
         return list(result.scalars().all())
@@ -1243,6 +1379,11 @@ async def add_prerequisite(course_code: str, course_name: str, prerequisite_code
 
 
 async def get_all_prerequisites() -> list[CoursePrerequisite]:
+    return await _get_all_prerequisites_cached()
+
+
+@ttl_cache("get_all_prerequisites", ttl=8.0)
+async def _get_all_prerequisites_cached() -> list[CoursePrerequisite]:
     async with async_session() as session:
         result = await session.execute(select(CoursePrerequisite).order_by(CoursePrerequisite.course_code))
         return list(result.scalars().all())
@@ -1283,6 +1424,11 @@ async def get_course_by_alias(alias: str) -> CourseAlias | None:
 
 
 async def get_all_aliases() -> list[CourseAlias]:
+    return await _get_all_aliases_cached()
+
+
+@ttl_cache("get_all_aliases", ttl=8.0)
+async def _get_all_aliases_cached() -> list[CourseAlias]:
     async with async_session() as session:
         result = await session.execute(select(CourseAlias).order_by(CourseAlias.created_at))
         return list(result.scalars().all())

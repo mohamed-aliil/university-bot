@@ -1,6 +1,8 @@
 import asyncio
 import time
 
+from services.ttl_cache import invalidate_cache
+
 # Shared in-memory cache for the AI static context (QA, materials tree,
 # articles, prerequisites, aliases). Rebuilt at most every CONTEXT_TTL seconds
 # instead of on every user question (which caused 60+ sequential DB queries per
@@ -12,11 +14,20 @@ _context_lock = asyncio.Lock()
 _context_cache: dict = {}
 _context_ts: float = 0.0
 
+_ADMIN_CONTEXT_CACHES = (
+    "get_all_qa",
+    "get_all_articles",
+    "get_all_prerequisites",
+    "get_all_aliases",
+)
+
 
 def clear_ai_context() -> None:
     """Force the static AI context to be rebuilt on the next question."""
     global _context_ts
     _context_ts = 0.0
+    for cache_name in _ADMIN_CONTEXT_CACHES:
+        invalidate_cache(cache_name)
 
 
 async def get_cached_context(builder) -> dict:
