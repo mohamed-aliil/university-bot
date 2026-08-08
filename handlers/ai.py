@@ -545,6 +545,75 @@ async def ai_notify_no_cb(callback: CallbackQuery, state: FSMContext) -> None:
     )
 
 
+_COT_MARKER_PATTERNS = (
+    r"\[Output Generation\][^\n]*",
+    r"\[[Ff]inal [Rr]esponse\][^\n]*",
+    r"\[[Oo]utput\][^\n]*",
+    r"##?\s*[Ff]inal [Aa]nswer[^\n]*",
+    r"##?\s*[Oo]utput[^\n]*",
+)
+
+
+def _strip_cot(answer: str) -> str:
+    """Remove internal chain-of-thought reasoning from an AI reply, keeping
+    only the final Arabic answer. Handles [Output Generation]/[Final], HTML
+    <thinking>, English "thinking-phase" paragraphs, and trailing markers."""
+    text = re.sub(r"<thinking>.*?</thinking>", "", answer, flags=re.DOTALL)
+    text = re.sub(r"<output>.*?</output>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("**", "").strip()
+    # Cut everything from the LAST explicit output marker (models add several
+    # nested [Output Generation] blocks; the final one holds the real answer).
+    last_marker = None
+    for pat in _COT_MARKER_PATTERNS:
+        matches = list(re.finditer(pat, text, re.DOTALL))
+        if matches:
+            m = matches[-1]
+            if last_marker is None or m.start() > last_marker:
+                last_marker = m.start()
+    if last_marker is not None:
+        seg = text[last_marker:]
+        arrow = re.search(r"->\s*\"?(.*)$", seg, re.DOTALL) or re.search(r":\s*\"?(.*)$", seg, re.DOTALL)
+        if arrow and arrow.group(1).strip():
+            text = arrow.group(1).strip().rstrip('"')
+        else:
+            text = text.split("->", 1)[-1].strip() if "->" in seg else seg
+    # Drop any English thinking lines; keep Arabic and numeric/bulleted content.
+    lines = re.split(r"\n+", text)
+    kept = []
+    for line in lines:
+        s = line.strip()
+        if not s:
+            continue
+        arabic = len(re.findall(r"[\u0600-\u06FF]", s))
+        total = len(s)
+        ratio = arabic / total if total else 0
+        low = s.lower()
+        # Keep Arabic lines + short numeric/bullet labels; drop English thinking
+        # lines or English fragments preceding the Arabic answer on same line.
+        if ratio >= 0.35:
+            kept.append(s)
+        elif ratio == 0 and total <= 40 and re.match(r"^[\d\s.\-•\)\*]+$", s):
+            kept.append(s)
+    if kept:
+        text = "\n".join(kept)
+    else:
+        # Fallback: nothing Arabic-dominated survived — keep the LAST line
+        # (models usually put the final answer last).
+        paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+        if paras:
+            last = paras[-1]
+            if "->" in last:
+                last = last.rsplit("->", 1)[-1].strip().strip('"')
+            last = re.sub(r"[\*\u200f]", "", last).strip()
+            if not last and len(paras) > 1:
+                last = paras[-2]
+            text = last if last else ""
+        else:
+            text = ""
+    return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
+
+
 async def _ai_user_question(message: Message, state: FSMContext) -> None:
     q = (message.text or message.caption or "").strip()
     if not q:
@@ -715,102 +784,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                         sent_files += 1
         except Exception as exc:
             logger.warning("forward_items_from_answer failed: %s", exc)
-# Strip Telegram links from displayed text (files already forwarded)
-        clean_answer = re.sub(r"https?://t\.me/\S+", "", answer).strip()
-        # Remove content inside  thinking tags (reasoning output) first
-        clean_answer = re.sub(r"<thinking>.*?</thinking>", "", clean_answer, flags=re.DOTALL).strip()
-        clean_answer = re.sub(r"<output>.*?</output>", "", clean_answer, flags=re.DOTALL).strip()
-        # Then strip any remaining HTML tags
-        clean_answer = re.sub(r"<[^>]+>", "", clean_answer)
-        # Strip markdown bold markers ** **
-        clean_answer = clean_answer.replace("**", "")
-        # Drop any CoT markdown sections like ##### Thinking / ##### Final
-        clean_answer = re.sub(r"#{3,}\s*(thinking|final|answer|reasoning|output).*?(?=#{3,}|$)", "", clean_answer, flags=re.DOTALL | re.IGNORECASE)
-        # Drop OpenAI-style  text blocks (thinking)
-        clean_answer = re.sub(r"\s*<{1}\s*(thinking|partial|final)\s*>\s*", "\n", clean_answer, flags=re.IGNORECASE)
-        # Strip CoT: handle [Output Generation] markers with or without arrow/colon
-        cot_marker = None
-        for pat in [
-            r"\[Output Generation\][^\n]*",
-            r"\[output generation\][^\n]*",
-            r"\(Output Generation\)[^\n]*",
-            r"##?\s*[Ff]inal [Aa]nswer[^\n]*",
-            r"##?\s*[Oo]utput[^\n]*",
-            r"\[[Ff]inal [Rr]esponse\][^\n]*",
-        ]:
-            m = re.search(pat, clean_answer)
-            if m:
-                cot_marker = m.start()
-                break
-        # If the text is dominated by reasoning-phase English headers, cut at the last marker
-        threat_hits = sum(1 for kw in (
-            "internal refinement", "formulate response", "check constraints",
-            "self-correction", "thinking process", "refined draft", "constraint check",
-            "i will output", "output generation", "analysis", "refinement",
-            "step by step", "final output",
-        ) if kw in clean_answer.lower())
-
-        dealt = False
-        # Case 1: explicit output marker found — keep only what follows it
-        if cot_marker is not None:
-            seg = clean_answer[cot_marker:]
-            arrow = re.search(r"[->:]\s*\"?(.*)$", seg, re.DOTALL)
-            if arrow and arrow.group(1).strip():
-                clean_answer = arrow.group(1).strip().rstrip('"')
-            elif seg.strip():
-                clean_answer = seg.strip()
-            else:
-                clean_answer = ""
-            dealt = True
-        # Case 2: strong reasoning signature without a marker — aggressive cleanup
-        elif threat_hits >= 2:
-            paragraphs = re.split(r"\n\s*\n", clean_answer)
-            answer_parts = []
-            for p in paragraphs:
-                stripped = p.strip()
-                if not stripped:
-                    continue
-                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
-                total = len(stripped)
-                arabic_ratio = (arabic_count / total) if total > 0 else 0
-                low = stripped.lower()
-                is_thinking = (
-                    re.match(r"^\d+\s*[.\-–)]", stripped)
-                    or re.match(r"^[•\-*]\s", stripped)
-                    or arabic_ratio < 0.3
-                    or low.startswith(("here", "let", "wait", "i'll", "ok", "okay", "so", "note:", "check", "step", "internal", "formulate", "constraints", "draft:", "final answer:", "self-", "ready"))
-                    or "internal refinement" in low
-                    or "formulate response" in low
-                )
-                if not is_thinking:
-                    answer_parts.append(stripped)
-            clean_answer = "\n\n".join(answer_parts) if answer_parts else ""
-            dealt = True
-
-        # Case 3: normal case — allow numbered/bulleted Arabic answers, just drop
-        # English reasoning-looking paragraphs (e.g. "Note:", "Check", low-arabic)
-        if not dealt:
-            paragraphs = re.split(r"\n\s*\n", clean_answer)
-            answer_parts = []
-            for p in paragraphs:
-                stripped = p.strip()
-                if not stripped:
-                    continue
-                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
-                total = len(stripped.strip())
-                arabic_ratio = (arabic_count / total) if total > 0 else 0
-                low = stripped.lower()
-                is_thinking = (
-                    arabic_ratio < 0.3
-                    or low.startswith(("here", "let", "wait", "i'll", "ok", "okay", "so", "first,", "then,", "note:", "check", "step", "internal", "formulate", "constraints", "draft:", "final answer:"))
-                    or "internal refinement" in low
-                    or "formulate response" in low
-                    or "check constraints" in low
-                    or "think step by step" in low
-                )
-                if not is_thinking:
-                    answer_parts.append(stripped)
-            clean_answer = "\n\n".join(answer_parts) if answer_parts else ""
+        # Strip Telegram links from displayed text (files already forwarded)
+        clean_answer = _strip_cot(answer)
         # Remove t.me links one more time after filtering (e.g. pasted full links)
         clean_answer = re.sub(r"https?://t\.me/\S+", "", clean_answer).strip()
         # Clean up double spaces / empty lines
@@ -1425,34 +1400,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
             await message.answer("❌ التنسيق: user_id | الرسالة", reply_markup=_rm)
 
     else:
-        clean = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL).strip()
-        clean = re.sub(r"<[^>]+>", "", clean)
-        clean = clean.replace("**", "")
-        gen_match = re.search(r"\[Output Generation\].*?->\s*\"?(.*)", clean, re.DOTALL)
-        if gen_match:
-            clean = gen_match.group(1).strip().rstrip('"')
-        else:
-            paragraphs = re.split(r"\n\s*\n", clean)
-            answer_parts = []
-            for p in paragraphs:
-                stripped = p.strip()
-                if not stripped:
-                    continue
-                arabic_count = len(re.findall(r"[\u0600-\u06FF]", stripped))
-                total = len(stripped)
-                arabic_ratio = arabic_count / total if total > 0 else 0
-                is_thinking = (
-                    re.match(r"^\d+\.\s", stripped)
-                    or re.match(r"^-\s", stripped)
-                    or stripped.startswith("Here")
-                    or stripped.startswith("Let")
-                    or stripped.startswith("Wait")
-                    or stripped.startswith("I'll")
-                    or arabic_ratio < 0.3
-                )
-                if not is_thinking:
-                    answer_parts.append(stripped)
-            clean = "\n\n".join(answer_parts) if answer_parts else clean
+        clean = _strip_cot(answer)
         await safe_send(message, clean, reply_markup=_rm)
 
 
