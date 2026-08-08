@@ -3,7 +3,7 @@ import asyncio
 from sqlalchemy import select, delete, func, text
 from .database import async_session
 from services.ai_context import clear_ai_context
-from services.ttl_cache import ttl_cache, invalidate_cache
+from services.ttl_cache import ttl_cache, invalidate_cache, peek_cache, patch_cache
 from .models import User, Message, Attachment, AutoReply, ReplyLog, Folder, ContentItem, ContentLink, MonitoredChannel, MutedUser, SentNews, AdminNotification, QAPair, PDFContext, Article, CoursePrerequisite, CourseAlias, AILog, ErrorLog, _utcnow
 
 BOT_ACTIVE_FILE = Path(__file__).parent.parent / "data" / ".bot_active"

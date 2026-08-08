@@ -9,7 +9,7 @@ from database.crud import (
     add_folder, remove_folder, get_folders, get_folder,
     add_content_item, remove_content_item, get_content_items, get_content_item,
     add_content_link, get_content_links, remove_content_link,
-    update_content_item_title, rename_folder,
+    update_content_item_title, rename_folder, get_all_materials,
     is_materials_active,
     save_admin_action,
     is_admin_user,
@@ -377,8 +377,10 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             logger.warning("copy_message link failed (%s) for user %s: %s", link.link, user_id, exc)
         await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
 
-    await asyncio.gather(*(forward_one(l) for l in links))
-    logger.info("Forwarded %d links for content item %s to user %s in parallel", len(links), item_id, user_id)
+    for i in range(0, len(links), 3):
+        chunk = links[i:i+3]
+        await asyncio.gather(*(forward_one(l) for l in chunk))
+    logger.info("Forwarded %d links for content item %s to user %s in ordered chunks", len(links), item_id, user_id)
 
 
 # ─── Edit content (ReplyKeyboard with inline cancel) ───
@@ -595,7 +597,8 @@ async def student_back(message: Message, state: FSMContext) -> None:
         data = await state.get_data()
         fid = data.get("folder_id")
         if fid:
-            f = await get_folder(fid)
+            data_all = await get_all_materials()
+            f = next((x for x in data_all["folders"] if x.id == fid), None)
             pid = f.parent_id if f else None
             await state.update_data(folder_id=pid)
             if pid:
