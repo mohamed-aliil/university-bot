@@ -1,6 +1,7 @@
 import logging
 import re
 import asyncio
+import time
 import aiohttp
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
@@ -26,6 +27,11 @@ logger = logging.getLogger(__name__)
 router = Router()
 
 MAX_MSG_LEN = 4000  # Leave room for safety
+
+# In-memory guard: exactly ONE background AI answer per user at a time (no races)
+_user_busy: set[int] = set()
+# Duplicate-question guard: reply only once for the same text within 20s
+_last_question: dict[tuple[int, str], float] = {}
 
 
 async def _build_static_context() -> dict:
@@ -442,16 +448,25 @@ async def ai_user_back(message: Message, state: FSMContext) -> None:
 
 @router.message(AIState.waiting_for_question)
 async def ai_user_question(message: Message, state: FSMContext) -> None:
-    data = await state.get_data()
-    if data.get("ai_busy"):
-        # A previous question is still being answered in the background.
-        # Don't block this update (and the user's next buttons) waiting 9s.
+    q = (message.text or "").strip()
+    uid = message.from_user.id
+    now = time.monotonic()
+    # Duplicate guard: same question text within 20s is a resend/spam echo → ignore
+    if q:
+        key = (uid, q)
+        if key in _last_question and now - _last_question[key] < 20.0:
+            logger.info("Dropping duplicate question from %s: %r", uid, q[:50])
+            return
+        _last_question[key] = now
+    # Memory guard: one AI answer per user at a time — no FSM race window
+    if uid in _user_busy:
         await message.answer(
             "⏳ لقد استلمت رسالتك، أفكر في سؤالك الآن...\n"
             "اكتب سؤالك بعد الانتهاء أو اضغط 🔙 رجوع.",
             reply_markup=ai_user_keyboard(),
         )
         return
+    _user_busy.add(uid)
     await state.update_data(ai_busy=True)
     await message.bot.send_chat_action(message.chat.id, "typing")
     asyncio.create_task(_ai_bg_question(message, state))
@@ -481,6 +496,10 @@ async def _ai_bg_question(message: Message, state: FSMContext) -> None:
             except Exception as e2:
                 logger.error("Failed to send traceback to admin %s: %s", admin_id, e2)
     finally:
+        try:
+            _user_busy.discard(message.from_user.id)
+        except Exception:
+            pass
         try:
             await state.update_data(ai_busy=False)
         except Exception:
@@ -689,7 +708,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         "- كن مرن وغير مقيد؛ جاوب مباشرة ولا تعقد الأمور.\n"
         "- القاعدة الأولى: حُلّ المشكلة بنفسك وأجب مباشرة من معلوماتك ومن قاعدة المعرفة والمواد والمقالات — لا تفكر في إبلاغ المشرفين أبداً.\n"
         "- في أسئلة الدراسة والمواد: افضل وأفضل إجابة دائماً هي من المقال أو المادة نفسها، اقرأها وافهمها وأجب منها باسلوبك.\n"
-        "- لمّا يطلب أحد الشيتات أو ملفات أو محتوى مادة: اذكر اسم المحتوى كما هو في شجرة المواد ولا تضع أي رابط إطلاقاً — الملف سيُرسل للمستخدم تلقائياً.\n"
+        "- لمّا يطلب أحد الشيتات أو ملفات أو محتوى مادة: اذكر اسم المحتوى في جوابك، واكتب في سطر منفصل في نهاية الرد صيغة الطلب الآلية بحيث تبدأ بـ: [FORWARD] متبوعاً بالاسم الدقيق للمحتوى كما يظهر مكتوباً في شجرة المواد فوق، مثال: [FORWARD] شيت مادة السي الفصل الأول — ولا تضع أي رابط إطلاقاً؛ الملف سيُرسل للمستخدم تلقائياً. إذا كان طلب الشيت يخص مادة واحدة فقط: اذكر تلك المادة فقط ولا تذكر أي مادة أخرى في سطر [FORWARD].\n"
         "- مصدرك الأساسي الوحيد هو المقالة الخاصة بالموضوع: اقرأها جيداً وأجب منها ومنها فقط، وانقل ما فيها دون أي تحريف أو إضافة أو تغيير في الأرقام أو المعاني — المقالة هي الحقيقة الوحيدة عندك.\n"
         "- لمّا تكون المعلومة موجودة في المقالة: التزم بها حرفياً وانقل الأرقام كما هي (مثلاً 20 درجة وليس 20%) دون تحوير أبداً.\n"
         "- لو سؤال يخص مادة أو كلية: أجب فقط مما ورد في المقالات — إن كان السؤال عن شيء غير مذكور في أي مقالة قل بصراحة وببساطة أن هذه المعلومة غير موجودة عندك، ولا تختلق أي رقم أو تفصيل من ذاكرتك إطلاقاً ولا تُكمل الصورة بتخمين.\n"
@@ -711,7 +730,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await message.bot.send_chat_action(message.chat.id, "typing")
     except Exception:
         pass
-    answer = await call_gemini(user_prompt, system_prompt=system_prompt)
+    answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048)
     if answer:
         # Process [SAVE_ALIAS] command from AI response
         save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)
@@ -729,19 +748,37 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                     pass
             except Exception:
                 pass
-        # Forward actual files: match the requested content item in DB and copy its links
+        # Forward actual files: only items the AI explicitly requested via
+        # [FORWARD] title | title (exact names from the material tree — never
+        # fuzzy-match titles appearing anywhere in the answer text, which
+        # forwarded sheets from the wrong course).
         forwarded = set()
         sent_files = 0
         requested_items = []
         try:
             from database.crud import get_all_materials
             materials_data = await get_all_materials()
-            search_space = (q or "").lower() + "\n" + (answer or "").lower()
+            # Exact titles emitted by the model in [FORWARD] ... lines
+            wanted_titles: list[str] = []
+            for m in re.finditer(r"\[FORWARD\]\s*([^\n]+)", answer, re.IGNORECASE):
+                for part in re.split(r"\||,|؛|;", m.group(1)):
+                    t = part.strip()
+                    if t:
+                        wanted_titles.append(t)
+            wanted = {t.strip() for t in wanted_titles}
+            if not wanted:
+                # Fallback: user's own words only (q), never from the answer text
+                q_lower = (q or "").lower()
+                for item in materials_data["items"]:
+                    title = (item.title or "").strip()
+                    if title and title.lower() in q_lower:
+                        wanted.add(title)
             for item in materials_data["items"]:
                 title = (item.title or "").strip()
                 if not title:
                     continue
-                if title.lower() not in search_space:
+                lo = title.lower()
+                if lo not in {w.lower() for w in wanted}:
                     continue
                 item_links = [l for l in materials_data["links"] if l.content_item_id == item.id]
                 if not item_links:
@@ -786,6 +823,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             logger.warning("forward_items_from_answer failed: %s", exc)
         # Strip Telegram links from displayed text (files already forwarded)
         clean_answer = _strip_cot(answer)
+        # Remove the internal [FORWARD] ... instruction line from the user reply
+        clean_answer = re.sub(r"\[FORWARD\][^\n]*\n?", "", clean_answer, flags=re.IGNORECASE)
         # Remove t.me links one more time after filtering (e.g. pasted full links)
         clean_answer = re.sub(r"https?://t\.me/\S+", "", clean_answer).strip()
         # Clean up double spaces / empty lines
