@@ -545,7 +545,8 @@ async def handle_back(message: Message, state: FSMContext) -> None:
     fid = data.get("folder_id")
     await state.set_state(MState.browsing)
     if fid:
-        f = await get_folder(fid)
+        data_all = await get_all_materials()
+        f = next((x for x in data_all["folders"] if x.id == fid), None)
         pid = f.parent_id if f else None
         await state.update_data(folder_id=pid)
         await render_admin(message, pid)
