@@ -73,10 +73,7 @@ async def webhook_handler(request: web.Request) -> web.Response:
 _chat_locks: dict[int, asyncio.Lock] = {}
 _chat_locks_guard = asyncio.Lock()
 
-# Slow-update watchdog: reports to admins + error log when an update takes too long
 _SLOW_MS = 3000
-_last_slow_report: float = 0.0
-_slow_report_interval = 60.0  # seconds between admin notifications
 
 
 def _update_summary(update: Update) -> str:
@@ -147,21 +144,12 @@ async def _notify_admins(bot, text: str) -> None:
 
 
 async def _report_slow(bot, update, ms: float, ai_ms: float, ai_model: str) -> None:
-    global _last_slow_report
     detail = _slow_detail(update, ms, ai_ms, ai_model)
     try:
         await save_error_db("SLOW_UPDATE", detail, user_id=_update_meta(update).get("user_id"))
     except Exception:
         pass
-    now = _time.monotonic()
-    if now - _last_slow_report < _slow_report_interval:
-        return
-    _last_slow_report = now
-    await _notify_admins(
-        bot,
-        f"⚠️ بطء في معالجة تحديث ({ms:.0f}ms)\n\n{detail}\n\n"
-        f"حدّ البطء: {_SLOW_MS}ms. تفاصيل إضافية في سجل الأخطاء.",
-    )
+    # No admin notification for slow processing — only logged (سجل الأخطاء).
 
 
 def _get_chat_lock(update: Update) -> asyncio.Lock:
