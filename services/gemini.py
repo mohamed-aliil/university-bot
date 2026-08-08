@@ -78,6 +78,9 @@ async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 10
 
 LAST_AI_MS: dict = {"ms": 0.0, "model": ""}
 
+# Models that recently got Groq 429 (rate limit): skipped for 60s
+_MODEL_COOLDOWN: dict[str, float] = {}
+
 
 async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     messages = []
@@ -97,6 +100,10 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     }
 
     for model in MODELS:
+        # Skip models that hit rate limit recently (60s cooldown)
+        if time.monotonic() - _MODEL_COOLDOWN.get(model, 0.0) < 60.0:
+            logger.info("Skipping %s (on 429 cooldown)", model)
+            continue
         payload = {
             "model": model,
             "messages": messages,
@@ -115,13 +122,9 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                     ) as resp:
                         if resp.status == 429:
                             body = await resp.text()
-                            logger.warning("Groq 429 for %s (attempt %d/3): %s", model, attempt + 1, body[:100])
-                            if attempt < 2:
-                                wait = 2 ** attempt  # 1s, 2s
-                                logger.info("Retrying %s in %ds...", model, wait)
-                                await asyncio.sleep(wait)
-                                continue
-                            break  # Give up on this model after 3 attempts
+                            _MODEL_COOLDOWN[model] = time.monotonic()
+                            logger.warning("Groq 429 for %s: %s — switching model now", model, body[:100])
+                            break  # No sleep-retry same model: go to next one
                         if resp.status != 200:
                             body = await resp.text()
                             if "decommissioned" in body or "deprecated" in body:
@@ -241,6 +244,9 @@ async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_ch
     }
 
     for model in MODELS:
+        if time.monotonic() - _MODEL_COOLDOWN.get(model, 0.0) < 60.0:
+            logger.info("Skipping %s (on 429 cooldown)", model)
+            continue
         payload = {
             "model": model,
             "messages": messages,
@@ -261,11 +267,9 @@ async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_ch
                     ) as resp:
                         if resp.status == 429:
                             body = await resp.text()
-                            logger.warning("Groq 429 stream %s (attempt %d/3): %s", model, attempt + 1, body[:100])
-                            if attempt < 2:
-                                await asyncio.sleep(2 ** attempt)
-                                continue
-                            break
+                            _MODEL_COOLDOWN[model] = time.monotonic()
+                            logger.warning("Groq 429 stream %s: %s — switching model now", model, body[:100])
+                            break  # No sleep-retry same model: go to next one
                         if resp.status != 200:
                             body = await resp.text()
                             if "decommissioned" in body or "deprecated" in body:
