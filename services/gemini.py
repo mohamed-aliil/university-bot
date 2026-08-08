@@ -81,6 +81,10 @@ LAST_AI_MS: dict = {"ms": 0.0, "model": ""}
 # Models that recently got Groq 429 (rate limit): skipped for 60s
 _MODEL_COOLDOWN: dict[str, float] = {}
 
+# Last provider error reason (for diagnostics when all models fail)
+LAST_GROQ_ERROR: str = ""
+LAST_GEMINI_ERROR: str = ""
+
 
 async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     messages = []
@@ -123,6 +127,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                         if resp.status == 429:
                             body = await resp.text()
                             _MODEL_COOLDOWN[model] = time.monotonic()
+                            LAST_GROQ_ERROR = f"429 rate limit: {body[:120]}"
                             logger.warning("Groq 429 for %s: %s — switching model now", model, body[:100])
                             break  # No sleep-retry same model: go to next one
                         if resp.status != 200:
@@ -130,6 +135,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                             if "decommissioned" in body or "deprecated" in body:
                                 logger.warning("Groq model %s deprecated, trying next", model)
                                 break  # Try next model
+                            LAST_GROQ_ERROR = f"HTTP {resp.status}: {body[:150]}"
                             logger.warning("Groq %s error %s: %s", model, resp.status, body[:200])
                             break  # Try next model
                         data = await resp.json()
@@ -147,8 +153,10 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                     await asyncio.sleep(1)
                     continue
             except Exception as e:
+                LAST_GROQ_ERROR = f"{type(e).__name__}: {str(e)[:200]}"
                 logger.exception("Groq %s failed: %s", model, e)
                 break  # Non-retryable error, try next model
+    LAST_GROQ_ERROR = LAST_GROQ_ERROR or "all Groq models failed"
     return None
 
 

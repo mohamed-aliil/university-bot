@@ -731,6 +731,11 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     except Exception:
         pass
     answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048)
+    if not answer:
+        # Transient failure (429/timeout): retry right away before giving up
+        logger.warning("AI first attempt returned nothing — retrying once")
+        await asyncio.sleep(2)
+        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048)
     if answer:
         # Process [SAVE_ALIAS] command from AI response
         save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)
@@ -875,6 +880,14 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 reply_markup=_ai_notify_keyboard(),
             )
     else:
+        from services.gemini import LAST_GROQ_ERROR, LAST_GEMINI_ERROR
+        reason = (LAST_GROQ_ERROR or LAST_GEMINI_ERROR or "فشل غير معروف")[:300]
+        logger.error("AI reply failed for user %s: %s", message.from_user.id, reason)
+        from database.crud import save_error_db
+        try:
+            await save_error_db("ai_user_question_empty", reason, user_id=message.from_user.id)
+        except Exception:
+            pass
         await message.answer(
             "⚠️ عذراً، حدث خطأ. يرجى المحاولة لاحقاً.",
             reply_markup=ai_user_keyboard(),
