@@ -377,10 +377,10 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             logger.warning("copy_message link failed (%s) for user %s: %s", link.link, user_id, exc)
         await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
 
-    for i in range(0, len(links), 3):
-        chunk = links[i:i+3]
-        await asyncio.gather(*(forward_one(l) for l in chunk))
-    logger.info("Forwarded %d links for content item %s to user %s in ordered chunks", len(links), item_id, user_id)
+    await bot.send_chat_action(chat_id=user_id, action="typing")
+    for link in links:
+        await forward_one(link)
+    logger.info("Forwarded %d links for content item %s to user %s in order", len(links), item_id, user_id)
 
 
 # ─── Edit content (ReplyKeyboard with inline cancel) ───
