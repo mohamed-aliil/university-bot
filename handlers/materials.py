@@ -536,13 +536,24 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
         return
 
     urls = [u.strip() for u in text.split("\n") if u.strip()]
-    added = 0
-    failed = 0
-    for url in urls:
+    results = await asyncio.gather(*(_add_one_link(message, item_id, url) for url in urls))
+    added = sum(1 for ok in results if ok)
+    failed = sum(1 for ok in results if not ok)
+
+    t = f"✅ تمت إضافة {added} رابط" + ("." if not failed else f"، فشل {failed} رابط غير صالح.")
+    if added:
+        links = await get_content_links(item_id)
+        t += "\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
+    await state.set_state(MState.edit_menu)
+    await message.answer(t, reply_markup=content_edit_kb())
+
+
+async def _add_one_link(message: Message, item_id: int, url: str) -> bool:
+    """Verify (forward) a t.me post and save it as a link — called in parallel."""
+    try:
         match = LINK_REGEX.search(url)
         if not match:
-            failed += 1
-            continue
+            return False
         ch, msg_id = match.group(1), int(match.group(2))
         chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
         try:
@@ -556,15 +567,12 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
         except Exception:
             pass
         await add_content_link(item_id, url, str(chat_id), msg_id)
-        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_link_content", f"🔗 محتوى #{item_id}: {url[:80]}")
-        added += 1
-
-    t = f"✅ تمت إضافة {added} رابط" + ("." if not failed else f"، فشل {failed} رابط غير صالح.")
-    if added:
-        links = await get_content_links(item_id)
-        t += "\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
-    await state.set_state(MState.edit_menu)
-    await message.answer(t, reply_markup=content_edit_kb())
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "",
+                                "add_link_content", f"🔗 محتوى #{item_id}: {url[:80]}")
+        return True
+    except Exception as e:
+        logger.warning("add_one_link failed for %s: %s", url[:60], e)
+        return False
 
 
 @router.message(EditContentState.delete_link, AdminFilter())

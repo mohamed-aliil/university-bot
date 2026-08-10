@@ -880,8 +880,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 reply_markup=_ai_notify_keyboard(),
             )
     else:
-        from services.gemini import LAST_GROQ_ERROR, LAST_GEMINI_ERROR
-        reason = (LAST_GROQ_ERROR or LAST_GEMINI_ERROR or "فشل غير معروف")[:300]
+        from services.gemini import LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
+        reason = (LAST_GROQ_ERROR or LAST_GEMINI_ERROR or LAST_CALL_ERROR or "فشل غير معروف")[:300]
         logger.error("AI reply failed for user %s: %s", message.from_user.id, reason)
         from database.crud import save_error_db
         try:

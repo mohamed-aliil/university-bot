@@ -70,8 +70,11 @@ async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 10
             if result:
                 LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
-    except Exception:
+    except Exception as e:
+        LAST_CALL_ERROR = f"{type(e).__name__}: {str(e)[:250]}"
         logger.exception("call_gemini failed")
+    if not (LAST_GROQ_ERROR or LAST_GEMINI_ERROR or LAST_CALL_ERROR):
+        LAST_CALL_ERROR = "no Groq/Gemini keys configured or all providers failed silently"
     LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
     return None
 
@@ -84,6 +87,7 @@ _MODEL_COOLDOWN: dict[str, float] = {}
 # Last provider error reason (for diagnostics when all models fail)
 LAST_GROQ_ERROR: str = ""
 LAST_GEMINI_ERROR: str = ""
+LAST_CALL_ERROR: str = ""
 
 
 async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
