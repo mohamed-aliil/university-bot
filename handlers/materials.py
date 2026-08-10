@@ -31,21 +31,15 @@ def _spawn(coro) -> None:
 
 LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(?:c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 
-def content_edit_kb() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
-        keyboard=[
-            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="➕ إضافة رابط")],
-            [KeyboardButton(text="➖ حذف رابط"), KeyboardButton(text="🗑 حذف المحتوى")],
-            [KeyboardButton(text="🔙 رجوع")],
-        ],
-        resize_keyboard=True,
-    )
-
-
 class MState(StatesGroup):
     browsing = State()
     add_folder = State()
     add_item_title = State()
+    add_item_type = State()
+    add_item_post = State()
+    add_item_url = State()
+    add_item_text = State()
+    add_item_file = State()
     deleting = State()
     edit_menu = State()
     rename_folder = State()
@@ -53,9 +47,58 @@ class MState(StatesGroup):
 
 class EditContentState(StatesGroup):
     edit_title = State()
+    edit_url = State()
+    edit_text = State()
+    edit_file = State()
     add_link = State()
     add_link_extra = State()
     delete_link = State()
+
+
+CONTENT_TYPE_LABELS = {
+    "post": "منشور من قناة (يُنقل للطالب)",
+    "link": "رابط خارجي (يُفتح بالمتصفح)",
+    "text": "نص / رسالة",
+    "file": "ملف (مستند/صورة/صوت...)",
+}
+
+
+def item_type_kb() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text=f"📲 {CONTENT_TYPE_LABELS['post']}", callback_data="item_type:post")],
+        [InlineKeyboardButton(text=f"🔗 {CONTENT_TYPE_LABELS['link']}", callback_data="item_type:link")],
+        [InlineKeyboardButton(text=f"📝 {CONTENT_TYPE_LABELS['text']}", callback_data="item_type:text")],
+        [InlineKeyboardButton(text=f"📎 {CONTENT_TYPE_LABELS['file']}", callback_data="item_type:file")],
+        [InlineKeyboardButton(text="❌ إلغاء", callback_data="item_type:cancel")],
+    ])
+
+
+def content_edit_kb(content_type: str = "post") -> ReplyKeyboardMarkup:
+    if content_type == "link":
+        kb = [
+            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="🔗 تغيير الرابط")],
+            [KeyboardButton(text="🗑 حذف المحتوى")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ]
+    elif content_type == "text":
+        kb = [
+            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="📝 تغيير النص")],
+            [KeyboardButton(text="🗑 حذف المحتوى")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ]
+    elif content_type == "file":
+        kb = [
+            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="📎 تغيير الملف")],
+            [KeyboardButton(text="🗑 حذف المحتوى")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ]
+    else:  # post
+        kb = [
+            [KeyboardButton(text="✏️ تغيير الاسم"), KeyboardButton(text="➕ إضافة رابط")],
+            [KeyboardButton(text="➖ حذف رابط"), KeyboardButton(text="🗑 حذف المحتوى")],
+            [KeyboardButton(text="🔙 رجوع")],
+        ]
+    return ReplyKeyboardMarkup(keyboard=kb, resize_keyboard=True)
 
 
 def build_kb(folders: list, items: list) -> ReplyKeyboardMarkup:
@@ -112,8 +155,12 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
         msg = f"📍 {name}\n"
         if items:
             msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
-        rename_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تعديل الاسم", callback_data=f"rename_folder:{folder_id}")]])
-        await message.answer(msg, reply_markup=rename_kb)
+        folder_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}"),
+             InlineKeyboardButton(text="📁 إضافة مجلد", callback_data=f"add_folder_inline:{folder_id}"),
+             InlineKeyboardButton(text="📄 إضافة محتوى", callback_data=f"add_item_inline:{folder_id}")],
+        ])
+        await message.answer(msg, reply_markup=folder_kb)
         await message.answer("─" * 5, reply_markup=build_kb(folders, items))
     else:
         await message.answer("📚 المواد:", reply_markup=build_kb(folders, []))
@@ -174,19 +221,143 @@ async def add_item_prompt(message: Message, state: FSMContext) -> None:
     await message.answer("✏️ أرسل اسم المحتوى:")
 
 
+@router.callback_query(AdminFilter(), F.data.startswith("add_item_inline:"))
+async def add_item_inline_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    fid = int(callback.data.split(":")[1])
+    await state.update_data(folder_id=fid)
+    await state.set_state(MState.add_item_title)
+    await callback.message.answer("✏️ أرسل اسم المحتوى:")
+    await callback.answer()
+
+
 @router.message(MState.add_item_title, AdminFilter())
 async def add_item_title_save(message: Message, state: FSMContext) -> None:
     title = message.text.strip()
-    if not title:
+    if not title or title == "🔙 رجوع":
         await message.answer("❌ الاسم فارغ.")
         return
+    await state.update_data(add_item_title=title)
+    await state.set_state(MState.add_item_type)
+    await message.answer(f"📄 «{title}»\n\nاختر نوع المحتوى:", reply_markup=item_type_kb())
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("item_type:"))
+async def add_item_type_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    ctype = callback.data.split(":")[1]
+    if ctype == "cancel":
+        data = await state.get_data()
+        await state.set_state(MState.browsing)
+        await render_admin(callback.message, data.get("folder_id"))
+        await callback.answer()
+        return
+    await state.update_data(add_item_type=ctype)
+    prompts = {
+        "post": "📲 أرسل رابط المنشور (t.me/...) وسيُنقل للطالب:",
+        "link": "🔗 أرسل الرابط الخارجي (يُفتح بالمتصفح):",
+        "text": "📝 أرسل النص:",
+        "file": "📎 أرسل الملف (مستند/صورة/فيديو/صوت):",
+    }
+    await state.set_state({
+        "post": MState.add_item_post,
+        "link": MState.add_item_url,
+        "text": MState.add_item_text,
+        "file": MState.add_item_file,
+    }[ctype])
+    await callback.message.answer(prompts[ctype], reply_markup=cancel_inline_kb())
+    await callback.answer()
+
+
+async def _finish_add_item(message: Message, state: FSMContext, item) -> None:
+    """After payload is attached: show the edit menu for the new item."""
     data = await state.get_data()
-    ci = await add_content_item(folder_id=data["folder_id"], title=title)
-    await save_admin_action(message.from_user.id, message.from_user.full_name or "", "add_content", f"📄 {title}")
-    await state.update_data(edit_item_id=ci.id, edit_item_title=title)
+    await save_admin_action(message.from_user.id, message.from_user.full_name or "",
+                            "add_content", f"📄 {item.title or 'بدون عنوان'}")
+    await state.update_data(edit_item_id=item.id, edit_item_title=item.title)
     await state.set_state(MState.edit_menu)
-    header = f"📄 {title}\n{'═' * 15}\nلا توجد روابط.\n"
-    await message.answer(header, reply_markup=content_edit_kb())
+    await render_item_menu(message, item)
+
+
+@router.message(MState.add_item_post, AdminFilter())
+async def add_item_post_save(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if text == "🔙 رجوع":
+        await _cancel_add_item(message, state)
+        return
+    m = LINK_REGEX.search(text)
+    if not m:
+        await message.answer("❌ هذا ليس رابط t.me صالحاً. أرسل رابط المنشور:", reply_markup=cancel_inline_kb())
+        return
+    ch, mid = m.group(1), int(m.group(2))
+    chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+    data = await state.get_data()
+    item = await add_content_item(folder_id=data["folder_id"], title=data.get("add_item_title"), content_type="post")
+    try:
+        await add_content_link(item.id, text, str(chat_id) if not ch.startswith("-") else f"-100{ch}", mid)
+    except Exception:
+        pass
+    await _finish_add_item(message, state, item)
+
+
+@router.message(MState.add_item_url, AdminFilter())
+async def add_item_url_save(message: Message, state: FSMContext) -> None:
+    url = message.text.strip()
+    if url == "🔙 رجوع":
+        await _cancel_add_item(message, state)
+        return
+    if not url.startswith(("http://", "https://", "www.")):
+        url = "https://" + url
+    data = await state.get_data()
+    item = await add_content_item(folder_id=data["folder_id"], title=data.get("add_item_title"),
+                                  content_type="link", text_body=url)
+    await _finish_add_item(message, state, item)
+
+
+@router.message(MState.add_item_text, AdminFilter())
+async def add_item_text_save(message: Message, state: FSMContext) -> None:
+    text = message.text.strip()
+    if text == "🔙 رجوع":
+        await _cancel_add_item(message, state)
+        return
+    if not text:
+        await message.answer("❌ النص فارغ.", reply_markup=cancel_inline_kb())
+        return
+    data = await state.get_data()
+    item = await add_content_item(folder_id=data["folder_id"], title=data.get("add_item_title"),
+                                  content_type="text", text_body=text)
+    await _finish_add_item(message, state, item)
+
+
+@router.message(MState.add_item_file, AdminFilter())
+async def add_item_file_save(message: Message, state: FSMContext) -> None:
+    if message.text and message.text.strip() == "🔙 رجوع":
+        await _cancel_add_item(message, state)
+        return
+    kind, fid = None, None
+    if message.document:
+        kind, fid = "document", message.document.file_id
+    elif message.photo:
+        kind, fid = "photo", message.photo[-1].file_id
+    elif message.video:
+        kind, fid = "video", message.video.file_id
+    elif message.audio:
+        kind, fid = "audio", message.audio.file_id
+    elif message.voice:
+        kind, fid = "voice", message.voice.file_id
+    elif message.animation:
+        kind, fid = "animation", message.animation.file_id
+    if not fid:
+        await message.answer("❌ أرسل ملفاً صالحاً (مستند/صورة/فيديو/صوت).", reply_markup=cancel_inline_kb())
+        return
+    data = await state.get_data()
+    item = await add_content_item(folder_id=data["folder_id"], title=data.get("add_item_title"),
+                                  content_type="file", file_id=fid, file_kind=kind)
+    await _finish_add_item(message, state, item)
+
+
+async def _cancel_add_item(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    await state.set_state(MState.browsing)
+    await render_admin(message, data.get("folder_id"))
 
 
 # ─── Delete by name ───
@@ -248,16 +419,9 @@ async def admin_navigate(message: Message, state: FSMContext) -> None:
         await render_admin(message, fid)
     elif item_match:
         item = item_match[0]
-        links = await get_content_links(item.id)
-        header = f"📄 {item.title or 'بدون عنوان'}\n{'═' * 15}\n"
-        if links:
-            for idx, lnk in enumerate(links, 1):
-                header += f"{idx}. {lnk.link}\n"
-        else:
-            header += "لا توجد روابط.\n"
         await state.update_data(edit_item_id=item.id, edit_item_title=item.title, folder_id=pid)
         await state.set_state(MState.edit_menu)
-        await message.answer(header, reply_markup=content_edit_kb())
+        await render_item_menu(message, item)
     elif text == "🔙 رجوع":
         await handle_back(message, state)
     else:
@@ -291,6 +455,15 @@ async def rename_folder_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.update_data(rename_folder_id=folder_id)
     await state.set_state(MState.rename_folder)
     await callback.message.answer(f"✏️ تغيير اسم المجلد: {f.name}\nأرسل الاسم الجديد:", reply_markup=cancel_inline_kb())
+    await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("add_folder_inline:"))
+async def add_folder_inline_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    fid = int(callback.data.split(":")[1])
+    await state.update_data(parent_id=fid)
+    await state.set_state(MState.add_folder)
+    await callback.message.answer("✏️ أرسل اسم المجلد الجديد:")
     await callback.answer()
 
 
@@ -339,6 +512,55 @@ async def _forward_with_log(message: Message, item_id: int, text: str) -> None:
     except Exception:
         pass
     await forward_item(message.from_user.id, item_id, message.bot)
+
+
+async def _deliver_item(message: Message, item, text: str) -> None:
+    """Send content to a student based on its type: post→copy, link→open, text→send, file→send."""
+    try:
+        from database.crud import save_or_replace_user_message
+        await save_or_replace_user_message(user_id=message.from_user.id, content=text)
+    except Exception:
+        pass
+    ctype = (item.content_type if hasattr(item, "content_type") else None) or "post"
+    try:
+        if ctype == "post":
+            await forward_item(message.from_user.id, item.id, message.bot)
+        elif ctype == "link":
+            url = (item.text_body or "").strip()
+            if url:
+                await message.bot.send_message(chat_id=message.from_user.id, text=url)
+        elif ctype == "text":
+            body = (item.text_body or "").strip()
+            if body:
+                await message.bot.send_message(chat_id=message.from_user.id, text=body)
+        elif ctype == "file":
+            await _send_saved_file(message.from_user.id, item, message.bot)
+    except Exception as e:
+        logger.exception("deliver_item failed for user %s: %s", message.from_user.id, e)
+        try:
+            await message.bot.send_message(chat_id=message.from_user.id, text="⚠️ تعذر إرسال المحتوى حالياً.")
+        except Exception:
+            pass
+
+
+async def _send_saved_file(user_id: int, item, bot) -> None:
+    fid = getattr(item, "file_id", None)
+    kind = getattr(item, "file_kind", None) or "document"
+    if not fid:
+        await bot.send_message(chat_id=user_id, text="❌ الملف غير متوفر.")
+        return
+    if kind == "photo":
+        await bot.send_photo(chat_id=user_id, photo=fid)
+    elif kind == "video":
+        await bot.send_video(chat_id=user_id, video=fid)
+    elif kind == "audio":
+        await bot.send_audio(chat_id=user_id, audio=fid)
+    elif kind == "voice":
+        await bot.send_voice(chat_id=user_id, voice=fid)
+    elif kind == "animation":
+        await bot.send_animation(chat_id=user_id, animation=fid)
+    else:
+        await bot.send_document(chat_id=user_id, document=fid)
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
@@ -398,6 +620,8 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         await render_admin(message, data.get("folder_id"))
         return
     text = message.text.strip()
+    item = await get_content_item(item_id)
+    ctype = (item.content_type if item else "post") or "post"
 
     if text == "✏️ تغيير الاسم":
         await state.set_state(EditContentState.edit_title)
@@ -410,7 +634,7 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
     elif text == "➖ حذف رابط":
         links = await get_content_links(item_id)
         if not links:
-            await message.answer("❌ لا توجد روابط للحذف.", reply_markup=content_edit_kb())
+            await message.answer("❌ لا توجد روابط للحذف.", reply_markup=content_edit_kb(ctype))
             return
         t = "📋 الروابط:\n"
         for idx, lnk in enumerate(links, 1):
@@ -418,6 +642,18 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         t += "\nأرسل رقم الرابط لحذفه:"
         await state.set_state(EditContentState.delete_link)
         await message.answer(t, reply_markup=cancel_inline_kb())
+
+    elif text == "🔗 تغيير الرابط":
+        await state.set_state(EditContentState.edit_url)
+        await message.answer("🔗 أرسل الرابط الجديد:", reply_markup=cancel_inline_kb())
+
+    elif text == "📝 تغيير النص":
+        await state.set_state(EditContentState.edit_text)
+        await message.answer("📝 أرسل النص الجديد:", reply_markup=cancel_inline_kb())
+
+    elif text == "📎 تغيير الملف":
+        await state.set_state(EditContentState.edit_file)
+        await message.answer("📎 أرسل الملف الجديد (مستند/صورة/فيديو/صوت):", reply_markup=cancel_inline_kb())
 
     elif text == "🗑 حذف المحتوى":
         item = await get_content_item(item_id)
@@ -433,7 +669,27 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         await render_admin(message, data.get("folder_id"))
 
     else:
-        await message.answer("❌ اختر من الأزرار.", reply_markup=content_edit_kb())
+        await message.answer("❌ اختر من الأزرار.", reply_markup=content_edit_kb(ctype))
+
+
+async def render_item_menu(message: Message, item, reply_markup=None) -> None:
+    """Show item management menu — keyboard adapts to the item content type."""
+    ctype = (item.content_type if hasattr(item, "content_type") else None) or "post"
+    header = f"📄 {item.title or 'بدون عنوان'}\n{'═' * 15}\n"
+    if ctype == "post":
+        links = await get_content_links(item.id)
+        if links:
+            for idx, lnk in enumerate(links, 1):
+                header += f"{idx}. {lnk.link}\n"
+        else:
+            header += "لا توجد روابط بعد.\n"
+    elif ctype == "link":
+        header += f"🔗 {item.text_body or '—'}\n"
+    elif ctype == "text":
+        header += f"📝 {item.text_body or '—'}\n"
+    elif ctype == "file":
+        header += f"📎 ملف محفوظ ({item.file_kind or 'ملف'})\n"
+    await message.answer(header, reply_markup=reply_markup or content_edit_kb(ctype))
 
 
 @router.callback_query(AdminFilter(), F.data == "edit:cancel")
@@ -445,7 +701,8 @@ async def edit_cancel_cb(callback: CallbackQuery, state: FSMContext) -> None:
         await render_admin(callback.message, data.get("folder_id"))
     else:
         await state.set_state(MState.edit_menu)
-        await callback.message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        item = await get_content_item(item_id)
+        await callback.message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb(await _item_ctype(item)))
     await callback.answer()
 
 
@@ -456,17 +713,19 @@ async def edit_title_save(message: Message, state: FSMContext) -> None:
     new_title = message.text.strip()
     if new_title == "🔙 رجوع":
         await state.set_state(MState.edit_menu)
-        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb(await _item_ctype(item)))
         return
     await update_content_item_title(item_id, new_title)
     await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_title", f"✏️ محتوى #{item_id} ← {new_title}")
     await state.update_data(edit_item_title=new_title)
-    links = await get_content_links(item_id)
-    t = f"✅ تم تحديث الاسم.\n📄 {new_title}\n{'═' * 15}\n"
-    for idx, lnk in enumerate(links, 1):
-        t += f"{idx}. {lnk.link}\n"
+    item = await get_content_item(item_id)
     await state.set_state(MState.edit_menu)
-    await message.answer(t, reply_markup=content_edit_kb())
+    await render_item_menu(message, item, reply_markup=content_edit_kb((item.content_type if item else "post") or "post"))
+
+
+async def _item_ctype(item) -> str:
+    return (item.content_type if hasattr(item, "content_type") else None) or "post"
 
 
 @router.message(EditContentState.add_link, AdminFilter())
@@ -476,7 +735,8 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if text == "🔙 رجوع":
         await state.set_state(MState.edit_menu)
-        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb(await _item_ctype(item)))
         return
 
     urls = [u.strip() for u in text.split("\n") if u.strip()]
@@ -508,7 +768,8 @@ async def edit_addlink_save(message: Message, state: FSMContext) -> None:
         links = await get_content_links(item_id)
         t += "\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
     await state.set_state(MState.edit_menu)
-    await message.answer(t, reply_markup=content_edit_kb())
+    item = await get_content_item(item_id)
+    await message.answer(t, reply_markup=content_edit_kb(await _item_ctype(item)))
 
 
 @router.message(EditContentState.delete_link, AdminFilter())
@@ -518,7 +779,8 @@ async def edit_dellink_save(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if text == "🔙 رجوع":
         await state.set_state(MState.edit_menu)
-        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb(await _item_ctype(item)))
         return
     links = await get_content_links(item_id)
     try:
@@ -535,7 +797,91 @@ async def edit_dellink_save(message: Message, state: FSMContext) -> None:
     for idx, lnk in enumerate(links, 1):
         t += f"{idx}. {lnk.link}\n"
     await state.set_state(MState.edit_menu)
-    await message.answer(t, reply_markup=content_edit_kb())
+    item = await get_content_item(item_id)
+    await message.answer(t, reply_markup=content_edit_kb(await _item_ctype(item)))
+
+
+@router.message(EditContentState.edit_url, AdminFilter())
+async def edit_url_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    url = message.text.strip()
+    if url == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb("link"))
+        return
+    if not url.startswith(("http://", "https://", "www.")):
+        url = "https://" + url
+    ok = await update_content_item_payload(item_id, content_type="link", text_body=url)
+    if ok:
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_link", f"🔗 محتوى #{item_id} ← {url[:80]}")
+        await message.answer(f"✅ تم تحديث الرابط:\n{url}")
+    else:
+        await message.answer("❌ المحتوى غير موجود.")
+    await state.set_state(MState.edit_menu)
+    item = await get_content_item(item_id)
+    await render_item_menu(message, item, reply_markup=content_edit_kb("link"))
+
+
+@router.message(EditContentState.edit_text, AdminFilter())
+async def edit_text_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    text = message.text.strip()
+    if text == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb("text"))
+        return
+    if not text:
+        await message.answer("❌ النص فارغ.")
+        return
+    ok = await update_content_item_payload(item_id, content_type="text", text_body=text)
+    if ok:
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_text", f"📝 محتوى #{item_id}")
+        await message.answer("✅ تم تحديث النص.")
+    else:
+        await message.answer("❌ المحتوى غير موجود.")
+    await state.set_state(MState.edit_menu)
+    item = await get_content_item(item_id)
+    await render_item_menu(message, item, reply_markup=content_edit_kb("text"))
+
+
+@router.message(EditContentState.edit_file, AdminFilter())
+async def edit_file_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    item_id = data.get("edit_item_id")
+    if message.text and message.text.strip() == "🔙 رجوع":
+        await state.set_state(MState.edit_menu)
+        item = await get_content_item(item_id)
+        await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb("file"))
+        return
+    kind, fid = None, None
+    if message.document:
+        kind, fid = "document", message.document.file_id
+    elif message.photo:
+        kind, fid = "photo", message.photo[-1].file_id
+    elif message.video:
+        kind, fid = "video", message.video.file_id
+    elif message.audio:
+        kind, fid = "audio", message.audio.file_id
+    elif message.voice:
+        kind, fid = "voice", message.voice.file_id
+    elif message.animation:
+        kind, fid = "animation", message.animation.file_id
+    if not fid:
+        await message.answer("❌ أرسل ملفاً صالحاً (مستند/صورة/فيديو/صوت).", reply_markup=cancel_inline_kb())
+        return
+    ok = await update_content_item_payload(item_id, content_type="file", file_id=fid, file_kind=kind)
+    if ok:
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "", "edit_content_file", f"📎 محتوى #{item_id}")
+        await message.answer("✅ تم تحديث الملف.")
+    else:
+        await message.answer("❌ المحتوى غير موجود.")
+    await state.set_state(MState.edit_menu)
+    item = await get_content_item(item_id)
+    await render_item_menu(message, item, reply_markup=content_edit_kb("file"))
 
 
 # ─── Back ───
@@ -665,7 +1011,7 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
             await message.bot.send_chat_action(message.chat.id, "typing")
         except Exception:
             pass
-        _spawn(_forward_with_log(message, item_match[0].id, text))
+        _spawn(_deliver_item(message, item_match[0], text))
     else:
         user_obj = message.from_user
         if user_obj.id in settings.admin_ids or await is_admin_user(user_obj.id):

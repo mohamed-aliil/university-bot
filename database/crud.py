@@ -956,10 +956,12 @@ async def rename_folder(folder_id: int, new_name: str) -> bool:
     return True
 
 
-async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
+async def add_content_item(folder_id: int, title: str = None, content_type: str = "post",
+                           text_body: str = None, file_id: str = None, file_kind: str = None) -> ContentItem:
     clear_ai_context()
     async with async_session() as session:
-        ci = ContentItem(folder_id=folder_id, title=title)
+        ci = ContentItem(folder_id=folder_id, title=title, content_type=content_type,
+                         text_body=text_body, file_id=file_id, file_kind=file_kind)
         session.add(ci)
         await session.commit()
         await session.refresh(ci)
@@ -1060,6 +1062,39 @@ async def update_content_item_title(item_id: int, title: str) -> bool:
         for it in tree["items"]:
             if it.id == item_id:
                 it.title = title
+        _patch_materials_tree(tree)
+    return True
+
+
+async def update_content_item_payload(item_id: int, content_type: str = None, text_body: str = None,
+                                       file_id: str = None, file_kind: str = None) -> bool:
+    clear_ai_context()
+    async with async_session() as session:
+        obj = await session.get(ContentItem, item_id)
+        if not obj:
+            return False
+        if content_type is not None:
+            obj.content_type = content_type
+        if text_body is not None:
+            obj.text_body = text_body
+        if file_id is not None:
+            obj.file_id = file_id
+        if file_kind is not None:
+            obj.file_kind = file_kind
+        await session.commit()
+        await session.refresh(obj)
+    tree = _materials_tree()
+    if tree is not None:
+        for it in tree["items"]:
+            if it.id == item_id:
+                if content_type is not None:
+                    it.content_type = content_type
+                if text_body is not None:
+                    it.text_body = text_body
+                if file_id is not None:
+                    it.file_id = file_id
+                if file_kind is not None:
+                    it.file_kind = file_kind
         _patch_materials_tree(tree)
     return True
 

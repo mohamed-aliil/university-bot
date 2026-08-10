@@ -32,3 +32,13 @@ async def init_db():
     async with engine.begin() as conn:
         from .models import User, Message, Attachment, NewsTemplate, Folder, ContentItem, ContentLink, UserPreference, BotSetting, RequiredChannel, AILog, ErrorLog
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight migrations for existing tables (new content-item fields)
+        from sqlalchemy import text as _sql
+        if _url.startswith("postgresql+asyncpg"):
+            for col, ctype in (
+                ("content_type", "VARCHAR(20) DEFAULT 'post'"),
+                ("text_body", "TEXT"),
+                ("file_id", "VARCHAR(512)"),
+                ("file_kind", "VARCHAR(50)"),
+            ):
+                await conn.execute(_sql(f"ALTER TABLE content_items ADD COLUMN IF NOT EXISTS {col} {ctype}"))
