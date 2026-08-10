@@ -32,3 +32,7 @@ async def init_db():
     async with engine.begin() as conn:
         from .models import User, Message, Attachment, NewsTemplate, Folder, ContentItem, ContentLink, UserPreference, BotSetting, RequiredChannel, AILog, ErrorLog
         await conn.run_sync(Base.metadata.create_all)
+        # Lightweight migration: folders custom reply text (existing tables)
+        from sqlalchemy import text as _sql
+        if _url.startswith("postgresql+asyncpg"):
+            await conn.execute(_sql("ALTER TABLE folders ADD COLUMN IF NOT EXISTS reply_text TEXT"))

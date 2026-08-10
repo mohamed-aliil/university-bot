@@ -151,6 +151,8 @@ class Folder(Base):
     id = Column(Integer, primary_key=True)
     parent_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=True)
     name = Column(String, nullable=False)
+    # Custom reply text shown when someone opens this folder (student/admin)
+    reply_text = Column(Text, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
 

@@ -956,6 +956,24 @@ async def rename_folder(folder_id: int, new_name: str) -> bool:
     return True
 
 
+async def update_folder_reply(folder_id: int, reply_text: str) -> bool:
+    clear_ai_context()
+    async with async_session() as session:
+        f = await session.get(Folder, folder_id)
+        if not f:
+            return False
+        f.reply_text = reply_text if reply_text.strip() else None
+        await session.commit()
+        await session.refresh(f)
+    tree = _materials_tree()
+    if tree is not None:
+        for x in tree["folders"]:
+            if x.id == folder_id:
+                x.reply_text = f.reply_text
+        _patch_materials_tree(tree)
+    return True
+
+
 async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
     clear_ai_context()
     async with async_session() as session:

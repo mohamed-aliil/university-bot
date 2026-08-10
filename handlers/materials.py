@@ -49,6 +49,7 @@ class MState(StatesGroup):
     deleting = State()
     edit_menu = State()
     rename_folder = State()
+    edit_folder_reply = State()
 
 
 class EditContentState(StatesGroup):
@@ -109,10 +110,16 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
     folders, items, f = await _tree_view(folder_id)
     if folder_id:
         name = f.name if f else "?"
+        custom_reply = getattr(f, "reply_text", None) if f else None
         msg = f"📍 {name}\n"
+        if custom_reply:
+            msg += f"\n📝 الرد المخصص:\n{custom_reply}\n"
         if items:
             msg += "📄 المحتوى:\n" + "\n".join(f"  • {i.title or 'بدون عنوان'}" for i in items)
-        rename_kb = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="تعديل الاسم", callback_data=f"rename_folder:{folder_id}")]])
+        rename_kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}"),
+             InlineKeyboardButton(text="📝 تعديل الرد", callback_data=f"edit_folder_reply:{folder_id}")],
+        ])
         await message.answer(msg, reply_markup=rename_kb)
         await message.answer("─" * 5, reply_markup=build_kb(folders, items))
     else:
@@ -292,6 +299,54 @@ async def rename_folder_cb(callback: CallbackQuery, state: FSMContext) -> None:
     await state.set_state(MState.rename_folder)
     await callback.message.answer(f"✏️ تغيير اسم المجلد: {f.name}\nأرسل الاسم الجديد:", reply_markup=cancel_inline_kb())
     await callback.answer()
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("edit_folder_reply:"))
+async def edit_folder_reply_cb(callback: CallbackQuery, state: FSMContext) -> None:
+    folder_id = int(callback.data.split(":")[1])
+    f = await get_folder(folder_id)
+    if not f:
+        await callback.answer("❌ المجلد غير موجود.")
+        return
+    cur = getattr(f, "reply_text", None)
+    await state.update_data(edit_reply_folder_id=folder_id)
+    await state.set_state(MState.edit_folder_reply)
+    hint = f"📝 الرد الحالي:\n{cur}\n\n" if cur else ""
+    await callback.message.answer(
+        f"✏️ الرد الذي سيظهر عند فتح مجلد «{f.name}»:\n\n{hint}"
+        "أرسل الرد الجديد (نص فقط).\nأو أرسل «مسح» لحذف الرد، أو «🔙 رجوع» للإلغاء.",
+        reply_markup=cancel_inline_kb(),
+    )
+    await callback.answer()
+
+
+@router.message(MState.edit_folder_reply, AdminFilter())
+async def edit_folder_reply_save(message: Message, state: FSMContext) -> None:
+    data = await state.get_data()
+    folder_id = data.get("edit_reply_folder_id")
+    if not folder_id:
+        await state.set_state(MState.browsing)
+        await render_admin(message)
+        return
+    text = message.text.strip()
+    if text == "🔙 رجوع":
+        await state.set_state(MState.browsing)
+        await render_admin(message, folder_id)
+        return
+    if text == "مسح":
+        text = ""
+    ok = await update_folder_reply(folder_id, text)
+    if ok:
+        await save_admin_action(message.from_user.id, message.from_user.full_name or "",
+                                "edit_folder_reply", f"📝 مجلد #{folder_id}")
+        if text:
+            await message.answer(f"✅ تم حفظ الرد:\n\n{text}")
+        else:
+            await message.answer("✅ تم حذف الرد.")
+    else:
+        await message.answer("❌ المجلد غير موجود.")
+    await state.set_state(MState.browsing)
+    await render_admin(message, folder_id)
 
 
 @router.message(MState.rename_folder, AdminFilter())
@@ -604,7 +659,9 @@ async def student_back(message: Message, state: FSMContext) -> None:
             await state.update_data(folder_id=pid)
             if pid:
                 subs, items, pf = await _tree_view(pid)
-                await message.answer(f"📍 {pf.name}", reply_markup=student_kb(subs, items))
+                custom_reply = getattr(pf, "reply_text", None) if pf else None
+                await message.answer(custom_reply if custom_reply else f"📍 {pf.name}",
+                                     reply_markup=student_kb(subs, items))
                 return
             folders, _, _ = await _tree_view(None)
             await message.answer("نَافِذَةُ المَوَادَ:", reply_markup=student_kb(folders, []))
@@ -659,7 +716,9 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
         fid = folder_match[0].id
         await state.update_data(folder_id=fid)
         subs, content, f = await _tree_view(fid)
-        await message.answer(f"📍 {f.name}", reply_markup=student_kb(subs, content))
+        custom_reply = getattr(f, "reply_text", None) if f else None
+        display = custom_reply if custom_reply else f"📍 {f.name}"
+        await message.answer(display, reply_markup=student_kb(subs, content))
     elif item_match:
         try:
             await message.bot.send_chat_action(message.chat.id, "typing")
