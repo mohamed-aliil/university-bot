@@ -159,11 +159,6 @@ class ContentItem(Base):
     id = Column(Integer, primary_key=True)
     folder_id = Column(Integer, ForeignKey("folders.id", ondelete="CASCADE"), nullable=False)
     title = Column(String, nullable=True)
-    # Content type: "post" (t.me link forwarded), "link" (external URL), "text", "file"
-    content_type = Column(String(20), default="post", nullable=False)
-    text_body = Column(Text, nullable=True)
-    file_id = Column(String(512), nullable=True)
-    file_kind = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
 
 
