@@ -100,15 +100,21 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     MODELS = [
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
-        "openai/gpt-oss-120b",
-        "gpt-oss-120b",
+        "llama-3.1-70b-versatile",
+        "llama-3.1-8b-instant",
+        "mixtral-8x7b-32768",
+        "gemma2-9b-it",
     ]
+    # Models that are permanently deprecated/removed (404) - never retry
+    _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b"}
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
 
     for model in MODELS:
+        if model in _DEPRECATED_MODELS:
+            continue
         # Skip models that hit rate limit recently (60s cooldown)
         if time.monotonic() - _MODEL_COOLDOWN.get(model, 0.0) < 60.0:
             logger.info("Skipping %s (on 429 cooldown)", model)
@@ -137,9 +143,14 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                             break  # No sleep-retry same model: go to next one
                         if resp.status != 200:
                             body = await resp.text()
+                            if resp.status == 404:
+                                _DEPRECATED_MODELS.add(model)
+                                logger.warning("Groq model %s not found (404) — marked deprecated permanently", model)
+                                break
                             if "decommissioned" in body or "deprecated" in body:
+                                _DEPRECATED_MODELS.add(model)
                                 logger.warning("Groq model %s deprecated, trying next", model)
-                                break  # Try next model
+                                break
                             LAST_GROQ_ERROR = f"HTTP {resp.status}: {body[:150]}"
                             logger.warning("Groq %s error %s: %s", model, resp.status, body[:200])
                             break  # Try next model
