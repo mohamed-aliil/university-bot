@@ -101,15 +101,15 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     MODELS = [
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
-        "llama-3.3-70b-versatile",
         "llama-3.1-70b-versatile",
         "llama-3.1-8b-instant",
         "mixtral-8x7b-32768",
         "gemma2-9b-it",
+        "llama-3.3-70b-versatile",
         "deepseek-r1-distill-llama-70b",
     ]
     # Models that are permanently deprecated/removed (404) - never retry
-    _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"}
+    _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b"}
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
