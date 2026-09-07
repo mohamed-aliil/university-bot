@@ -755,12 +755,12 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await message.bot.send_chat_action(message.chat.id, "typing")
     except Exception:
         pass
-    answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048)
+    answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, compact=True)
     if not answer:
         # Transient failure (429/timeout): retry right away before giving up
         logger.warning("AI first attempt returned nothing — retrying once")
         await asyncio.sleep(2)
-        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048)
+        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, compact=True)
     if answer:
         # Process [SAVE_ALIAS] command from AI response
         save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)

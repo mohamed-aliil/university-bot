@@ -48,19 +48,18 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
     return best
 
 
-async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024) -> str | None:
+async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024, compact: bool = False) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     t0 = time.perf_counter()
     try:
         groq_keys = settings.groq_keys
-        # Load balance: pick key with most available tokens
         tried = set()
         for _ in groq_keys:
             key = await _pick_best_key(groq_keys, tried)
             if not key:
                 break
             tried.add(key)
-            result = await _call_groq(prompt, system_prompt, key, max_tokens=max_tokens)
+            result = await _call_groq(prompt, system_prompt, key, max_tokens=max_tokens, compact=compact)
             if result:
                 LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
@@ -91,8 +90,11 @@ LAST_GEMINI_ERROR: str = ""
 LAST_CALL_ERROR: str = ""
 
 
-async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
+async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024, compact: bool = False) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
+    # Compact mode: truncate system prompt to avoid "Request too large" on small-context models
+    if compact and system_prompt and len(system_prompt) > 8000:
+        system_prompt = system_prompt[:8000] + "\n... [مختصر للسياق]"
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
@@ -101,12 +103,6 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     MODELS = [
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
-        "llama-3.1-70b-versatile",
-        "llama-3.1-8b-instant",
-        "mixtral-8x7b-32768",
-        "gemma2-9b-it",
-        "llama-3.3-70b-versatile",
-        "deepseek-r1-distill-llama-70b",
     ]
     # Models that are permanently deprecated/removed (404) - never retry
     _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b"}
