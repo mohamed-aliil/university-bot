@@ -124,7 +124,6 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": max_tokens,
-            "stop": ["[Output Generation]", "[Final Response]", "[Final Answer]", "<thinking>", "التفكير:", "Thinking:", "Let me think", "دعني أفكر"],
         }
         for attempt in range(3):  # Retry up to 3 times on 429
             try:
@@ -189,10 +188,7 @@ async def _call_gemini(prompt: str, system_prompt: str, api_key: str, max_tokens
         url = f"https://generativelanguage.googleapis.com/v1/models/{model}:generateContent?key={api_key}"
         payload = {
             "contents": [{"parts": [{"text": full_prompt}]}],
-            "generationConfig": {
-                "maxOutputTokens": max_tokens,
-                "stopSequences": ["[Output Generation]", "[Final Response]", "[Final Answer]", "<thinking>", "التفكير:", "Thinking:", "Let me think", "دعني أفكر"],
-            },
+            "generationConfig": {"maxOutputTokens": max_tokens},
         }
         try:
             async with aiohttp.ClientSession() as session:
