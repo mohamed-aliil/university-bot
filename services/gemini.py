@@ -92,6 +92,7 @@ LAST_CALL_ERROR: str = ""
 
 
 async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
+    global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
