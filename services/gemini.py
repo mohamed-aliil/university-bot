@@ -49,6 +49,7 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
 
 
 async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024) -> str | None:
+    global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     t0 = time.perf_counter()
     try:
         groq_keys = settings.groq_keys
