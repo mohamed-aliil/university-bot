@@ -612,6 +612,18 @@ def _strip_cot(answer: str) -> str:
             similarity = len(common) / max(len(set(first)), len(set(last)))
             if similarity > 0.85:
                 text = last
+    else:
+        # Single paragraph - check for intra-paragraph duplicates (single newline separation)
+        single_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
+        if len(single_lines) > 1:
+            # Check if first and last single line are near-duplicates
+            first_s = single_lines[0]
+            last_s = single_lines[-1]
+            if first_s and last_s:
+                common_s = set(first_s) & set(last_s)
+                similarity_s = len(common_s) / max(len(set(first_s)), len(set(last_s)))
+                if similarity_s > 0.85:
+                    text = last_s
 
     # 3) Drop English thinking lines; keep Arabic + numeric/bulleted content
     lines = re.split(r"\n+", text)
