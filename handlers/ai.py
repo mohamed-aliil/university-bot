@@ -576,13 +576,14 @@ _COT_MARKER_PATTERNS = (
 def _strip_cot(answer: str) -> str:
     """Remove internal chain-of-thought reasoning from an AI reply, keeping
     only the final Arabic answer. Handles [Output Generation]/[Final], HTML
-    <thinking>, English "thinking-phase" paragraphs, and trailing markers."""
+    <thinking>, English "thinking-phase" paragraphs, and trailing markers.
+    Also removes duplicate repeated answer blocks within the same response."""
     text = re.sub(r"<thinking>.*?</thinking>", "", answer, flags=re.DOTALL)
     text = re.sub(r"<output>.*?</output>", "", text, flags=re.DOTALL)
     text = re.sub(r"<[^>]+>", "", text)
     text = text.replace("**", "").strip()
-    # Cut everything from the LAST explicit output marker (models add several
-    # nested [Output Generation] blocks; the final one holds the real answer).
+
+    # 1) Cut at LAST explicit output marker (nested [Output Generation] blocks)
     last_marker = None
     for pat in _COT_MARKER_PATTERNS:
         matches = list(re.finditer(pat, text, re.DOTALL))
@@ -597,7 +598,22 @@ def _strip_cot(answer: str) -> str:
             text = arrow.group(1).strip().rstrip('"')
         else:
             text = text.split("->", 1)[-1].strip() if "->" in seg else seg
-    # Drop any English thinking lines; keep Arabic and numeric/bulleted content.
+
+    # 2) Remove duplicate repeated answer blocks (model sometimes outputs same answer twice)
+    # Split by double newline, find near-identical paragraphs
+    paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
+    if len(paras) > 1:
+        # If first and last paragraph are very similar (>85% overlap), keep only last
+        first = paras[0]
+        last = paras[-1]
+        # Simple similarity: character set overlap
+        if first and last:
+            common = set(first) & set(last)
+            similarity = len(common) / max(len(set(first)), len(set(last)))
+            if similarity > 0.85:
+                text = last
+
+    # 3) Drop English thinking lines; keep Arabic + numeric/bulleted content
     lines = re.split(r"\n+", text)
     kept = []
     for line in lines:
@@ -607,9 +623,7 @@ def _strip_cot(answer: str) -> str:
         arabic = len(re.findall(r"[\u0600-\u06FF]", s))
         total = len(s)
         ratio = arabic / total if total else 0
-        low = s.lower()
         # Keep Arabic lines + short numeric/bullet labels; drop English thinking
-        # lines or English fragments preceding the Arabic answer on same line.
         if ratio >= 0.35:
             kept.append(s)
         elif ratio == 0 and total <= 40 and re.match(r"^[\d\s.\-•\)\*]+$", s):
@@ -617,8 +631,7 @@ def _strip_cot(answer: str) -> str:
     if kept:
         text = "\n".join(kept)
     else:
-        # Fallback: nothing Arabic-dominated survived — keep the LAST line
-        # (models usually put the final answer last).
+        # Fallback: keep the LAST paragraph (models usually put final answer last)
         paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
         if paras:
             last = paras[-1]
@@ -828,6 +841,17 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             logger.warning("forward_items_from_answer failed: %s", exc)
         # Strip Telegram links from displayed text (files already forwarded)
         clean_answer = _strip_cot(answer)
+        # Extra guard: remove consecutive duplicate paragraphs in final answer
+        lines = clean_answer.splitlines()
+        deduped = []
+        prev = None
+        for line in lines:
+            s = line.strip()
+            if s and s == prev:
+                continue
+            deduped.append(line)
+            prev = s
+        clean_answer = "\n".join(deduped)
         # Remove the internal [FORWARD] ... instruction line from the user reply
         clean_answer = re.sub(r"\[FORWARD\][^\n]*\n?", "", clean_answer, flags=re.IGNORECASE)
         # Remove t.me links one more time after filtering (e.g. pasted full links)
