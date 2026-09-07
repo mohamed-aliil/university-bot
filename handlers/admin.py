@@ -8,6 +8,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from filters import AdminFilter, SuperAdminFilter, PermissionFilter
+from database.crud import get_errors_db
 from database.crud import (
     ban_user, unban_user, get_user, set_admin, get_all_admins,
     unban_all_users, add_autoreply, remove_autoreply, get_all_autoreplies,
@@ -74,6 +75,18 @@ class SendMsgState(StatesGroup):
 
 class BroadcastState(StatesGroup):
     waiting_for_msg = State()
+
+
+# ─── Quick error log command (debug) ───
+@router.message(SuperAdminFilter(), F.text == "/errors")
+async def errors_cmd(message: Message) -> None:
+    from database.crud import get_errors_db
+    from keyboards.reply import errors_view_keyboard
+    errors = await get_errors_db(20)
+    await message.answer(
+        f"📋 آخر 20 خطأ:\n\n<code>{html_mod.escape(errors)}</code>",
+        reply_markup=errors_view_keyboard(),
+    )
 
 
 class BanUserState(StatesGroup):
