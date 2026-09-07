@@ -48,30 +48,22 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
     return best
 
 
-# Minimal system prompt for Groq (avoid "Request too large")
-_MINIMAL_SYSTEM_PROMPT = (
-    "أنت مساعد ذكي للجامعة. أجب بالعربية فقط، بلا تفكير داخلي، بلا Markdown. "
-    "إذا سأل عن مادة/شيتات: اذكر اسم المحتوى فقط، الملفات ترسل تلقائياً. "
-    "لا ترسل روابط، لا تدّعي إرسال ملفات. كن مختصراً ومباشراً."
-)
-
-async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024, compact: bool = False) -> str | None:
+async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024, use_groq: bool = True) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     t0 = time.perf_counter()
     try:
-        groq_keys = settings.groq_keys
-        tried = set()
-        for _ in groq_keys:
-            key = await _pick_best_key(groq_keys, tried)
-            if not key:
-                break
-            tried.add(key)
-            # Groq gets minimal prompt when compact=True
-            groq_system = _MINIMAL_SYSTEM_PROMPT if compact else system_prompt
-            result = await _call_groq(prompt, groq_system, key, max_tokens=max_tokens)
-            if result:
-                LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
-                return result
+        if use_groq:
+            groq_keys = settings.groq_keys
+            tried = set()
+            for _ in groq_keys:
+                key = await _pick_best_key(groq_keys, tried)
+                if not key:
+                    break
+                tried.add(key)
+                result = await _call_groq(prompt, _MINIMAL_SYSTEM_PROMPT, key, max_tokens=max_tokens)
+                if result:
+                    LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
+                    return result
 
         # Fallback to Gemini keys (always gets full system prompt)
         for key in settings.gemini_keys:
@@ -99,12 +91,19 @@ LAST_GEMINI_ERROR: str = ""
 LAST_CALL_ERROR: str = ""
 
 
+# Minimal system prompt for Groq (used when Groq is enabled)
+_MINIMAL_SYSTEM_PROMPT = (
+    "أنت مساعد ذكي للجامعة. أجب بالعربية فقط، بلا تفكير داخلي، بلا Markdown. "
+    "إذا سأل عن مادة/شيتات: اذكر اسم المحتوى فقط، الملفات ترسل تلقائياً. "
+    "لا ترسل روابط، لا تدّعي إرسال ملفات. كن مختصراً ومباشراً."
+)
+
+
 async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
-    messages.append({"role": "user", "content": prompt})
     messages.append({"role": "user", "content": prompt})
 
     MODELS = [
