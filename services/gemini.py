@@ -48,6 +48,13 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
     return best
 
 
+# Minimal system prompt for Groq (avoid "Request too large")
+_MINIMAL_SYSTEM_PROMPT = (
+    "أنت مساعد ذكي للجامعة. أجب بالعربية فقط، بلا تفكير داخلي، بلا Markdown. "
+    "إذا سأل عن مادة/شيتات: اذكر اسم المحتوى فقط، الملفات ترسل تلقائياً. "
+    "لا ترسل روابط، لا تدّعي إرسال ملفات. كن مختصراً ومباشراً."
+)
+
 async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024, compact: bool = False) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     t0 = time.perf_counter()
@@ -59,12 +66,14 @@ async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 10
             if not key:
                 break
             tried.add(key)
-            result = await _call_groq(prompt, system_prompt, key, max_tokens=max_tokens, compact=compact)
+            # Groq gets minimal prompt when compact=True
+            groq_system = _MINIMAL_SYSTEM_PROMPT if compact else system_prompt
+            result = await _call_groq(prompt, groq_system, key, max_tokens=max_tokens)
             if result:
                 LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
 
-        # Fallback to Gemini keys
+        # Fallback to Gemini keys (always gets full system prompt)
         for key in settings.gemini_keys:
             result = await _call_gemini(prompt, system_prompt, key, max_tokens=max_tokens)
             if result:
@@ -90,14 +99,12 @@ LAST_GEMINI_ERROR: str = ""
 LAST_CALL_ERROR: str = ""
 
 
-async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024, compact: bool = False) -> str | None:
+async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
-    # Compact mode: truncate system prompt to avoid "Request too large" on small-context models
-    if compact and system_prompt and len(system_prompt) > 8000:
-        system_prompt = system_prompt[:8000] + "\n... [مختصر للسياق]"
     messages = []
     if system_prompt:
         messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": prompt})
     messages.append({"role": "user", "content": prompt})
 
     MODELS = [
