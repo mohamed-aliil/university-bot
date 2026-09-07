@@ -101,13 +101,15 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     MODELS = [
         "openai/gpt-oss-20b",
         "qwen/qwen3.6-27b",
+        "llama-3.3-70b-versatile",
         "llama-3.1-70b-versatile",
         "llama-3.1-8b-instant",
         "mixtral-8x7b-32768",
         "gemma2-9b-it",
+        "deepseek-r1-distill-llama-70b",
     ]
     # Models that are permanently deprecated/removed (404) - never retry
-    _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b"}
+    _DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b", "llama-3.1-70b-versatile", "llama-3.1-8b-instant", "mixtral-8x7b-32768", "gemma2-9b-it"}
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
@@ -151,6 +153,10 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                             if "decommissioned" in body or "deprecated" in body:
                                 _DEPRECATED_MODELS.add(model)
                                 logger.warning("Groq model %s deprecated, trying next", model)
+                                break
+                            if resp.status in (413, 400) and "too large" in body.lower():
+                                _DEPRECATED_MODELS.add(model)
+                                logger.warning("Groq model %s request too large — marked deprecated", model)
                                 break
                             LAST_GROQ_ERROR = f"HTTP {resp.status}: {body[:150]}"
                             logger.warning("Groq %s error %s: %s", model, resp.status, body[:200])
