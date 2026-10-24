@@ -9,15 +9,16 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardMarkup, ReplyKeyboardMarkup
 from filters import AdminFilter
-from database.crud import (add_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs,
+from database.crud import (add_qa, update_qa, delete_qa, get_all_qa, save_pdf_context, delete_pdf_context, get_all_pdfs,
                            get_folder, get_content_items, get_folders, get_content_links,
-                           add_article, delete_article, get_all_articles, get_all_prerequisites,
-                             clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent,
+                           add_article, update_article, delete_article, get_all_articles, get_all_prerequisites,
+                             clear_prerequisites, add_prerequisite, is_ai_active, is_ai_silent, set_ai_active,
                              add_folder, remove_folder, rename_folder, add_content_item, remove_content_item,
                              update_content_item_title, add_content_link, remove_content_link, update_content_link,
                              ban_user, unban_user, get_user, add_alias,
                              get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action,
-                             add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users, get_all_materials)
+                             add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users, get_all_materials,
+                             get_stats, get_all_user_messages)
 from keyboards.reply import ai_admin_keyboard, ai_qa_keyboard, ai_articles_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from services.ai_context import get_cached_context, clear_ai_context
@@ -93,26 +94,78 @@ def _normalize_ar(text: str) -> str:
     return t
 
 
+_DIALECT_SYNONYMS: dict[str, list[str]] = {
+    "قداش": ["كم", "عدد", "درجه", "وحدات", "نسبه", "ساعات", "معدل"],
+    "بكم": ["كم", "درجه", "وحدات", "ساعات"],
+    "امتي": ["متي", "موعد", "تاريخ", "وقت", "امتحان", "جدول"],
+    "امتا": ["متي", "موعد", "تاريخ", "وقت", "امتحان", "جدول"],
+    "فوقاش": ["متي", "موعد", "تاريخ", "وقت"],
+    "وين": ["مكان", "قاعه", "مدرج", "قسم", "موقع"],
+    "شن": ["ما", "ماذا", "شروط", "متطلبات"],
+    "شنو": ["ما", "ماذا", "شروط", "متطلبات"],
+    "شني": ["ما", "ماذا", "شروط", "متطلبات"],
+    "يفتح": ["تفتح", "متطلب", "تمهيدي"],
+    "تفتحلي": ["تفتح", "متطلب", "مواد"],
+    "يحتاج": ["تحتاج", "متطلب", "قبلي"],
+    "تحتاج": ["متطلب", "قبلي", "تفتح"],
+    "سيمستر": ["فصل", "دراسي", "سمستر", "خريف", "ربيع"],
+    "سمستر": ["فصل", "دراسي", "سيمستر", "خريف", "ربيع"],
+    "ترم": ["فصل", "دراسي", "سمستر"],
+    "تنزيل": ["تسجيل", "مواد", "وحدات", "منظومه", "اضافه"],
+    "منظومه": ["تسجيل", "تنزيل", "نتائج", "مواد"],
+    "اسقاط": ["سحب", "حذف", "انسحاب", "وقف", "قيد"],
+    "شيت": ["شيتات", "ملف", "ملفات", "محاضرات", "منهج"],
+    "شيتات": ["شيت", "ملف", "ملفات", "محاضرات", "منهج"],
+    "ملخص": ["شيت", "ملفات", "محاضرات", "مراجعه"],
+    "نصفي": ["ميد", "اعمال", "سنه", "امتحان", "درجات"],
+    "ميد": ["نصفي", "اعمال", "سنه", "امتحان"],
+    "فاينل": ["نهائي", "امتحان", "درجات"],
+    "فاينال": ["نهائي", "امتحان", "درجات"],
+    "طاح": ["رسوب", "اعاده", "انذار", "نجاح"],
+    "رسبت": ["رسوب", "اعاده", "انذار", "فصل"],
+    "صفي": ["نجاح", "اجتياز", "تخرج", "وحدات"],
+    "كالكولس": ["رياضيات", "تفاضل", "تكامل", "حسبان", "math", "ma"],
+    "كالكلس": ["رياضيات", "تفاضل", "تكامل", "حسبان", "math", "ma"],
+    "حسبان": ["رياضيات", "تفاضل", "تكامل", "كالكولس"],
+    "سي": ["برمجه", "حاسوب", "c++", "cs"],
+    "بلس": ["برمجه", "حاسوب", "c++", "cs"],
+    "بروجرامينج": ["برمجه", "حاسوب", "cs"],
+    "داتا": ["هياكل", "تراكيب", "بيانات", "data"],
+    "ديسكريت": ["متقطعه", "رياضيات", "discrete"],
+    "فيزيا": ["فيزياء", "طبيعه", "phys", "ph"],
+    "طبيعه": ["فيزياء", "فيزيا", "ph"],
+    "سيركت": ["دوائر", "كهربائيه", "ee"],
+    "استاتيكا": ["ميكانيكا", "استاتيكا", "ge"],
+    "داينميكا": ["ميكانيكا", "ديناميكا", "ge"],
+    "انجليزي": ["انجليزيه", "لغه", "en"],
+    "انقلش": ["انجليزيه", "لغه", "en"],
+}
+
+
 def _extract_query_keywords(q: str, history: list[dict], alias_items: list[tuple[str, str, str]]) -> set[str]:
-    """Extract normalized keywords from user question, recent turns, and matched course aliases."""
+    """Extract normalized keywords from user question, recent turns, dialect synonyms, and matched course aliases."""
     combined = q or ""
     for turn in (history or [])[-2:]:
         combined += " " + (turn.get("user") or "")
     norm = _normalize_ar(combined)
     words = {w for w in re.findall(r"[\w\u0600-\u06FF]{2,}", norm) if len(w) >= 2}
     stop_words = {
-        "من", "في", "على", "الى", "عن", "مع", "هل", "ما", "ماذا", "كيف", "متى",
-        "اين", "ليش", "شن", "شنو", "شني", "اللي", "هذا", "هذه", "ان", "كان",
-        "لو", "او", "ام", "كل", "بس", "فيه", "فيها", "عندي", "نبي", "ابغي",
-        "اريد", "ممكن", "سؤال", "يا", "نافذه", "بوت", "الجامعه", "الكليه",
+        "من", "في", "على", "الى", "عن", "مع", "هل", "ما", "ماذا", "كيف",
+        "اللي", "هذا", "هذه", "ان", "كان", "لو", "او", "ام", "كل", "بس",
+        "فيه", "فيها", "عندي", "نبي", "ابغي", "اريد", "ممكن", "سؤال", "يا",
+        "نافذه", "بوت", "الجامعه", "الكليه", "طالب", "طلبه", "شن", "شنو", "شني",
     }
     keywords = words - stop_words
+    expanded = set(keywords)
+    for w in list(words):
+        for syn in _DIALECT_SYNONYMS.get(w, ()):
+            expanded.add(_normalize_ar(syn))
     for alias, code, cname in (alias_items or []):
         na = _normalize_ar(alias)
         if na and na in norm:
             for extra in re.findall(r"[\w\u0600-\u06FF]{2,}", _normalize_ar(f"{code} {cname}")):
-                keywords.add(extra)
-    return keywords
+                expanded.add(extra)
+    return expanded
 
 
 def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_articles_chars: int = 32000, compact: bool = False) -> dict:
@@ -875,9 +928,15 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     history: list[dict] = data.get("history", [])
 
+    try:
+        uname = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
+        await log_ai_action(message.from_user.id, uname, f"❓ سؤال: {q[:80]}")
+    except Exception:
+        pass
+
     # Check if AI previously offered to notify admins and user is confirming
     if data.get("pending_admin_notify"):
-        confirm_words = ["نعم", "اي", "أي", "ايه", "أيه", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات", "ارسل", "ابعت"]
+        confirm_words = ["نعم", "اي", "أي", "ايه", "أيه", "تمام", "طيب", "باهي", "ايوه", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات", "ارسل", "ابعت"]
         if any(w in q.lower() for w in confirm_words):
             await message.answer(
                 "حسناً، هل تريد مني إرسال طلبك إلى المشرفين الآن؟",
@@ -914,8 +973,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         h_ctx = "\n".join(h_lines)
         h_note = f"\n💬 سجل المحادثة السابقة:\n{h_ctx}\n" if h_ctx else ""
         return (
-            "أنت «مساعد نَافِذَة الذكي» — المساعد الرسمي والوحيد المخصص لطلاب الجامعة عبر منصة «نَافِذَة».\n"
-            "مهمتك الوحيدة والحصرية هي خدمة طلاب الجامعة والإجابة على استفساراتهم اعتماداً فقط على البيانات الرسمية المرفقة أدناه.\n\n"
+            "أنت «مساعد نَافِذَة الذكي» — المساعد الجامعي الرسمي المعتمد لطلاب الجامعة عبر منصة «نَافِذَة».\n"
+            "شخصيتك: سلس جداً، ودود، قريب من الطالب، تفهم جميع اللهجات العربية (وخاصة اللهجة الليبية الدارجة ومصطلحات الطلبة مثل: قداش، امتى، شن يفتح، شن يحتاج، سيمستر، تنزيل، تصفية، شيتات، نصفي، فاينل، وأسماء المواد المكتوبة بالعربي أو الإنجليزي مثل كالكولس، سي بلس، ديسكريت، فيزيا) وترد بأسلوب واضح، مرتب، ومريح، وفي نفس الوقت أنت على قدر عالٍ من المسؤولية والأمانة العلمية.\n\n"
             "📂 البيانات الرسمية المعتمدة في «نَافِذَة»:\n"
             f"{c['aliases']}\n"
             f"📰 أولاً: المقالات والمنشورات الرسمية:\n{c['articles']}\n\n"
@@ -924,22 +983,24 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             f"🔗 رابعاً: شجرة المتطلبات الدراسية:\n{c['prereqs']}\n\n"
             f"{c['pdf']}\n"
             f"{h_note}\n"
-            "🚫 القواعد الصارمة والإلزامية (يُمنع مخالفتها منعاً باتاً):\n"
-            "1. النطاق الحصري لـ «نَافِذَة» والجامعة فقط:\n"
-            "   - يُمنع منعاً باتاً الإجابة على أي سؤال خارج نطاق الجامعة والكلية ومنصة «نَافِذَة» (مثل: أسئلة عامة، طبخ، رياضة، سياسة، ترفيه، برمجة عامة خارج المقررات، أو دردشة عامة).\n"
-            "   - إذا سأل المستخدم سؤالاً خارج نطاق الجامعة أو «نَافِذَة»، اعتذر فوراً وبلطف بهذا الرد فقط:\n"
-            "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
-            "   - في حالة التحية (السلام عليكم، مرحبا، من أنت؟)، رحّب بالطالب وعرّف بنفسك كمساعد منصة «نَافِذَة».\n"
-            "2. الالتزام الحرفي بالمقالات والبيانات المرفقة (ممنوع التأليف أو التخمين):\n"
-            "   - مصدرك الوحيد للحقائق هو البيانات المرفقة أعلاه. انقل الأرقام والدرجات والتواريخ والشروط كما وردت بالضبط دون أي تحريف أو زيادة من عندك.\n"
-            "3. إذا سأل الطالب سؤالاً يخص الجامعة لكن جوابه غير موجود في البيانات أعلاه:\n"
-            "   - لا تخمن ولا تؤلف إجابة من عندك إطلاقاً! بل قل بصدق ووضوح:\n"
+            "🚫 قواعد المسؤولية والانضباط الصارمة (إلزامية 100%):\n"
+            "1. الفهم الذكي للهجات والسلاسة في الحوار:\n"
+            "   - افهم قصد الطالب مهما كانت لهجته أو أخطاؤه الإملائية، ورتّب إجابتك بشكل منظم وواضح باستخدام النقاط (•) عند الحاجة بدون تعقيد.\n"
+            "   - في التحية أو الشكر (السلام عليكم، شن الجو، صحيت، بارك الله فيك، منور)، رد بلطف وروح طيبة وعرّف بنفسك كمساعد منصة «نَافِذَة».\n"
+            "2. الأمانة التامة والمسؤولية (ممنوع الفتوى أو التخمين):\n"
+            "   - مصدرك الوحيد للحقائق والأرقام والدرجات والتواريخ واللوائح والمتطلبات هو البيانات المرفقة أعلاه فقط.\n"
+            "   - إياك أن تعطي الطالب معلومة غير متأكد منها أو غير موجودة في البيانات أعلاه!\n"
+            "3. عند عدم توفر المعلومة في بيانات «نَافِذَة»:\n"
+            "   - إذا سأل الطالب سؤالاً جامعياً لا يوجد جوابه في البيانات أعلاه، اعتذر بصدق ومسؤولية وقل:\n"
             "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n"
-            "4. إرسال الشيتات والملفات الدراسية آلياً:\n"
-            "   - عندما يطلب الطالب شيتات أو ملفات لمادة موجودة في شجرة المواد أعلاه (ومرفق بها ملفات)، اذكر اسم المحتوى في ردك، واكتب في سطر منفصل في نهاية ردك:\n"
+            "4. النطاق الحصري للجامعة و«نَافِذَة»:\n"
+            "   - يُمنع الإجابة على أي مواضيع خارج الدراسة والجامعة ومنصة «نَافِذَة» (مثل: طبخ، رياضة، سياسة، ترفيه، أو أسئلة عامة). اعتذر بلطف:\n"
+            "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
+            "5. إرسال الشيتات والملفات الدراسية آلياً:\n"
+            "   - إذا طلب الطالب شيتات أو ملفات لمادة موجودة في شجرة المواد أعلاه (ومرفق بها ملفات)، اذكر اسم المحتوى في ردك، واكتب في سطر منفصل في نهاية ردك:\n"
             "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
             "   - لا تكتب أي رابط في ردك ولا تقل إليك الروابط.\n"
-            "5. تحدث بالعربية بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
+            "6. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
         )
 
     user_prompt = q
@@ -1222,16 +1283,13 @@ async def ai_smart_text(message: Message, state: FSMContext) -> None:
 async def ai_admin_chat_start(message: Message, state: FSMContext) -> None:
     await state.set_state(AIAdminState.admin_chat)
     await message.answer(
-        "🤖 محادثة ذكية مع المساعد.\n\n"
-        "تقدر تتكلم معاه عادي، أو تعطيه أوامر مثل:\n"
-        "- ضيف سؤال: السؤال | الجواب\n"
-        "- حذف سؤال 3\n"
-        "- ضيف مقال: العنوان | المحتوى\n"
-        "- حذف مقال 5\n"
-        "- عرض الأسئلة\n"
-        "- عرض المقالات\n"
-        "- مسح المتطلبات\n\n"
-        "أو استخدم 🔙 رجوع للخروج.",
+        "🤖 محادثة ذكية وموسعة مع مساعد المشرفين!\n\n"
+        "تقدر تحكي معاه باللهجة الليبية أو الفصحى وتطلب منه عدة أوامر في رسالة واحدة، مثل:\n"
+        "• إضافة أو تعديل أو حذف أسئلة ومقالات (أو صياغة إعلان ونشره فوراً)\n"
+        "• إدارة شجرة المواد والمجلدات والروابط والمتطلبات والأسماء البديلة\n"
+        "• معرفة إحصائيات البوت، البحث عن أي طالب، أو عرض سجل نشاط المستخدمين\n"
+        "• عرض رسائل التواصل غير المقروءة، إضافة ردود سريعة، أو إرسال إشعار لطالب/للجميع\n\n"
+        "أو استخدم ❌ إلغاء للخروج.",
         reply_markup=cancel_keyboard(),
     )
 
@@ -1332,20 +1390,21 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
 
     admin_system_prompt = (
-        "أنت مساعد ذكي في لوحة تحكم مشرفي \"نَافِذَة\".\n"
-        "تحدث بالعربية. افهم الأخطاء الإملائية وصححها.\n"
-        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نص فقط.\n"
-        "ممنوع كتابة أي تفكير داخلي أو تحليل بالإنگليزية — جاوب مباشرة بالعربية فقط ولا تكتب anything in English.\n\n"
-        "⚡ يمكنك تنفيذ الأوامر التالية إذا طلبها المشرف:\n"
+        "أنت المساعد الإداري الذكي والمطور لمشرفي منصة «نَافِذَة».\n"
+        "تفهم اللهجة الليبية والفصحى بطلاقة، وتساعد المشرف في إدارة البوت بالكامل، تنظيم البيانات، صياغة الإعلانات، وتنفيذ الأوامر.\n"
+        "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نصاً عربياً واضحاً فقط، وبدون أي تفكير داخلي بالإنجليزية.\n\n"
+        "⚡ الأوامر البرمجية المتاحة (اكتب كل أمر في سطر مستقل يبدأ بالكود، ويمكنك تنفيذ عدة أوامر معاً في نفس الرد إذا طلب المشرف أكثر من شيء):\n"
         "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
+        "- [EDIT_QA] الرقم | السؤال_الجديد | الجواب_الجديد ← تعديل سؤال/جواب موجود\n"
         "- [DEL_QA] الرقم1 الرقم2 ... ← حذف أسئلة بأرقامها\n"
-        "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال\n"
-        "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
         "- [LIST_QA] ← عرض كل الأسئلة\n"
+        "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال أو إعلان\n"
+        "- [EDIT_ARTICLE] الرقم | العنوان_الجديد | المحتوى_الجديد ← تعديل مقال موجود\n"
+        "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
         "- [LIST_ARTICLES] ← عرض كل المقالات\n"
         "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية\n"
         "- [ADD_PREREQ] كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب\n"
-        "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للأب)\n"
+        "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للرئيسي)\n"
         "- [ADD_ITEM] ID_المجلد | عنوان المادة\n"
         "- [ADD_LINK] ID_العنصر | رابط t.me/...\n"
         "- [RENAME_FOLDER] ID | الاسم_الجديد\n"
@@ -1354,25 +1413,26 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [DEL_FOLDER] ID\n"
         "- [DEL_ITEM] ID\n"
         "- [DEL_LINK] ID\n"
-        "- [LIST_FOLDERS] ← عرض المجلدات والمواد\n"
+        "- [LIST_FOLDERS] ← عرض شجرة المجلدات والمواد\n"
         "- [BAN] user_id ← حظر مستخدم\n"
         "- [UNBAN] user_id ← إلغاء حظر\n"
-        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة\n"
-        "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل\n"
-        "- [ADD_REPLY] الكلمة | الرد ← إضافة رد سريع\n"
+        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة غير المقروءة\n"
+        "- [STATS] ← عرض إحصائيات البوت الشاملة\n"
+        "- [SEARCH_USER] نص_البحث ← البحث عن مستخدم بالاسم أو المعرف أو اليوزر\n"
+        "- [USER_LOGS] user_id_أو_0_للكل ← عرض آخر سجلات نشاط المستخدمين (أو مستخدم معين)\n"
+        "- [AI_TOGGLE] on_أو_off ← تشغيل أو إيقاف المساعد الذكي للطلاب\n"
+        "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل لمادة\n"
+        "- [ADD_REPLY] الكلمة | الرد ← إضافة رد تلقائي سريع\n"
         "- [DEL_REPLY] الرقم ← حذف رد سريع\n"
         "- [LIST_REPLIES] ← عرض كل الردود السريعة\n"
-        "- [SEND_TO_ALL] الرسالة ← إرسال رسالة لكل المستخدمين (مع تأكيد)\n"
-        "- [SEND_MSG] user_id | الرسالة ← إرسال رسالة لمستخدم معين (مع تأكيد)\n\n"
-        "إذا المشرف أعطى أمر مثل 'ضيف سؤال', 'دير هكي', 'حذف مقال 3', "
-        "استخدم الأمر المناسب من فوق.\n"
-        "إذا كان مجرد كلام أو محادثة، رد طبيعي بدون أكواد.\n"
-        "عندما يسألك عن مجلد أو مادة معينة، ابحث في قائمة المجلدات أعلاه.\n\n"
+        "- [SEND_TO_ALL] الرسالة ← إرسال إذاعة لكل المستخدمين (مع زر تأكيد)\n"
+        "- [SEND_MSG] user_id | الرسالة ← إرسال رسالة لمستخدم معين (مع زر تأكيد)\n\n"
+        "💡 ملاحظة مهمة: إذا طلب المشرف صياغة مقال أو عدة أسئلة وإضافتها، قم بصياغتها باحترافية وضع أوامر [ADD_ARTICLE] أو [ADD_QA] مباشرة في سطور مستقلة ليتم حفظها فوراً!\n\n"
         f"الأسئلة المحفوظة: {qa_context}\n"
         f"المقالات: {art_context}\n"
         f"المتطلبات الدراسية: {prereq_count} علاقة\n"
         f"الأسماء البديلة:\n{aliases_str}\n"
-        f"المجلدات:\n{folders_tree[:4000]}"
+        f"المجلدات:\n{folders_tree[:3200]}"
         f"{history_note}"
     )
 
@@ -1380,294 +1440,383 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     if not answer:
         answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=True)
     if not answer:
-        await message.answer("⚠️ فشل.", reply_markup=_rm)
+        await message.answer("⚠️ فشل الحصول على رد من الذكاء الاصطناعي.", reply_markup=_rm)
         return
 
+    clean_full = _strip_cot(answer)
+
     # Save to history (keep last 5)
-    admin_history.append({"user": q, "assistant": answer})
+    admin_history.append({"user": q, "assistant": clean_full or answer})
     admin_history = admin_history[-5:]
     await state.update_data(admin_history=admin_history)
 
-    if answer.startswith("[ADD_QA]"):
-        parts = answer.replace("[ADD_QA]", "", 1).strip().split("|")
-        if len(parts) >= 2:
-            qq, aa = parts[0].strip(), "|".join(parts[1:]).strip()
-            qa = await add_qa(qq, aa)
-            await message.answer(f"✅ تم إضافة سؤال/جواب (رقم {qa.id})", reply_markup=_rm)
-        else:
-            await message.answer("❌ التنسيق خطأ. استخدم: السؤال | الجواب", reply_markup=_rm)
+    cmd_pattern = re.compile(
+        r"^\[(ADD_QA|EDIT_QA|DEL_QA|LIST_QA|ADD_ARTICLE|EDIT_ARTICLE|DEL_ARTICLE|LIST_ARTICLES|"
+        r"CLEAR_PREREQS|ADD_PREREQ|ADD_FOLDER|ADD_ITEM|ADD_LINK|DEL_FOLDER|DEL_ITEM|DEL_LINK|"
+        r"RENAME_FOLDER|RENAME_ITEM|UPDATE_LINK|LIST_FOLDERS|BAN|UNBAN|VIEW_MESSAGES|"
+        r"STATS|SEARCH_USER|USER_LOGS|AI_TOGGLE|ADD_ALIAS|ADD_REPLY|DEL_REPLY|LIST_REPLIES|"
+        r"SEND_TO_ALL|SEND_MSG)\]\s*(.*)$",
+        re.IGNORECASE,
+    )
 
-    elif answer.startswith("[DEL_QA]"):
-        parts = answer.replace("[DEL_QA]", "", 1).strip()
-        ids = set()
-        for token in parts.replace(",", " ").split():
+    commands_to_run: list[tuple[str, str]] = []
+    chat_lines: list[str] = []
+    for raw_line in (clean_full or answer).splitlines():
+        sline = raw_line.strip().lstrip("•-* ").strip()
+        m = cmd_pattern.match(sline)
+        if m:
+            commands_to_run.append((m.group(1).upper(), m.group(2).strip()))
+        else:
+            chat_lines.append(raw_line)
+
+    if not commands_to_run:
+        await safe_send(message, clean_full or answer, reply_markup=_rm)
+        return
+
+    # If the AI also included a helpful note alongside the commands, send it first
+    note_text = "\n".join(chat_lines).strip()
+    if note_text and len(note_text) > 3:
+        await safe_send(message, note_text, reply_markup=_rm)
+
+    for cmd, arg in commands_to_run:
+        if cmd == "ADD_QA":
+            parts = arg.split("|")
+            if len(parts) >= 2:
+                qq, aa = parts[0].strip(), "|".join(parts[1:]).strip()
+                qa = await add_qa(qq, aa)
+                await message.answer(f"✅ تم إضافة سؤال/جواب (رقم {qa.id}):\n📌 {qq}", reply_markup=_rm)
+            else:
+                await message.answer("❌ التنسيق: [ADD_QA] السؤال | الجواب", reply_markup=_rm)
+
+        elif cmd == "EDIT_QA":
+            parts = arg.split("|")
+            if len(parts) >= 3 and parts[0].strip().isdigit():
+                qid = int(parts[0].strip())
+                qq, aa = parts[1].strip(), "|".join(parts[2:]).strip()
+                ok = await update_qa(qid, question=qq, answer=aa)
+                await message.answer(f"✅ تم تعديل السؤال #{qid} بنجاح." if ok else f"❌ السؤال #{qid} غير موجود.", reply_markup=_rm)
+            else:
+                await message.answer("❌ التنسيق: [EDIT_QA] الرقم | السؤال | الجواب", reply_markup=_rm)
+
+        elif cmd == "DEL_QA":
+            ids = {int(t) for t in arg.replace(",", " ").split() if t.isdigit()}
+            if not ids:
+                await message.answer("❌ أرسل أرقام الأسئلة للحذف.", reply_markup=_rm)
+            else:
+                deleted = sum([1 for qa_id in ids if await delete_qa(qa_id)])
+                await message.answer(f"✅ تم حذف {deleted} من {len(ids)} سؤال.", reply_markup=_rm)
+
+        elif cmd == "LIST_QA":
+            qas = await get_all_qa()
+            if qas:
+                for i in range(0, len(qas), 10):
+                    chunk = "\n".join(f"🔹 {qa.id}: 📌 {qa.question[:55]}\n   💬 {qa.answer[:65]}" for qa in qas[i:i+10])
+                    await message.answer(f"📋 الأسئلة المحفوظة:\n\n{chunk}", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ لا توجد أسئلة محفوظة.", reply_markup=_rm)
+
+        elif cmd == "ADD_ARTICLE":
+            parts = arg.split("|")
+            if len(parts) >= 2:
+                title, content = parts[0].strip(), "|".join(parts[1:]).strip()
+                art = await add_article(title, content)
+                await message.answer(f"✅ تم إضافة المقال (#{art.id}): {art.title}", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: [ADD_ARTICLE] العنوان | المحتوى", reply_markup=_rm)
+
+        elif cmd == "EDIT_ARTICLE":
+            parts = arg.split("|")
+            if len(parts) >= 3 and parts[0].strip().isdigit():
+                aid = int(parts[0].strip())
+                title, content = parts[1].strip(), "|".join(parts[2:]).strip()
+                ok = await update_article(aid, title=title, content=content)
+                await message.answer(f"✅ تم تعديل المقال #{aid} بنجاح." if ok else f"❌ المقال #{aid} غير موجود.", reply_markup=_rm)
+            else:
+                await message.answer("❌ التنسيق: [EDIT_ARTICLE] الرقم | العنوان | المحتوى", reply_markup=_rm)
+
+        elif cmd == "DEL_ARTICLE":
             try:
-                ids.add(int(token))
-            except ValueError:
-                pass
-        if not ids:
-            await message.answer("❌ أرسل أرقام السؤوال.", reply_markup=cancel_keyboard())
-        else:
-            deleted = 0
-            for qa_id in ids:
-                if await delete_qa(qa_id):
-                    deleted += 1
-            await message.answer(f"✅ تم حذف {deleted} من {len(ids)}", reply_markup=cancel_keyboard())
+                art_id = int(arg.split()[0])
+                ok = await delete_article(art_id)
+                await message.answer(f"✅ تم حذف المقال #{art_id}" if ok else "❌ المقال غير موجود.", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم المقال.", reply_markup=_rm)
 
-    elif answer.startswith("[ADD_ARTICLE]"):
-        parts = answer.replace("[ADD_ARTICLE]", "", 1).strip().split("|")
-        if len(parts) >= 2:
-            title, content = parts[0].strip(), "|".join(parts[1:]).strip()
-            art = await add_article(title, content)
-            await message.answer(f"✅ تم إضافة مقال: {art.title}", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق خطأ. استخدم: العنوان | المحتوى", reply_markup=cancel_keyboard())
+        elif cmd == "LIST_ARTICLES":
+            arts = await get_all_articles()
+            if arts:
+                out_lines = [f"🔹 {art.id}: {art.title} ({len(art.content)} حرف)" for art in arts]
+                await safe_send(message, "📰 المقالات المحفوظة:\n\n" + "\n".join(out_lines), reply_markup=_rm)
+            else:
+                await message.answer("❌ لا توجد مقالات.", reply_markup=_rm)
 
-    elif answer.startswith("[DEL_ARTICLE]"):
-        parts = answer.replace("[DEL_ARTICLE]", "", 1).strip()
-        try:
-            art_id = int(parts)
-            ok = await delete_article(art_id)
-            await message.answer(f"✅ تم حذف المقال {art_id}" if ok else "❌ الرقم غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم المقال.", reply_markup=cancel_keyboard())
+        elif cmd == "CLEAR_PREREQS":
+            await clear_prerequisites()
+            await message.answer("✅ تم مسح المتطلبات الدراسية.", reply_markup=_rm)
 
-    elif answer.startswith("[LIST_QA]"):
-        qa_list = await get_all_qa()
-        if qa_list:
-            for i in range(0, len(qa_list), 10):
-                chunk = "\n".join(f"{qa.id}: 📌 {qa.question[:50]}" for qa in qa_list[i:i+10])
-                await message.answer(f"📋 الأسئلة:\n{chunk}", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ لا توجد أسئلة.", reply_markup=cancel_keyboard())
+        elif cmd == "ADD_PREREQ":
+            parts = arg.split("|")
+            if len(parts) >= 4:
+                cc, cn, pc, pn = [p.strip() for p in parts[:4]]
+                await add_prerequisite(course_code=cc, course_name=cn, prerequisite_code=pc, prerequisite_name=pn)
+                await message.answer(f"✅ تم إضافة متطلب: {cn} ({cc}) ← يحتاج {pn} ({pc})", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب", reply_markup=_rm)
 
-    elif answer.startswith("[LIST_ARTICLES]"):
-        arts = await get_all_articles()
-        if arts:
-            for art in arts:
-                await message.answer(f"🔹 {art.id}: {art.title} ({len(art.content)} حرف)", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ لا توجد مقالات.", reply_markup=cancel_keyboard())
+        elif cmd == "ADD_FOLDER":
+            parts = arg.split("|")
+            name = parts[0].strip()
+            parent_id = None
+            if len(parts) >= 2 and parts[1].strip().isdigit():
+                pid = int(parts[1].strip())
+                parent_id = pid if pid != 0 else None
+            f = await add_folder(name, parent_id)
+            await message.answer(f"✅ تم إضافة مجلد: {f.name} (ID: {f.id})", reply_markup=_rm, parse_mode=None)
 
-    elif answer.startswith("[CLEAR_PREREQS]"):
-        await clear_prerequisites()
-        await message.answer("✅ تم مسح المتطلبات الدراسية.", reply_markup=cancel_keyboard())
+        elif cmd == "ADD_ITEM":
+            parts = arg.split("|")
+            if len(parts) >= 1 and parts[0].strip().isdigit():
+                fid = int(parts[0].strip())
+                title = parts[1].strip() if len(parts) >= 2 else None
+                ci = await add_content_item(fid, title)
+                await message.answer(f"✅ تم إضافة مادة: {ci.title or 'محتوى'} (ID: {ci.id})", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: ID_المجلد | عنوان المادة", reply_markup=_rm)
 
-    elif answer.startswith("[ADD_PREREQ]"):
-        parts = answer.replace("[ADD_PREREQ]", "", 1).strip().split("|")
-        if len(parts) >= 4:
-            cc, cn, pc, pn = [p.strip() for p in parts[:4]]
-            pr = await add_prerequisite(course_code=cc, course_name=cn, prerequisite_code=pc, prerequisite_name=pn)
-            await message.answer(f"✅ تم إضافة متطلب: {cn} ← يحتاج {pn}", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب", reply_markup=cancel_keyboard())
+        elif cmd == "ADD_LINK":
+            parts = arg.split("|")
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                iid = int(parts[0].strip())
+                link = parts[1].strip()
+                cl = await add_content_link(iid, link)
+                await message.answer(f"✅ تم إضافة رابط (ID: {cl.id})", reply_markup=_rm)
+            else:
+                await message.answer("❌ التنسيق: ID_العنصر | الرابط", reply_markup=_rm)
 
-    elif answer.startswith("[ADD_FOLDER]"):
-        parts = answer.replace("[ADD_FOLDER]", "", 1).strip().split("|")
-        name = parts[0].strip()
-        parent_id = None
-        if len(parts) >= 2 and parts[1].strip().isdigit():
-            pid = int(parts[1].strip())
-            parent_id = pid if pid != 0 else None
-        f = await add_folder(name, parent_id)
-        await message.answer(f"✅ تم إضافة مجلد: {f.name} (ID: {f.id})", reply_markup=cancel_keyboard())
+        elif cmd == "DEL_FOLDER":
+            try:
+                fid = int(arg.split()[0])
+                ok = await remove_folder(fid)
+                await message.answer(f"✅ تم حذف المجلد {fid}" if ok else "❌ المجلد غير موجود", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم المجلد.", reply_markup=_rm)
 
-    elif answer.startswith("[ADD_ITEM]"):
-        parts = answer.replace("[ADD_ITEM]", "", 1).strip().split("|")
-        if len(parts) >= 1 and parts[0].strip().isdigit():
-            fid = int(parts[0].strip())
-            title = parts[1].strip() if len(parts) >= 2 else None
-            ci = await add_content_item(fid, title)
-            await message.answer(f"✅ تم إضافة مادة: {ci.title or 'محتوى'} (ID: {ci.id})", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: ID_المجلد | عنوان المادة", reply_markup=cancel_keyboard())
+        elif cmd == "DEL_ITEM":
+            try:
+                iid = int(arg.split()[0])
+                ok = await remove_content_item(iid)
+                await message.answer(f"✅ تم حذف المادة {iid}" if ok else "❌ المادة غير موجودة", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم المادة.", reply_markup=_rm)
 
-    elif answer.startswith("[ADD_LINK]"):
-        parts = answer.replace("[ADD_LINK]", "", 1).strip().split("|")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            iid = int(parts[0].strip())
-            link = parts[1].strip()
-            cl = await add_content_link(iid, link)
-            await message.answer(f"✅ تم إضافة رابط (ID: {cl.id})", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: ID_العنصر | الرابط", reply_markup=cancel_keyboard())
+        elif cmd == "DEL_LINK":
+            try:
+                lid = int(arg.split()[0])
+                ok = await remove_content_link(lid)
+                await message.answer(f"✅ تم حذف الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم الرابط.", reply_markup=_rm)
 
-    elif answer.startswith("[DEL_FOLDER]"):
-        parts = answer.replace("[DEL_FOLDER]", "", 1).strip()
-        try:
-            fid = int(parts)
-            ok = await remove_folder(fid)
-            await message.answer(f"✅ تم حذف المجلد {fid}" if ok else "❌ المجلد غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم المجلد.", reply_markup=cancel_keyboard())
+        elif cmd == "RENAME_FOLDER":
+            parts = arg.split("|")
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                fid = int(parts[0].strip())
+                new_name = parts[1].strip()
+                ok = await rename_folder(fid, new_name)
+                await message.answer(f"✅ تم إعادة تسمية المجلد {fid} إلى {new_name}" if ok else "❌ المجلد غير موجود", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: ID | الاسم_الجديد", reply_markup=_rm)
 
-    elif answer.startswith("[DEL_ITEM]"):
-        parts = answer.replace("[DEL_ITEM]", "", 1).strip()
-        try:
-            iid = int(parts)
-            ok = await remove_content_item(iid)
-            await message.answer(f"✅ تم حذف المادة {iid}" if ok else "❌ المادة غير موجودة", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم المادة.", reply_markup=cancel_keyboard())
+        elif cmd == "RENAME_ITEM":
+            parts = arg.split("|")
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                iid = int(parts[0].strip())
+                title = parts[1].strip()
+                ok = await update_content_item_title(iid, title)
+                await message.answer(f"✅ تم تحديث عنوان المادة {iid} إلى {title}" if ok else "❌ المادة غير موجودة", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: ID | العنوان_الجديد", reply_markup=_rm)
 
-    elif answer.startswith("[DEL_LINK]"):
-        parts = answer.replace("[DEL_LINK]", "", 1).strip()
-        try:
-            lid = int(parts)
-            ok = await remove_content_link(lid)
-            await message.answer(f"✅ تم حذف الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم الرابط.", reply_markup=cancel_keyboard())
+        elif cmd == "UPDATE_LINK":
+            parts = arg.split("|")
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                lid = int(parts[0].strip())
+                new_link = parts[1].strip()
+                ok = await update_content_link(lid, new_link)
+                await message.answer(f"✅ تم تحديث الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=_rm)
+            else:
+                await message.answer("❌ التنسيق: ID | الرابط_الجديد", reply_markup=_rm)
 
-    elif answer.startswith("[RENAME_FOLDER]"):
-        parts = answer.replace("[RENAME_FOLDER]", "", 1).strip().split("|")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            fid = int(parts[0].strip())
-            new_name = parts[1].strip()
-            ok = await rename_folder(fid, new_name)
-            await message.answer(f"✅ تم إعادة تسمية المجلد {fid} إلى {new_name}" if ok else "❌ المجلد غير موجود", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: ID | الاسم_الجديد", reply_markup=cancel_keyboard())
+        elif cmd == "LIST_FOLDERS":
+            if folders_tree:
+                await safe_send(message, f"📂 المجلدات والمواد:\n{folders_tree}", reply_markup=_rm)
+            else:
+                await message.answer("❌ لا توجد مجلدات.", reply_markup=_rm)
 
-    elif answer.startswith("[RENAME_ITEM]"):
-        parts = answer.replace("[RENAME_ITEM]", "", 1).strip().split("|")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            iid = int(parts[0].strip())
-            title = parts[1].strip()
-            ok = await update_content_item_title(iid, title)
-            await message.answer(f"✅ تم تحديث عنوان المادة {iid} إلى {title}" if ok else "❌ المادة غير موجودة", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: ID | العنوان_الجديد", reply_markup=cancel_keyboard())
+        elif cmd == "BAN":
+            try:
+                uid = int(arg.split()[0])
+                ok = await ban_user(uid)
+                await message.answer(f"✅ تم حظر المستخدم {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم المستخدم.", reply_markup=_rm)
 
-    elif answer.startswith("[UPDATE_LINK]"):
-        parts = answer.replace("[UPDATE_LINK]", "", 1).strip().split("|")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            lid = int(parts[0].strip())
-            new_link = parts[1].strip()
-            ok = await update_content_link(lid, new_link)
-            await message.answer(f"✅ تم تحديث الرابط {lid}" if ok else "❌ الرابط غير موجود", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: ID | الرابط_الجديد", reply_markup=cancel_keyboard())
+        elif cmd == "UNBAN":
+            try:
+                uid = int(arg.split()[0])
+                ok = await unban_user(uid)
+                await message.answer(f"✅ تم إلغاء حظر المستخدم {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم المستخدم.", reply_markup=_rm)
 
-    elif answer.startswith("[LIST_FOLDERS]"):
-        ft = folders_tree
-        if ft:
-            for i in range(0, len(ft), 3500):
-                await message.answer(f"📂 المجلدات:\n{ft[i:i+3500]}", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ لا توجد مجلدات.", reply_markup=cancel_keyboard())
+        elif cmd == "VIEW_MESSAGES":
+            from database.crud import get_unread_messages
+            msgs = await get_unread_messages()
+            if msgs:
+                for m in msgs[:10]:
+                    u = await get_user(m.user_id)
+                    uname = u.full_name if u else f"ID: {m.user_id}"
+                    await message.answer(
+                        f"💬 من: {uname}\n🆔 {m.user_id}\n{m.content or m.caption or ''}",
+                        reply_markup=_rm,
+                        parse_mode=None,
+                    )
+            else:
+                await message.answer("📭 لا توجد رسائل تواصل غير مقروءة حالياً.", reply_markup=_rm)
 
-    elif answer.startswith("[BAN]"):
-        parts = answer.replace("[BAN]", "", 1).strip()
-        try:
-            uid = int(parts)
-            ok = await ban_user(uid)
-            await message.answer(f"✅ تم حظر {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم المستخدم.", reply_markup=cancel_keyboard())
+        elif cmd == "STATS":
+            st = await get_stats()
+            qas_count = len(await get_all_qa())
+            arts_count = len(await get_all_articles())
+            await message.answer(
+                f"📊 إحصائيات منصة نَافِذَة:\n\n"
+                f"👤 المستخدمون: {st['users']}\n"
+                f"👑 المشرفون: {st['admins']}\n"
+                f"🚫 المحظورون: {st['banned']}\n"
+                f"💬 إجمالي الرسائل: {st['messages']} (غير مقروء: {st['unread']})\n"
+                f"⚡ الردود السريعة: {st['replies']}\n"
+                f"📚 أسئلة الـ AI: {qas_count}\n"
+                f"📰 مقالات الـ AI: {arts_count}\n"
+                f"🔗 العلاقات الدراسية: {prereq_count}",
+                reply_markup=_rm,
+                parse_mode=None,
+            )
 
-    elif answer.startswith("[UNBAN]"):
-        parts = answer.replace("[UNBAN]", "", 1).strip()
-        try:
-            uid = int(parts)
-            ok = await unban_user(uid)
-            await message.answer(f"✅ تم إلغاء حظر {uid}" if ok else "❌ المستخدم غير موجود", reply_markup=cancel_keyboard())
-        except ValueError:
-            await message.answer("❌ أرسل رقم المستخدم.", reply_markup=cancel_keyboard())
+        elif cmd == "SEARCH_USER":
+            q_search = arg.lstrip("@").strip().lower()
+            all_u = await get_all_users()
+            matched = [
+                u for u in all_u
+                if q_search in str(u.user_id)
+                or (u.full_name and q_search in u.full_name.lower())
+                or (u.username and q_search in u.username.lower())
+            ]
+            if matched:
+                u_lines = [
+                    f"👤 {u.full_name} (@{u.username or 'بدون'}) — ID: {u.user_id}"
+                    + (" [محظور 🚫]" if u.is_banned else "")
+                    + (" [مشرف 👑]" if u.is_admin else "")
+                    for u in matched[:15]
+                ]
+                await safe_send(message, "🔍 نتائج البحث عن المستخدمين:\n\n" + "\n".join(u_lines), reply_markup=_rm)
+            else:
+                await message.answer(f"❌ لم يتم العثور على مستخدم يطابق: {arg}", reply_markup=_rm, parse_mode=None)
 
-    elif answer.startswith("[VIEW_MESSAGES]"):
-        from database.crud import get_unread_messages, save_or_replace_user_message
-        msgs = await get_unread_messages()
-        if msgs:
-            for m in msgs[:10]:
-                u = await get_user(m.user_id)
-                uname = u.full_name if u else f"ID: {m.user_id}"
+        elif cmd == "USER_LOGS":
+            target_uid = int(arg) if arg.isdigit() and int(arg) != 0 else None
+            msgs = await get_all_user_messages(limit=30)
+            if target_uid:
+                msgs = [m for m in msgs if m.user_id == target_uid]
+            if msgs:
+                log_lines = []
+                for m in msgs[:15]:
+                    u = await get_user(m.user_id)
+                    uname = u.full_name if u else str(m.user_id)
+                    log_lines.append(f"👤 {uname} ({m.user_id}) [{m.created_at.strftime('%m-%d %H:%M')}]:\n   {(m.content or m.caption or '')[:100]}")
+                await safe_send(message, "📋 سجلات المستخدمين:\n\n" + "\n\n".join(log_lines), reply_markup=_rm)
+            else:
+                await message.answer("📋 لا توجد سجلات مطابقة.", reply_markup=_rm)
+
+        elif cmd == "AI_TOGGLE":
+            turn_on = arg.lower() in ("on", "true", "1", "تشغيل", "تفعيل", "شغل")
+            set_ai_active(turn_on)
+            await message.answer(
+                "🟢 تم تشغيل نَافِذَة الـ AI للمستخدمين." if turn_on else "🔴 تم إيقاف نَافِذَة الـ AI للمستخدمين.",
+                reply_markup=_rm,
+            )
+
+        elif cmd == "ADD_ALIAS":
+            parts = arg.split("|")
+            if len(parts) >= 3:
+                alias_name = parts[0].strip().lower()
+                course_code = parts[1].strip()
+                course_name = parts[2].strip()
+                await add_alias(alias_name, course_code, course_name)
+                await message.answer(f"✅ تم حفظ الاسم البديل: '{alias_name}' ← {course_name} ({course_code})", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: الاسم_البديل | كود_المادة | اسم_المادة", reply_markup=_rm)
+
+        elif cmd == "ADD_REPLY":
+            parts = arg.split("|")
+            if len(parts) >= 2:
+                trigger, response = parts[0].strip(), "|".join(parts[1:]).strip()
+                ar = await add_autoreply(trigger, response)
+                await message.answer(f"✅ تم إضافة رد سريع (رقم {ar.id}): {trigger}", reply_markup=_rm, parse_mode=None)
+            else:
+                await message.answer("❌ التنسيق: الكلمة | الرد", reply_markup=_rm)
+
+        elif cmd == "DEL_REPLY":
+            try:
+                rid = int(arg.split()[0])
+                ok = await remove_autoreply(rid)
+                await message.answer(f"✅ تم حذف الرد السريع {rid}" if ok else "❌ الرقم غير موجود", reply_markup=_rm)
+            except (ValueError, IndexError):
+                await message.answer("❌ أرسل رقم الرد.", reply_markup=_rm)
+
+        elif cmd == "LIST_REPLIES":
+            replies = await get_all_autoreplies()
+            if replies:
+                r_lines = [f"{ar.id}: {ar.trigger} ← {ar.response[:50]}" for ar in replies]
+                await safe_send(message, "📋 الردود السريعة:\n\n" + "\n".join(r_lines), reply_markup=_rm)
+            else:
+                await message.answer("❌ لا توجد ردود سريعة.", reply_markup=_rm)
+
+        elif cmd == "SEND_TO_ALL":
+            if not arg:
+                await message.answer("❌ أرسل نص الرسالة.", reply_markup=_rm)
+            else:
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data="broadcast:confirm"),
+                     InlineKeyboardButton(text="❌ إلغاء", callback_data="broadcast:cancel")]
+                ])
+                await state.update_data(broadcast_content={"type": "text", "text": arg})
                 await message.answer(
-                    f"💬 من: {uname}\n🆔 {m.user_id}\n{m.content or m.caption or ''}",
-                    reply_markup=cancel_keyboard(),
+                    f"📢 معاينة الرسالة:\n\n{arg[:300]}\n\nهل أنت متأكد من إرسالها لكل المستخدمين؟",
+                    reply_markup=kb,
+                    parse_mode=None,
                 )
-        else:
-            await message.answer("📭 لا توجد رسائل واردة.", reply_markup=cancel_keyboard())
 
-    elif answer.startswith("[ADD_ALIAS]"):
-        parts = answer.replace("[ADD_ALIAS]", "", 1).strip().split("|")
-        if len(parts) >= 3:
-            alias_name = parts[0].strip().lower()
-            course_code = parts[1].strip()
-            course_name = parts[2].strip()
-            ca = await add_alias(alias_name, course_code, course_name)
-            await message.answer(f"✅ تم حفظ: '{alias_name}' ← {course_name} ({course_code})", reply_markup=cancel_keyboard())
-        else:
-            await message.answer("❌ التنسيق: الاسم_البديل | كود_المادة | اسم_المادة", reply_markup=cancel_keyboard())
-
-    elif answer.startswith("[ADD_REPLY]"):
-        parts = answer.replace("[ADD_REPLY]", "", 1).strip().split("|")
-        if len(parts) >= 2:
-            trigger, response = parts[0].strip(), "|".join(parts[1:]).strip()
-            ar = await add_autoreply(trigger, response)
-            await message.answer(f"✅ تم إضافة رد سريع (رقم {ar.id}): {trigger}", reply_markup=_rm)
-        else:
-            await message.answer("❌ التنسيق: الكلمة | الرد", reply_markup=_rm)
-
-    elif answer.startswith("[DEL_REPLY]"):
-        parts = answer.replace("[DEL_REPLY]", "", 1).strip()
-        try:
-            rid = int(parts)
-            ok = await remove_autoreply(rid)
-            await message.answer(f"✅ تم حذف الرد السريع {rid}" if ok else "❌ الرقم غير موجود", reply_markup=_rm)
-        except ValueError:
-            await message.answer("❌ أرسل رقم الرد.", reply_markup=_rm)
-
-    elif answer.startswith("[LIST_REPLIES]"):
-        replies = await get_all_autoreplies()
-        if replies:
-            lines = [f"{ar.id}: {ar.trigger} ← {ar.response[:50]}" for ar in replies]
-            for i in range(0, len(lines), 10):
-                chunk = "\n".join(lines[i:i+10])
-                await message.answer(f"📋 الردود السريعة:\n{chunk}", reply_markup=_rm)
-        else:
-            await message.answer("❌ لا توجد ردود سريعة.", reply_markup=_rm)
-
-    elif answer.startswith("[SEND_TO_ALL]"):
-        text = answer.replace("[SEND_TO_ALL]", "", 1).strip()
-        if not text:
-            await message.answer("❌ أرسل نص الرسالة.", reply_markup=_rm)
-        else:
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data="broadcast:confirm"),
-                 InlineKeyboardButton(text="❌ إلغاء", callback_data="broadcast:cancel")]
-            ])
-            from aiogram.fsm.context import FSMContext
-            await state.update_data(broadcast_content={"type": "text", "text": text})
-            await message.answer(
-                f"📢 معاينة الرسالة:\n\n{text[:300]}\n\nهل أنت متأكد من إرسالها لكل المستخدمين؟",
-                reply_markup=kb,
-            )
-
-    elif answer.startswith("[SEND_MSG]"):
-        parts = answer.replace("[SEND_MSG]", "", 1).strip().split("|")
-        if len(parts) >= 2 and parts[0].strip().isdigit():
-            uid = int(parts[0].strip())
-            msg = "|".join(parts[1:]).strip()
-            user = await get_user(uid)
-            uname = user.full_name if user else str(uid)
-            from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-            kb = InlineKeyboardMarkup(inline_keyboard=[
-                [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data=f"sendmsg:confirm:{uid}"),
-                 InlineKeyboardButton(text="❌ إلغاء", callback_data="sendmsg:cancel")]
-            ])
-            await state.update_data(sendmsg_text=msg)
-            await message.answer(
-                f"📩 رسالة إلى {uname} ({uid}):\n\n{msg[:300]}\n\nهل أنت متأكد؟",
-                reply_markup=kb,
-            )
-        else:
-            await message.answer("❌ التنسيق: user_id | الرسالة", reply_markup=_rm)
-
-    else:
-        clean = _strip_cot(answer)
-        await safe_send(message, clean, reply_markup=_rm)
+        elif cmd == "SEND_MSG":
+            parts = arg.split("|")
+            if len(parts) >= 2 and parts[0].strip().isdigit():
+                uid = int(parts[0].strip())
+                msg = "|".join(parts[1:]).strip()
+                user = await get_user(uid)
+                uname = user.full_name if user else str(uid)
+                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                kb = InlineKeyboardMarkup(inline_keyboard=[
+                    [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data=f"sendmsg:confirm:{uid}"),
+                     InlineKeyboardButton(text="❌ إلغاء", callback_data="sendmsg:cancel")]
+                ])
+                await state.update_data(sendmsg_text=msg)
+                await message.answer(
+                    f"📩 رسالة إلى {uname} ({uid}):\n\n{msg[:300]}\n\nهل أنت متأكد؟",
+                    reply_markup=kb,
+                    parse_mode=None,
+                )
+            else:
+                await message.answer("❌ التنسيق: user_id | الرسالة", reply_markup=_rm)
 
 
 # ─── Admin: إضافة مقال/إعلان ───

@@ -540,8 +540,17 @@ async def save_or_replace_user_message(
     user_id: int,
     content: str,
     message_type: str = "materials_action",
+    full_name: str | None = None,
+    username: str | None = None,
 ) -> Message:
     async with async_session() as session:
+        user_exists = (
+            await session.execute(select(User).where(User.user_id == user_id))
+        ).scalar_one_or_none()
+        if not user_exists:
+            session.add(User(user_id=user_id, full_name=full_name or "مستخدم", username=username))
+            await session.flush()
+
         existing = (
             await session.execute(
                 select(Message).where(Message.user_id == user_id, Message.message_type == "materials_action").order_by(Message.created_at.desc()).limit(1)
@@ -561,6 +570,7 @@ async def save_or_replace_user_message(
             user_id=user_id,
             message_type=message_type,
             content=content,
+            is_read=True if message_type == "materials_action" else False,
         )
         session.add(msg)
         await session.commit()
@@ -735,12 +745,17 @@ async def get_user_messages(user_id: int) -> list[Message]:
         return list(result.scalars().all())
 
 
-async def get_all_user_messages(limit: int = 20) -> list[Message]:
+async def get_all_user_messages(limit: int = 30) -> list[Message]:
     async with async_session() as session:
         result = await session.execute(
-            select(Message).where(Message.message_type == "materials_action").order_by(Message.created_at.desc()).limit(limit)
+            select(Message).order_by(Message.created_at.desc()).limit(limit)
         )
         return list(result.scalars().all())
+
+
+async def get_reply_log_by_id(log_id: int) -> ReplyLog | None:
+    async with async_session() as session:
+        return await session.get(ReplyLog, log_id)
 
 
 async def save_reply_log(
@@ -1298,6 +1313,18 @@ async def delete_qa(qa_id: int) -> bool:
         return False
 
 
+async def update_qa(qa_id: int, question: str, answer: str) -> bool:
+    clear_ai_context()
+    async with async_session() as session:
+        qa = await session.get(QAPair, qa_id)
+        if not qa:
+            return False
+        qa.question = question
+        qa.answer = answer
+        await session.commit()
+        return True
+
+
 async def get_all_qa() -> list[QAPair]:
     return await _get_all_qa_cached()
 
@@ -1359,6 +1386,18 @@ async def delete_article(article_id: int) -> bool:
             await session.commit()
             return True
         return False
+
+
+async def update_article(article_id: int, title: str, content: str) -> bool:
+    clear_ai_context()
+    async with async_session() as session:
+        article = await session.get(Article, article_id)
+        if not article:
+            return False
+        article.title = title
+        article.content = content
+        await session.commit()
+        return True
 
 
 async def get_all_articles() -> list[Article]:

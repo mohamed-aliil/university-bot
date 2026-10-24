@@ -391,10 +391,27 @@ async def confirm_delete_item_cb(callback: CallbackQuery, state: FSMContext) -> 
 async def _forward_with_log(message: Message, item_id: int, text: str) -> None:
     try:
         from database.crud import save_or_replace_user_message
-        await save_or_replace_user_message(user_id=message.from_user.id, content=text)
-    except Exception:
-        pass
+        u = message.from_user
+        await save_or_replace_user_message(
+            user_id=u.id,
+            content=f"📄 تحميل: {text}",
+            full_name=u.full_name or "بدون اسم",
+            username=u.username,
+        )
+    except Exception as exc:
+        logger.warning("Failed to log user materials action: %s", exc)
     await forward_item(message.from_user.id, item_id, message.bot)
+
+
+def _resolve_chat_id(ch: str) -> int | str:
+    ch = (ch or "").strip()
+    if ch.startswith("-100") and ch[4:].isdigit():
+        return int(ch)
+    if ch.startswith("-") and ch[1:].isdigit():
+        return int(ch)
+    if ch.isdigit():
+        return int(f"-100{ch}")
+    return ch if ch.startswith("@") else f"@{ch}"
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
@@ -418,7 +435,7 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             mid = link.channel_message_id
             if ch and mid:
                 try:
-                    fid = int(ch) if ch.lstrip("-").isdigit() else ch
+                    fid = _resolve_chat_id(ch)
                     await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
                     return
                 except Exception as exc:
@@ -426,7 +443,7 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             m = LINK_REGEX.search(link.link)
             if m:
                 ch2, mid2 = m.group(1), int(m.group(2))
-                fid2 = int(ch2) if ch2.lstrip("-").isdigit() else f"@{ch2}"
+                fid2 = _resolve_chat_id(ch2)
                 await bot.copy_message(chat_id=user_id, from_chat_id=fid2, message_id=mid2)
                 return
         except Exception as exc:
@@ -555,7 +572,7 @@ async def _add_one_link(message: Message, item_id: int, url: str) -> bool:
         if not match:
             return False
         ch, msg_id = match.group(1), int(match.group(2))
-        chat_id = f"@{ch}" if not ch.startswith("-") else int(f"-100{ch}")
+        chat_id = _resolve_chat_id(ch)
         try:
             fwd = await message.bot.forward_message(
                 chat_id=message.chat.id,
@@ -727,6 +744,17 @@ async def student_navigate(message: Message, state: FSMContext) -> None:
         subs, content, f = await _tree_view(fid)
         custom_reply = getattr(f, "reply_text", None) if f else None
         display = custom_reply if custom_reply else f"📍 {f.name}"
+        try:
+            from database.crud import save_or_replace_user_message
+            u = message.from_user
+            _spawn(save_or_replace_user_message(
+                user_id=u.id,
+                content=f"📁 تصفح مجلد: {f.name}",
+                full_name=u.full_name or "بدون اسم",
+                username=u.username,
+            ))
+        except Exception:
+            pass
         await message.answer(display, reply_markup=student_kb(subs, content))
     elif item_match:
         try:

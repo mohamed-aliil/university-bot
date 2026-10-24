@@ -488,8 +488,6 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
         else:
             await message.bot.send_message(chat_id=reply_user_id, text=reply_text or " ")
 
-        await message.answer(f"✅ تم إرسال ردك إلى {reply_user_name} بنجاح.", reply_markup=await admin_main_keyboard(message.from_user.id))
-
         # Release lock
         rmid = data.get("reply_msg_id")
         if rmid:
@@ -499,18 +497,38 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
         # Save reply log
         user_msgs = await get_user_messages(reply_user_id)
         last_msg = user_msgs[0] if user_msgs else None
-        await save_reply_log(
+        user_q_text = (last_msg.content or last_msg.caption or "").strip() if last_msg else ""
+        rlog = await save_reply_log(
             user_id=reply_user_id,
             user_name=reply_user_name,
             admin_id=message.from_user.id,
             admin_name=message.from_user.full_name or "مشرف",
             user_message_id=last_msg.id if last_msg else 0,
-            user_message=last_msg.content or last_msg.caption if last_msg else None,
+            user_message=user_q_text or None,
             user_message_type=last_msg.message_type if last_msg else "text",
             admin_reply=reply_text or message.caption or "رسالة وسائط",
             action_type="quick_reply" if message.text and reply_text != message.text else "reply",
             details=f"رد سريع: {message.text.strip()}" if message.text and reply_text != message.text else None,
         )
+        await message.answer(
+            f"✅ تم إرسال ردك إلى {html_mod.escape(str(reply_user_name))} بنجاح.",
+            reply_markup=await admin_main_keyboard(message.from_user.id),
+        )
+        if user_q_text and (reply_text or message.caption) and rlog and getattr(rlog, "id", None):
+            clean_q = user_q_text.replace("[طلب AI]", "").split("سجل المحادثة:")[0].strip()
+            if len(clean_q) >= 4:
+                ai_save_kb = InlineKeyboardMarkup(inline_keyboard=[[
+                    InlineKeyboardButton(
+                        text="🤖 حفظ السؤال والرد في ذاكرة الـ AI",
+                        callback_data=f"save_reply_ai:{rlog.id}",
+                    )
+                ]])
+                await message.answer(
+                    f"💡 <b>هل تريد تعليم الـ AI هذا الرد مستقبلاً؟</b>\n"
+                    f"❓ <b>السؤال:</b> {html_mod.escape(clean_q[:150])}\n"
+                    f"💬 <b>الجواب:</b> {html_mod.escape((reply_text or message.caption or '')[:150])}",
+                    reply_markup=ai_save_kb,
+                )
     except Exception as e:
         logger.error(f"Failed to send reply to user {reply_user_id}: {e}")
         await message.answer("❌ فشل إرسال الرد. قد يكون المستخدم أوقف البوت.", reply_markup=await admin_main_keyboard(message.from_user.id))
@@ -525,6 +543,35 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
         await show_next_unread(message, state)
     elif after_action:
         await message.answer("🔧 اختر من الأزرار:", reply_markup=admin_panel_keyboard())
+
+
+@router.callback_query(AdminFilter(), F.data.startswith("save_reply_ai:"))
+async def save_reply_to_ai_cb(callback: CallbackQuery) -> None:
+    try:
+        log_id = int(callback.data.split(":", 1)[1])
+    except ValueError:
+        await callback.answer("❌ رقم السجل غير صالح.", show_alert=True)
+        return
+    from database.crud import get_reply_log_by_id, add_qa
+    rlog = await get_reply_log_by_id(log_id)
+    if not rlog or not rlog.user_message or not rlog.admin_reply:
+        await callback.answer("❌ لم يتم العثور على السؤال أو الجواب.", show_alert=True)
+        return
+    clean_q = rlog.user_message.replace("[طلب AI]", "").split("سجل المحادثة:")[0].strip()
+    clean_a = rlog.admin_reply.strip()
+    if not clean_q or not clean_a:
+        await callback.answer("❌ النص فارغ.", show_alert=True)
+        return
+    qa = await add_qa(clean_q, clean_a)
+    try:
+        await callback.message.edit_text(
+            f"✅ <b>تم حفظ السؤال والرد في ذاكرة الـ AI (رقم #{qa.id})!</b>\n\n"
+            f"📌 <b>السؤال:</b> {html_mod.escape(clean_q[:200])}\n"
+            f"💬 <b>الجواب:</b> {html_mod.escape(clean_a[:200])}"
+        )
+    except Exception:
+        pass
+    await callback.answer("✅ تم الحفظ في ذاكرة الـ AI بنجاح!", show_alert=True)
 
 
 # ─── إدارة المشرفين مع صلاحيات ───
@@ -1304,21 +1351,79 @@ async def logs_messages_start(message: Message, state: FSMContext) -> None:
 
 
 @router.message(PermissionFilter("can_view_logs"), F.text == "📋 سجلات المستخدمين")
-async def logs_users(message: Message) -> None:
-    from database.crud import get_all_user_messages
-    msgs = await get_all_user_messages(limit=20)
-    if not msgs:
-        await message.answer("📋 لا توجد رسائل من المستخدمين بعد.")
+async def logs_users(message: Message, state: FSMContext) -> None:
+    await state.clear()
+    from database.crud import get_all_user_messages, get_all_users
+    from database.database import async_session
+    from database.models import AILog
+    from sqlalchemy import select
+
+    msgs = await get_all_user_messages(limit=25)
+    all_users = await get_all_users()
+    users_map = {u.user_id: u for u in all_users}
+
+    ai_logs = []
+    try:
+        async with async_session() as s:
+            r = await s.execute(select(AILog).order_by(AILog.created_at.desc()).limit(15))
+            ai_logs = list(r.scalars().all())
+    except Exception as exc:
+        logger.warning("logs_users AILog query failed: %s", exc)
+
+    if not msgs and not ai_logs:
+        await message.answer("📋 لا توجد سجلات نشاط للمستخدمين بعد.", reply_markup=logs_type_keyboard())
         return
-    lines = []
+
+    events = []
     for m in msgs:
-        user = await get_user(m.user_id)
-        user_name = user.full_name if user else "غير معروف"
-        content = (m.content or m.caption or "")[:100]
-        time = m.created_at.strftime("%m-%d %H:%M")
-        lines.append(f"👤 {user_name} (🆔 {m.user_id})\n💬 {content}\n🕐 {time}")
-    out = "📋 **آخر 20 رسالة من المستخدمين:**\n\n" + "\n─────\n".join(lines)
-    await message.answer(out)
+        u = users_map.get(m.user_id)
+        uname = u.full_name if u and u.full_name else "مستخدم"
+        uhandle = f" (@{u.username})" if u and u.username else ""
+        mtype = m.message_type or "text"
+        if mtype == "materials_action":
+            badge = "📚 نشاط مواد"
+        else:
+            badge = "✉️ رسالة تواصل"
+        raw_content = (m.content or m.caption or f"[{mtype}]").strip()
+        if raw_content.startswith("[طلب AI]"):
+            badge = "🤖 تحويل من AI"
+            raw_content = raw_content.replace("[طلب AI]", "").split("سجل المحادثة:")[0].strip()
+        events.append((
+            m.created_at,
+            f"👤 <b>{html_mod.escape(uname)}</b>{html_mod.escape(uhandle)} (🆔 <code>{m.user_id}</code>)\n"
+            f"🏷 {badge}: {html_mod.escape(raw_content[:120])}\n"
+            f"🕐 {m.created_at.strftime('%Y-%m-%d %H:%M')}"
+        ))
+
+    for al in ai_logs:
+        u = users_map.get(al.user_id)
+        uname = al.user_name or (u.full_name if u else "مستخدم")
+        uhandle = f" (@{u.username})" if u and u.username else ""
+        events.append((
+            al.created_at,
+            f"👤 <b>{html_mod.escape(uname)}</b>{html_mod.escape(uhandle)} (🆔 <code>{al.user_id}</code>)\n"
+            f"🤖 نشاط AI: {html_mod.escape((al.action or '')[:120])}\n"
+            f"🕐 {al.created_at.strftime('%Y-%m-%d %H:%M')}"
+        ))
+
+    events.sort(key=lambda x: x[0], reverse=True)
+    top_lines = [e[1] for e in events[:25]]
+
+    header = f"📋 <b>سجلات نشاط المستخدمين (آخر {len(top_lines)} عملية):</b>\n\n"
+    body = "\n──────────────\n".join(top_lines)
+    full_text = header + body
+
+    if len(full_text) <= 3900:
+        await message.answer(full_text, reply_markup=logs_type_keyboard())
+    else:
+        chunk = header
+        for item_str in top_lines:
+            if len(chunk) + len(item_str) + 25 > 3900:
+                await message.answer(chunk, reply_markup=logs_type_keyboard())
+                chunk = ""
+            chunk += (item_str + "\n──────────────\n")
+        if chunk.strip():
+            await message.answer(chunk, reply_markup=logs_type_keyboard())
 
 
 @router.message(SuperAdminFilter(), F.text == "🤖 إعدادات AI")
@@ -1945,27 +2050,28 @@ async def logs_show(message: Message, state: FSMContext) -> None:
 
     filtered = [l for l in logs if l.action_type in label_map]
     if not filtered:
-        await message.answer(f"📋 لا توجد سجلات {title} لهذا المشرف.")
+        await message.answer(f"📋 لا توجد سجلات {title} لهذا المشرف.", reply_markup=logs_type_keyboard())
         await state.clear()
         return
 
     admin_info = await get_user(admin_id)
-    admin_name = admin_info.full_name if admin_info else str(admin_id)
-    out = f"📋 {title} للمشرف {admin_name}:\n\n"
+    admin_name = html_mod.escape(admin_info.full_name if admin_info and admin_info.full_name else str(admin_id))
+    out = f"📋 <b>{title} للمشرف {admin_name}:</b>\n\n"
     for log in filtered[:15]:
         action = label_map.get(log.action_type, log.action_type)
         out += f"{action} "
         if log.action_type in ("reply", "quick_reply"):
-            out += f"للمستخدم {log.user_name or log.user_id}\n"
+            uname = html_mod.escape(str(log.user_name or log.user_id))
+            out += f"للمستخدم {uname} (🆔 <code>{log.user_id}</code>)\n"
             if log.user_message:
-                out += f"👤 المستخدم: {log.user_message[:200]}\n"
-            out += f"💬 الرد: {log.admin_reply or 'رسالة'}\n"
+                out += f"👤 المستخدم: {html_mod.escape(log.user_message[:200])}\n"
+            out += f"💬 الرد: {html_mod.escape((log.admin_reply or 'رسالة')[:200])}\n"
         else:
-            out += f"{log.details or ''}\n"
+            out += f"{html_mod.escape(log.details or '')}\n"
         out += f"🕐 {log.replied_at.strftime('%Y-%m-%d %H:%M')}\n\n"
     if len(filtered) > 15:
         out += f"...و {len(filtered) - 15} سجل آخر"
-    await message.answer(out)
+    await message.answer(out[:4000], reply_markup=logs_type_keyboard())
     await state.clear()
 
 
