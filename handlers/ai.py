@@ -115,9 +115,8 @@ def _extract_query_keywords(q: str, history: list[dict], alias_items: list[tuple
     return keywords
 
 
-def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_articles_chars: int = 32000) -> dict:
-    """Prioritize articles, Q&A, and PDFs that match the student's question so relevant
-    articles are included in full at the top of the prompt without truncation."""
+def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_articles_chars: int = 32000, compact: bool = False) -> dict:
+    """Prioritize articles, Q&A, materials, prerequisites, and PDFs that match the student's question."""
     keywords = _extract_query_keywords(q, history, ctx.get("alias_items", []))
 
     def _score_text(title_or_q: str, body: str) -> int:
@@ -133,6 +132,11 @@ def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_article
                 score += 1
         return score
 
+    qa_limit = 900 if compact else 10000
+    mat_limit = 900 if compact else 12000
+    pre_limit = 600 if compact else 8000
+    pdf_limit = 600 if compact else 12000
+
     # 1) Prioritize Q&A pairs
     qa_items = ctx.get("qa_items") or []
     if qa_items:
@@ -143,29 +147,32 @@ def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_article
         )
         qa_lines = [f"س: {qq}\nج: {aa}" for _, (qq, aa) in scored_qa]
         qa_context = "\n\n".join(qa_lines)
-        if len(qa_context) > 10000:
-            qa_context = qa_context[:10000] + "\n... (بقية الأسئلة الشائعة)"
+        if len(qa_context) > qa_limit:
+            qa_context = qa_context[:qa_limit] + "\n... (بقية الأسئلة الشائعة)"
     else:
-        qa_context = ctx.get("qa", "لا توجد أسئلة مضافة بعد.")
+        qa_context = ctx.get("qa", "لا توجد أسئلة مضافة بعد.")[:qa_limit]
 
     # 2) Prioritize Articles (full content for matched articles first!)
     article_items = ctx.get("article_items") or []
     if article_items:
         all_titles = "، ".join(f"[{aid}] {title}" for aid, title, _ in article_items)
+        if compact and len(all_titles) > 400:
+            all_titles = all_titles[:400] + "..."
         scored_arts = sorted(
             article_items,
             key=lambda item: (_score_text(item[1], item[2]), item[0]),
             reverse=True,
         )
-        art_blocks = [f"📌 فهرس عناوين جميع المقالات المتوفرة في نافذة: {all_titles}\n"]
+        art_blocks = [f"📌 فهرس عناوين المقالات: {all_titles}\n"]
         used_chars = len(art_blocks[0])
+        per_art_max = 1800 if compact else 12000
         for aid, title, content in scored_arts:
             clean_c = (content or "").strip()
-            block = f"---\n📰 مقال رقم ({aid}) — العنوان: {title}\nالمحتوى:\n{clean_c[:12000]}\n"
+            block = f"---\n📰 مقال ({aid}) {title}:\n{clean_c[:per_art_max]}\n"
             if used_chars + len(block) > max_articles_chars:
                 remaining = max_articles_chars - used_chars
-                if remaining > 400:
-                    art_blocks.append(block[:remaining] + "\n... (تم اختصار بقية المقال)")
+                if remaining > 250:
+                    art_blocks.append(block[:remaining] + "...")
                 break
             art_blocks.append(block)
             used_chars += len(block)
@@ -173,7 +180,31 @@ def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_article
     else:
         articles_context = "لا توجد مقالات مضافة بعد."
 
-    # 3) Prioritize PDF texts
+    # 3) Filter/prioritize Materials tree when in compact mode
+    raw_materials = ctx.get("materials", "لا توجد مواد بعد.")
+    if compact and len(raw_materials) > mat_limit and keywords:
+        mat_lines = raw_materials.splitlines()
+        matched_mat = [ln for ln in mat_lines if any(kw in _normalize_ar(ln) for kw in keywords)]
+        if matched_mat:
+            materials_context = "\n".join(matched_mat)[:mat_limit]
+        else:
+            materials_context = raw_materials[:mat_limit] + "\n..."
+    else:
+        materials_context = raw_materials[:mat_limit]
+
+    # 4) Filter/prioritize Prerequisites when in compact mode
+    raw_prereqs = ctx.get("prereqs", "لا توجد متطلبات دراسية محفوظة.")
+    if compact and len(raw_prereqs) > pre_limit and keywords:
+        pre_lines = raw_prereqs.splitlines()
+        matched_pre = [ln for ln in pre_lines if any(kw in _normalize_ar(ln) for kw in keywords)]
+        if matched_pre:
+            prereqs_context = "\n".join(matched_pre)[:pre_limit]
+        else:
+            prereqs_context = raw_prereqs[:pre_limit] + "\n..."
+    else:
+        prereqs_context = raw_prereqs[:pre_limit]
+
+    # 5) Prioritize PDF texts
     pdf_items = ctx.get("pdf_items") or []
     if pdf_items:
         scored_pdfs = sorted(
@@ -184,23 +215,27 @@ def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_article
         pdf_blocks = ["📚 الملفات السياقية (PDF):"]
         used_pdf = 0
         for pname, ptext in scored_pdfs:
-            snippet = (ptext or "").strip()[:6000]
+            snippet = (ptext or "").strip()[: (500 if compact else 6000)]
             block = f"\n📄 ملف ({pname}):\n{snippet}\n"
-            if used_pdf + len(block) > 12000:
+            if used_pdf + len(block) > pdf_limit:
                 break
             pdf_blocks.append(block)
             used_pdf += len(block)
         pdf_context = "\n".join(pdf_blocks) + "\n"
     else:
-        pdf_context = ctx.get("pdf", "")
+        pdf_context = (ctx.get("pdf", "") or "")[:pdf_limit]
+
+    aliases_context = ctx.get("aliases", "")
+    if compact and len(aliases_context) > 400:
+        aliases_context = aliases_context[:400]
 
     return {
         "qa": qa_context,
-        "materials": ctx.get("materials", "لا توجد مواد بعد."),
+        "materials": materials_context,
         "articles": articles_context,
         "pdf": pdf_context,
-        "prereqs": ctx.get("prereqs", "لا توجد متطلبات دراسية محفوظة."),
-        "aliases": ctx.get("aliases", ""),
+        "prereqs": prereqs_context,
+        "aliases": aliases_context,
     }
 
 
@@ -871,56 +906,41 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         prereqs_context = "لا توجد متطلبات دراسية محفوظة."
         aliases_context = ""
 
-    # Build conversation history
-    history_lines = []
-    for turn in history[-8:]:  # last 8 exchanges max
-        history_lines.append(f"الطالب: {turn['user']}")
-        history_lines.append(f"مساعد نافذة: {turn['assistant']}")
-    history_context = "\n".join(history_lines)
-
-    history_note = ""
-    if history_context:
-        history_note = f"\n💬 سجل المحادثة السابقة مع الطالب (للتذكير بالسياق فقط):\n{history_context}\n"
-
-    system_prompt = (
-        "أنت «مساعد نَافِذَة الذكي» — المساعد الرسمي والوحيد المخصص لطلاب الجامعة عبر منصة «نَافِذَة».\n"
-        "مهمتك الوحيدة والحصرية هي خدمة طلاب الجامعة والإجابة على استفساراتهم اعتماداً فقط على البيانات الرسمية المرفقة أدناه.\n\n"
-        "══════════════════════════════════════\n"
-        "📂 البيانات الرسمية المعتمدة في «نَافِذَة»:\n"
-        "══════════════════════════════════════\n\n"
-        f"{aliases_context}\n"
-        f"📰 أولاً: المقالات والمنشورات الرسمية:\n{articles_context}\n\n"
-        f"📚 ثانياً: الأسئلة الشائعة (قاعدة المعرفة):\n{qa_context}\n\n"
-        f"📁 ثالثاً: شجرة المواد الدراسية والشيتات:\n{materials_context}\n\n"
-        f"🔗 رابعاً: شجرة المتطلبات الدراسية (المواد وما تفتحه وما تحتاجه):\n{prereqs_context}\n\n"
-        f"{pdf_context}\n"
-        f"{history_note}\n"
-        "══════════════════════════════════════\n"
-        "🚫 القواعد الصارمة والإلزامية (يُمنع مخالفتها منعاً باتاً):\n"
-        "══════════════════════════════════════\n"
-        "1. النطاق الحصري لـ «نَافِذَة» والجامعة فقط:\n"
-        "   - يُمنع منعاً باتاً الإجابة على أي سؤال خارج نطاق الجامعة والكلية ومنصة «نَافِذَة» (مثل: أسئلة ثقافية عامة، طبخ، رياضة، سياسة، ترفيه، برمجة عامة أو مسائل خارج المقررات المذكورة، أو دردشة عامة لا علاقة لها بالدراسة بالكلية).\n"
-        "   - إذا سأل المستخدم سؤالاً خارج نطاق الجامعة أو «نَافِذَة»، اعتذر فوراً وبلطف بهذا الرد فقط:\n"
-        "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
-        "   - في حالة التحية (مثل: السلام عليكم، مرحبا، من أنت؟)، رحّب بالطالب بلطف وعرّف بنفسك كمساعد منصة «نَافِذَة» الجاهز للإجابة عن استفسارات الكلية والمواد والمنشورات.\n\n"
-        "2. الالتزام الحرفي بالمقالات والبيانات المرفقة (ممنوع التأليف أو التخمين):\n"
-        "   - مصدرك الوحيد للحقائق هو البيانات المرفقة أعلاه (المقالات، الأسئلة الشائعة، شجرة المواد، المتطلبات، وملفات السياق).\n"
-        "   - اقرأ المقالات والأسئلة الشائعة والمتطلبات بعناية فائقة، وأجب منها حصرياً، وانقل الأرقام والدرجات والتواريخ والأسماء والشروط كما وردت بالضبط دون أي تحريف أو زيادة من عندك.\n"
-        "   - يُمنع منعاً باتاً أن تخلط بين معلوماتك العامة ومعلومات المقالات، أو أن تخترع سياسات أو مواعيد أو أسماء دكاترة أو درجات غير مكتوبة في السياق أعلاه.\n\n"
-        "3. ماذا تفعل إذا سأل الطالب سؤالاً يخص الجامعة لكن جوابه غير موجود في البيانات أعلاه؟\n"
-        "   - إذا كان السؤال يخص الكلية أو مادة دراسية أو إجراء جامعي، وبحثت في كل المقالات والأسئلة الشائعة والمتطلبات والمواد أعلاه ولم تجد له إجابة صريحة:\n"
-        "     لا تخمن ولا تؤلف إجابة من عندك إطلاقاً! بل قل بصدق ووضوح:\n"
-        "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n\n"
-        "4. إرسال الشيتات والملفات الدراسية آلياً:\n"
-        "   - عندما يطلب الطالب شيتات أو ملفات أو محاضرات أو امتحانات لمادة موجودة في «شجرة المواد الدراسية والشيتات» أعلاه (وكان أمامها ملفات مرفقة):\n"
-        "     اذكر اسم المحتوى في ردك، ثم اكتب في سطر منفصل في نهاية ردك الأمر الآلي التالي بالضبط:\n"
-        "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
-        "   - لا تكتب أي رابط في ردك، ولا تقل «إليك الروابط»، فالنظام سيرسل الملفات تلقائياً للطالب بمجرد كتابتك لسطر [FORWARD].\n"
-        "   - إذا طلب شيتات لمادة غير موجودة في شجرة المواد أو مكتوب أمامها (بدون ملفات مرفقة حالياً)، أخبره بصدق أنها غير مرفقة حالياً في البوت.\n\n"
-        "5. أسلوب الرد والتنسيق:\n"
-        "   - تحدث باللغة العربية بأسلوب محترم، واضح، ومباشر.\n"
-        "   - ممنوع استخدام رموز Markdown مثل ** أو * أو #، وممنوع كتابة أي تفكير داخلي أو مسودة تحليلية — اكتب الجواب النهائي للطالب مباشرة.\n"
-    )
+    def _compose_system_prompt(c: dict, hist_turns: int = 8) -> str:
+        h_lines = []
+        for turn in history[-hist_turns:]:
+            h_lines.append(f"الطالب: {turn['user'][:200]}")
+            h_lines.append(f"مساعد نافذة: {turn['assistant'][:300]}")
+        h_ctx = "\n".join(h_lines)
+        h_note = f"\n💬 سجل المحادثة السابقة:\n{h_ctx}\n" if h_ctx else ""
+        return (
+            "أنت «مساعد نَافِذَة الذكي» — المساعد الرسمي والوحيد المخصص لطلاب الجامعة عبر منصة «نَافِذَة».\n"
+            "مهمتك الوحيدة والحصرية هي خدمة طلاب الجامعة والإجابة على استفساراتهم اعتماداً فقط على البيانات الرسمية المرفقة أدناه.\n\n"
+            "📂 البيانات الرسمية المعتمدة في «نَافِذَة»:\n"
+            f"{c['aliases']}\n"
+            f"📰 أولاً: المقالات والمنشورات الرسمية:\n{c['articles']}\n\n"
+            f"📚 ثانياً: الأسئلة الشائعة:\n{c['qa']}\n\n"
+            f"📁 ثالثاً: شجرة المواد الدراسية والشيتات:\n{c['materials']}\n\n"
+            f"🔗 رابعاً: شجرة المتطلبات الدراسية:\n{c['prereqs']}\n\n"
+            f"{c['pdf']}\n"
+            f"{h_note}\n"
+            "🚫 القواعد الصارمة والإلزامية (يُمنع مخالفتها منعاً باتاً):\n"
+            "1. النطاق الحصري لـ «نَافِذَة» والجامعة فقط:\n"
+            "   - يُمنع منعاً باتاً الإجابة على أي سؤال خارج نطاق الجامعة والكلية ومنصة «نَافِذَة» (مثل: أسئلة عامة، طبخ، رياضة، سياسة، ترفيه، برمجة عامة خارج المقررات، أو دردشة عامة).\n"
+            "   - إذا سأل المستخدم سؤالاً خارج نطاق الجامعة أو «نَافِذَة»، اعتذر فوراً وبلطف بهذا الرد فقط:\n"
+            "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
+            "   - في حالة التحية (السلام عليكم، مرحبا، من أنت؟)، رحّب بالطالب وعرّف بنفسك كمساعد منصة «نَافِذَة».\n"
+            "2. الالتزام الحرفي بالمقالات والبيانات المرفقة (ممنوع التأليف أو التخمين):\n"
+            "   - مصدرك الوحيد للحقائق هو البيانات المرفقة أعلاه. انقل الأرقام والدرجات والتواريخ والشروط كما وردت بالضبط دون أي تحريف أو زيادة من عندك.\n"
+            "3. إذا سأل الطالب سؤالاً يخص الجامعة لكن جوابه غير موجود في البيانات أعلاه:\n"
+            "   - لا تخمن ولا تؤلف إجابة من عندك إطلاقاً! بل قل بصدق ووضوح:\n"
+            "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n"
+            "4. إرسال الشيتات والملفات الدراسية آلياً:\n"
+            "   - عندما يطلب الطالب شيتات أو ملفات لمادة موجودة في شجرة المواد أعلاه (ومرفق بها ملفات)، اذكر اسم المحتوى في ردك، واكتب في سطر منفصل في نهاية ردك:\n"
+            "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
+            "   - لا تكتب أي رابط في ردك ولا تقل إليك الروابط.\n"
+            "5. تحدث بالعربية بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
+        )
 
     user_prompt = q
 
@@ -928,14 +948,17 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await message.bot.send_chat_action(message.chat.id, "typing")
     except Exception:
         pass
-    answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=False)
+
+    answer = None
+    if settings.gemini_keys:
+        system_prompt = _compose_system_prompt(ctx, hist_turns=8)
+        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=False)
     if not answer:
-        # Transient failure or Gemini quota: retry with Groq using a compact context so it never overflows
-        logger.warning("AI first attempt (Gemini only) returned nothing — retrying with Groq")
-        await asyncio.sleep(1)
-        groq_ctx = _select_relevant_context(q, history, raw_ctx if 'raw_ctx' in locals() else {}, max_articles_chars=10000)
-        groq_system_prompt = system_prompt.replace(articles_context, groq_ctx["articles"])
-        answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=1536, use_groq=True)
+        groq_ctx = _select_relevant_context(
+            q, history, raw_ctx if "raw_ctx" in locals() else {}, max_articles_chars=2200, compact=True
+        )
+        groq_system_prompt = _compose_system_prompt(groq_ctx, hist_turns=3)
+        answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=800, use_groq=True)
     if answer:
         # Forward actual files: only items the AI explicitly requested via
         # [FORWARD] title | title (exact names from the material tree)

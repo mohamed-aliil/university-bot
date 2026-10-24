@@ -83,11 +83,11 @@ async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 10
 
 LAST_AI_MS: dict = {"ms": 0.0, "model": ""}
 
-# Models that recently got Groq 429 (rate limit): skipped for 60s
-_MODEL_COOLDOWN: dict[str, float] = {}
+# Models that recently got Groq 429 (rate limit): skipped for 25s per (key, model)
+_MODEL_COOLDOWN: dict[tuple[str, str], float] = {}
 
 # Models that are permanently deprecated/removed (404) - never retry
-_DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b", "qwen/qwen3.6-27b"}
+_DEPRECATED_MODELS: set[str] = {"openai/gpt-oss-120b", "gpt-oss-120b"}
 
 # Last provider error reason (for diagnostics when all models fail)
 LAST_GROQ_ERROR: str = ""
@@ -103,46 +103,45 @@ _MINIMAL_SYSTEM_PROMPT = (
 )
 
 
-def _compact_system_prompt(system_prompt: str, max_chars: int = 16000) -> str:
-    """Ensure system_prompt fits within Groq per-request token limits while preserving
-    both the header context and the trailing strict instructions."""
+def _compact_system_prompt(system_prompt: str, max_chars: int = 5500) -> str:
+    """Ensure system_prompt fits within Groq per-request TPM limits (~6k-8k tokens)
+    while preserving both the relevant context at the top and the strict rules at the bottom."""
     if not system_prompt or len(system_prompt) <= max_chars:
         return system_prompt
-    head_len = int(max_chars * 0.65)
+    head_len = int(max_chars * 0.68)
     tail_len = max_chars - head_len
     return (
         system_prompt[:head_len]
-        + "\n\n... [تم اختصار جزء من السياق لطول النص] ...\n\n"
+        + "\n... [مختصر] ...\n"
         + system_prompt[-tail_len:]
     )
 
 
-async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
+async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 800) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
-    compact_sys = _compact_system_prompt(system_prompt, max_chars=16000)
+    compact_sys = _compact_system_prompt(system_prompt, max_chars=5500)
+    capped_max_tokens = min(max_tokens, 900)
 
     MODELS = [
-        "llama-3.3-70b-versatile",
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "qwen/qwen3-32b",
         "openai/gpt-oss-20b",
-        "llama-3.1-8b-instant",
+        "qwen/qwen3.6-27b",
     ]
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    key_id = api_key[:12]
 
     for model in MODELS:
         if model in _DEPRECATED_MODELS:
             continue
-        # Skip models that hit rate limit recently (60s cooldown)
-        if time.monotonic() - _MODEL_COOLDOWN.get(model, 0.0) < 60.0:
-            logger.info("Skipping %s (on 429 cooldown)", model)
+        # Skip models that hit rate limit recently (25s cooldown for this key)
+        if time.monotonic() - _MODEL_COOLDOWN.get((key_id, model), 0.0) < 25.0:
+            logger.info("Skipping %s for key %s (on 429 cooldown)", model, key_id[:8])
             continue
 
         cur_sys = compact_sys
-        for attempt in range(3):  # Retry up to 3 times on timeout / payload shrink
+        for attempt in range(2):
             messages = []
             if cur_sys:
                 messages.append({"role": "system", "content": cur_sys})
@@ -151,7 +150,7 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                 "model": model,
                 "messages": messages,
                 "temperature": 0.2,
-                "max_tokens": max_tokens,
+                "max_tokens": capped_max_tokens,
             }
             try:
                 await _wait_for_rate_limit(api_key)
@@ -160,14 +159,19 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                         "https://api.groq.com/openai/v1/chat/completions",
                         json=payload,
                         headers=headers,
-                        timeout=aiohttp.ClientTimeout(total=45),
+                        timeout=aiohttp.ClientTimeout(total=40),
                     ) as resp:
                         if resp.status == 429:
                             body = await resp.text()
-                            _MODEL_COOLDOWN[model] = time.monotonic()
                             LAST_GROQ_ERROR = f"429 rate limit: {body[:120]}"
+                            # If 429 is due to request token size (TPM), shrink once and retry same model
+                            if attempt == 0 and len(cur_sys) > 3000 and ("tokens" in body.lower() or "tpm" in body.lower() or "too large" in body.lower()):
+                                logger.warning("Groq 429 TPM on %s — shrinking prompt to 2800 chars and retrying", model)
+                                cur_sys = _compact_system_prompt(cur_sys, max_chars=2800)
+                                continue
+                            _MODEL_COOLDOWN[(key_id, model)] = time.monotonic()
                             logger.warning("Groq 429 for %s: %s — switching model now", model, body[:100])
-                            break  # No sleep-retry same model: go to next one
+                            break  # Switch to next model (e.g. qwen/qwen3.6-27b)
                         if resp.status != 200:
                             body = await resp.text()
                             if resp.status == 404:
@@ -179,9 +183,9 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                                 logger.warning("Groq model %s deprecated, trying next", model)
                                 break
                             if resp.status in (413, 400) and ("too large" in body.lower() or "context_length" in body.lower() or "tokens" in body.lower()):
-                                if len(cur_sys) > 7500 and attempt == 0:
+                                if len(cur_sys) > 3000 and attempt == 0:
                                     logger.warning("Groq model %s payload too large, compacting system_prompt and retrying", model)
-                                    cur_sys = _compact_system_prompt(cur_sys, max_chars=7000)
+                                    cur_sys = _compact_system_prompt(cur_sys, max_chars=2800)
                                     continue
                                 logger.warning("Groq model %s request too large — trying next model", model)
                                 break
@@ -199,8 +203,8 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
                                 LAST_AI_MS["model"] = model
                                 return text.strip()
             except asyncio.TimeoutError:
-                logger.warning("Groq %s timeout (attempt %d/3)", model, attempt + 1)
-                if attempt < 2:
+                logger.warning("Groq %s timeout (attempt %d/2)", model, attempt + 1)
+                if attempt < 1:
                     await asyncio.sleep(1)
                     continue
             except Exception as e:
@@ -285,39 +289,37 @@ async def call_gemini_stream(
     return None
 
 
-async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_chunk, max_tokens: int = 1024) -> str | None:
-    compact_sys = _compact_system_prompt(system_prompt, max_chars=16000)
+async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_chunk, max_tokens: int = 800) -> str | None:
+    compact_sys = _compact_system_prompt(system_prompt, max_chars=5500)
     messages = []
     if compact_sys:
         messages.append({"role": "system", "content": compact_sys})
     messages.append({"role": "user", "content": prompt})
 
     MODELS = [
-        "llama-3.3-70b-versatile",
-        "meta-llama/llama-4-scout-17b-16e-instruct",
-        "qwen/qwen3-32b",
         "openai/gpt-oss-20b",
-        "llama-3.1-8b-instant",
+        "qwen/qwen3.6-27b",
     ]
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json",
     }
+    key_id = api_key[:12]
 
     for model in MODELS:
         if model in _DEPRECATED_MODELS:
             continue
-        if time.monotonic() - _MODEL_COOLDOWN.get(model, 0.0) < 60.0:
+        if time.monotonic() - _MODEL_COOLDOWN.get((key_id, model), 0.0) < 25.0:
             logger.info("Skipping %s (on 429 cooldown)", model)
             continue
         payload = {
             "model": model,
             "messages": messages,
             "temperature": 0.2,
-            "max_tokens": max_tokens,
+            "max_tokens": min(max_tokens, 900),
             "stream": True,
         }
-        for attempt in range(3):
+        for attempt in range(2):
             try:
                 await _wait_for_rate_limit(api_key)
                 full = []
@@ -330,7 +332,7 @@ async def _call_groq_stream(prompt: str, system_prompt: str, api_key: str, on_ch
                     ) as resp:
                         if resp.status == 429:
                             body = await resp.text()
-                            _MODEL_COOLDOWN[model] = time.monotonic()
+                            _MODEL_COOLDOWN[(key_id, model)] = time.monotonic()
                             logger.warning("Groq 429 stream %s: %s — switching model now", model, body[:100])
                             break  # No sleep-retry same model: go to next one
                         if resp.status != 200:
@@ -435,8 +437,8 @@ async def call_groq_vision(prompt: str, image_b64: str) -> str | None:
     """Analyze an image using Groq's vision models."""
     groq_keys = settings.groq_keys
     MODELS = [
+        "qwen/qwen3.6-27b",
         "meta-llama/llama-4-scout-17b-16e-instruct",
-        "meta-llama/llama-4-maverick-17b-128e-instruct",
     ]
     headers_tmpl = {"Content-Type": "application/json"}
 
