@@ -405,6 +405,8 @@ async def _forward_with_log(message: Message, item_id: int, text: str) -> None:
 
 def _resolve_chat_id(ch: str) -> int | str:
     ch = (ch or "").strip()
+    if ch.startswith("chat:") and ch[5:].lstrip("-").isdigit():
+        return int(ch[5:])
     if ch.startswith("-100") and ch[4:].isdigit():
         return int(ch)
     if ch.startswith("-") and ch[1:].isdigit():
@@ -412,6 +414,23 @@ def _resolve_chat_id(ch: str) -> int | str:
     if ch.isdigit():
         return int(f"-100{ch}")
     return ch if ch.startswith("@") else f"@{ch}"
+
+
+async def _copy_or_forward(bot, user_id: int, fid: int | str, mid: int) -> bool:
+    """Copy a message to user_id, falling back to forward_message (required for Polls/Quizzes)."""
+    try:
+        await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=int(mid))
+        return True
+    except Exception as copy_exc:
+        try:
+            await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=int(mid))
+            return True
+        except Exception as fwd_exc:
+            logger.warning(
+                "copy_message & forward_message failed (%s/%s) for user %s: copy=%s | fwd=%s",
+                fid, mid, user_id, copy_exc, fwd_exc,
+            )
+            return False
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
@@ -434,21 +453,19 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
             ch = link.channel_username
             mid = link.channel_message_id
             if ch and mid:
-                try:
-                    fid = _resolve_chat_id(ch)
-                    await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=mid)
+                fid = _resolve_chat_id(ch)
+                if await _copy_or_forward(bot, user_id, fid, int(mid)):
                     return
-                except Exception as exc:
-                    logger.warning("copy_message channel failed (%s/%s) for user %s: %s", ch, mid, user_id, exc)
-            m = LINK_REGEX.search(link.link)
+            m = LINK_REGEX.search(link.link or "")
             if m:
                 ch2, mid2 = m.group(1), int(m.group(2))
                 fid2 = _resolve_chat_id(ch2)
-                await bot.copy_message(chat_id=user_id, from_chat_id=fid2, message_id=mid2)
-                return
+                if await _copy_or_forward(bot, user_id, fid2, mid2):
+                    return
         except Exception as exc:
-            logger.warning("copy_message link failed (%s) for user %s: %s", link.link, user_id, exc)
-        await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
+            logger.warning("forward_one link failed (%s) for user %s: %s", link.link, user_id, exc)
+        if link.link and link.link.startswith("http"):
+            await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
 
     await bot.send_chat_action(chat_id=user_id, action="typing")
     for link in links:
@@ -462,6 +479,71 @@ def cancel_inline_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="❌ إلغاء", callback_data="edit:cancel")]])
 
 
+async def _extract_and_save_forwarded_message(message: Message, item_id: int) -> bool:
+    """Save any forwarded or directly sent message (Poll, Quiz, PDF, photo, video, audio, voice, text, etc.) as a content link."""
+    try:
+        fo = getattr(message, "forward_origin", None)
+        f_chat = getattr(fo, "chat", None) or getattr(message, "forward_from_chat", None)
+        f_mid = getattr(fo, "message_id", None) or getattr(message, "forward_from_message_id", None)
+
+        ch_store = None
+        mid_store = None
+        url_store = None
+
+        if f_chat and f_mid:
+            uname = getattr(f_chat, "username", None)
+            raw_cid = str(f_chat.id)
+            if uname:
+                url_store = f"https://t.me/{uname}/{f_mid}"
+                ch_store = f"@{uname}"
+            else:
+                short_id = raw_cid[4:] if raw_cid.startswith("-100") else raw_cid.lstrip("-")
+                url_store = f"https://t.me/c/{short_id}/{f_mid}"
+                ch_store = raw_cid
+            mid_store = int(f_mid)
+        elif (
+            fo is not None
+            or message.poll
+            or message.document
+            or message.photo
+            or message.video
+            or message.audio
+            or message.voice
+            or message.animation
+            or message.sticker
+        ):
+            # Message (e.g., Poll, file, or forwarded item without public channel ID) resides in this chat
+            ch_store = f"chat:{message.chat.id}"
+            mid_store = int(message.message_id)
+            kind = "استبيان" if message.poll else ("ملف" if message.document else "منشور")
+            url_store = f"📌 {kind} محوّل (#{message.message_id})"
+
+        if not ch_store or not mid_store:
+            return False
+
+        try:
+            from handlers.ai import index_single_sheet_message
+            item_obj = await get_content_item(item_id)
+            folder_obj = await get_folder(item_obj.folder_id) if item_obj else None
+            fname = folder_obj.name if folder_obj else "مادة"
+            ititle = (item_obj.title if item_obj else None) or "شيت"
+            await index_single_sheet_message(message.bot, message, fname, ititle)
+        except Exception as idx_err:
+            logger.warning("Auto-index forwarded message failed: %s", idx_err)
+
+        await add_content_link(item_id, url_store, str(ch_store), int(mid_store))
+        await save_admin_action(
+            message.from_user.id,
+            message.from_user.full_name or "",
+            "add_link_content",
+            f"🔗 محتوى #{item_id}: {url_store[:80]}",
+        )
+        return True
+    except Exception as e:
+        logger.warning("_extract_and_save_forwarded_message failed: %s", e)
+        return False
+
+
 @router.message(MState.edit_menu, AdminFilter())
 async def edit_menu_handler(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
@@ -470,7 +552,7 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         await state.set_state(MState.browsing)
         await render_admin(message, data.get("folder_id"))
         return
-    text = message.text.strip()
+    text = (message.text or message.caption or "").strip()
 
     if text == "✏️ تغيير الاسم":
         await state.set_state(EditContentState.edit_title)
@@ -478,7 +560,10 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
 
     elif text == "➕ إضافة رابط":
         await state.set_state(EditContentState.add_link)
-        await message.answer("🔗 أرسل رابط المنشور:", reply_markup=cancel_inline_kb())
+        await message.answer(
+            "🔗 أرسل رابط المنشور (أو قم بتحويل المنشور / الاستبيان / الملف مباشرة من القناة إلى هنا):",
+            reply_markup=cancel_inline_kb(),
+        )
 
     elif text == "➖ حذف رابط":
         links = await get_content_links(item_id)
@@ -506,7 +591,22 @@ async def edit_menu_handler(message: Message, state: FSMContext) -> None:
         await render_admin(message, data.get("folder_id"))
 
     else:
-        await message.answer("❌ اختر من الأزرار.", reply_markup=content_edit_kb())
+        # Support direct forwarding (Polls, files, posts) or pasting links right inside edit_menu (including batch forwards!)
+        if text and LINK_REGEX.search(text):
+            urls = [u.strip() for u in text.split("\n") if u.strip()]
+            results = await asyncio.gather(*(_add_one_link(message, item_id, url) for url in urls))
+            added = sum(1 for ok in results if ok)
+            if added:
+                links = await get_content_links(item_id)
+                t = f"✅ تمت إضافة {added} رابط.\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
+                await message.answer(t, reply_markup=content_edit_kb())
+                return
+        if await _extract_and_save_forwarded_message(message, item_id):
+            links = await get_content_links(item_id)
+            t = "✅ تم حفظ المنشور/الاستبيان المحوّل بنجاح!\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
+            await message.answer(t, reply_markup=content_edit_kb())
+            return
+        await message.answer("❌ اختر من الأزرار أو حوّل المنشور/الاستبيان مباشرة.", reply_markup=content_edit_kb())
 
 
 @router.callback_query(AdminFilter(), F.data == "edit:cancel")
@@ -526,7 +626,7 @@ async def edit_cancel_cb(callback: CallbackQuery, state: FSMContext) -> None:
 async def edit_title_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
-    new_title = message.text.strip()
+    new_title = (message.text or "").strip()
     if new_title == "🔙 رجوع":
         await state.set_state(MState.edit_menu)
         await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
@@ -546,16 +646,30 @@ async def edit_title_save(message: Message, state: FSMContext) -> None:
 async def edit_addlink_save(message: Message, state: FSMContext) -> None:
     data = await state.get_data()
     item_id = data.get("edit_item_id")
-    text = message.text.strip()
+    text = (message.text or message.caption or "").strip()
     if text == "🔙 رجوع":
         await state.set_state(MState.edit_menu)
         await message.answer("🔙 تم الإلغاء.", reply_markup=content_edit_kb())
         return
 
+    # 1) Check if the admin forwarded a message (Poll, Quiz, PDF, photo, video, text, etc.) or sent a Poll/file directly
+    if not (text and LINK_REGEX.search(text)):
+        if await _extract_and_save_forwarded_message(message, item_id):
+            links = await get_content_links(item_id)
+            t = "✅ تم حفظ المنشور/الاستبيان بنجاح!\n" + "\n".join(f"{idx}. {lnk.link}" for idx, lnk in enumerate(links, 1))
+            await state.set_state(MState.edit_menu)
+            await message.answer(t, reply_markup=content_edit_kb())
+            return
+
+    # 2) Otherwise parse URLs
     urls = [u.strip() for u in text.split("\n") if u.strip()]
-    results = await asyncio.gather(*(_add_one_link(message, item_id, url) for url in urls))
+    results = await asyncio.gather(*(_add_one_link(message, item_id, url) for url in urls)) if urls else []
     added = sum(1 for ok in results if ok)
     failed = sum(1 for ok in results if not ok)
+
+    if not added and await _extract_and_save_forwarded_message(message, item_id):
+        added = 1
+        failed = 0
 
     t = f"✅ تمت إضافة {added} رابط" + ("." if not failed else f"، فشل {failed} رابط غير صالح.")
     if added:
@@ -588,7 +702,7 @@ async def _add_one_link(message: Message, item_id: int, url: str) -> bool:
                 await index_single_sheet_message(message.bot, fwd, fname, ititle)
             except Exception as idx_err:
                 logger.warning("Auto-index sheet on add_link failed: %s", idx_err)
-            if not (fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation):
+            if not (fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation or fwd.poll):
                 await fwd.delete()
         except Exception:
             pass

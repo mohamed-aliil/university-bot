@@ -475,6 +475,17 @@ async def delete_channel_confirm(message: Message, state: FSMContext) -> None:
 
 HASHTAG_RE = re.compile(r"#(\w+)")
 _MEDIA_GROUP_CACHE: dict[str, tuple[int, str, int, str]] = {}
+_LAST_CHANNEL_TARGET: dict[str, tuple[int, str, int, str, float]] = {}
+
+
+def _extract_msg_text_for_tags(msg: Message | None) -> str:
+    if not msg:
+        return ""
+    parts = [msg.text or "", msg.caption or ""]
+    if getattr(msg, "poll", None):
+        parts.append(msg.poll.question or "")
+        parts.append(getattr(msg.poll, "explanation", None) or "")
+    return " ".join(p for p in parts if p)
 
 
 async def _resolve_folder(hashtag: str) -> tuple[int, str]:
@@ -489,6 +500,7 @@ async def _resolve_folder(hashtag: str) -> tuple[int, str]:
 
 @channel_router.channel_post()
 async def auto_forward_channel_post(message: Message) -> None:
+    import time as _time
     ch_id = str(message.chat.id)
     mc = await get_monitored_channel_by_channel_id(ch_id)
     if not mc or mc.monitor_mode != "auto":
@@ -497,13 +509,17 @@ async def auto_forward_channel_post(message: Message) -> None:
     msg_id = message.message_id
     mg_id = message.media_group_id
 
-    text = message.text or message.caption or ""
+    text = _extract_msg_text_for_tags(message)
     tags = HASHTAG_RE.findall(text)
+    if not tags and getattr(message, "reply_to_message", None):
+        tags = HASHTAG_RE.findall(_extract_msg_text_for_tags(message.reply_to_message))
 
     folder_id = None
     folder_name = ""
     item_id = None
     title = ""
+
+    now_ts = _time.time()
 
     if not tags and mg_id and mg_id in _MEDIA_GROUP_CACHE:
         folder_id, folder_name, item_id, title = _MEDIA_GROUP_CACHE[mg_id]
@@ -513,6 +529,14 @@ async def auto_forward_channel_post(message: Message) -> None:
             title = tags[1].replace("_", " ").strip()
         else:
             title = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    elif getattr(message, "poll", None):
+        # Polls posted right after a tagged header post automatically attach to that post's button!
+        last_target = _LAST_CHANNEL_TARGET.get(ch_id)
+        if last_target and (now_ts - last_target[4]) < 3600:
+            folder_id, folder_name, item_id, title = last_target[:4]
+        else:
+            folder_id, folder_name = await _resolve_folder("استبيانات_وكويزات")
+            title = f"كويز {datetime.now(timezone.utc).strftime('%Y-%m-%d')}"
     else:
         return
 
@@ -533,6 +557,8 @@ async def auto_forward_channel_post(message: Message) -> None:
                 if len(_MEDIA_GROUP_CACHE) > 200:
                     _MEDIA_GROUP_CACHE.clear()
                 _MEDIA_GROUP_CACHE[mg_id] = (folder_id, folder_name, item_id, title)
+
+        _LAST_CHANNEL_TARGET[ch_id] = (folder_id, folder_name, item_id, title, now_ts)
 
         link = f"https://t.me/{ch_id.replace('-100', 'c/').replace('@', '') if ch_id.startswith('-') else ch_id.replace('@', '')}/{msg_id}"
         uname = ch_id

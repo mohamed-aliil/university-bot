@@ -35,6 +35,8 @@ LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
 def _resolve_channel_chat_id(ch: str, is_private_c: bool = False) -> int | str:
     """Convert stored channel_username or regex group into a valid Bot API chat_id."""
     ch = (ch or "").strip()
+    if ch.startswith("chat:") and ch[5:].lstrip("-").isdigit():
+        return int(ch[5:])
     if ch.startswith("-100") and ch[4:].isdigit():
         return int(ch)
     if ch.startswith("-") and ch[1:].isdigit():
@@ -652,6 +654,18 @@ async def index_single_sheet_message(bot, msg_obj, folder_name: str, item_title:
     txt = (getattr(msg_obj, "text", None) or getattr(msg_obj, "caption", None) or "").strip()
     if txt:
         parts_extracted.append(f"وصف المنشور:\n{txt}")
+
+    poll = getattr(msg_obj, "poll", None)
+    if poll:
+        opts_lines = []
+        correct_idx = getattr(poll, "correct_option_id", None)
+        for idx, opt in enumerate(getattr(poll, "options", []) or []):
+            marker = " ✅ (الإجابة الصحيحة)" if (correct_idx is not None and idx == correct_idx) else ""
+            opts_lines.append(f"  {idx + 1}. {opt.text}{marker}")
+        poll_info = f"📊 استبيان / سؤال كويز:\nالسؤال: {poll.question}\nالخيارات:\n" + "\n".join(opts_lines)
+        if getattr(poll, "explanation", None):
+            poll_info += f"\nالشرح/التوضيح: {poll.explanation}"
+        parts_extracted.append(poll_info)
 
     doc = getattr(msg_obj, "document", None)
     if doc and (doc.file_name or "").lower().endswith(".pdf") and (doc.file_size or 0) < 18_000_000:
@@ -1307,14 +1321,23 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                     if ch and mid:
                         try:
                             fid = _resolve_channel_chat_id(ch)
-                            await message.bot.copy_message(
-                                chat_id=message.chat.id,
-                                from_chat_id=fid,
-                                message_id=int(mid),
-                            )
-                            ok = True
+                            try:
+                                await message.bot.copy_message(
+                                    chat_id=message.chat.id,
+                                    from_chat_id=fid,
+                                    message_id=int(mid),
+                                )
+                                ok = True
+                            except Exception:
+                                # Polls/Quizzes cannot be copied via copy_message; forward_message works for everything
+                                await message.bot.forward_message(
+                                    chat_id=message.chat.id,
+                                    from_chat_id=fid,
+                                    message_id=int(mid),
+                                )
+                                ok = True
                         except Exception as exc:
-                            logger.warning("copy_message channel failed (%s/%s) for user %s: %s", ch, mid, message.chat.id, exc)
+                            logger.warning("copy/forward channel failed (%s/%s) for user %s: %s", ch, mid, message.chat.id, exc)
                     if not ok and link.link:
                         try:
                             m = LINK_REGEX.search(link.link)
@@ -1322,14 +1345,22 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                                 is_priv = bool(m.group(1))
                                 ch2, mid2 = m.group(2), int(m.group(3))
                                 fid2 = _resolve_channel_chat_id(ch2, is_private_c=is_priv)
-                                await message.bot.copy_message(
-                                    chat_id=message.chat.id,
-                                    from_chat_id=fid2,
-                                    message_id=mid2,
-                                )
-                                ok = True
+                                try:
+                                    await message.bot.copy_message(
+                                        chat_id=message.chat.id,
+                                        from_chat_id=fid2,
+                                        message_id=mid2,
+                                    )
+                                    ok = True
+                                except Exception:
+                                    await message.bot.forward_message(
+                                        chat_id=message.chat.id,
+                                        from_chat_id=fid2,
+                                        message_id=mid2,
+                                    )
+                                    ok = True
                         except Exception as exc:
-                            logger.warning("copy_message link failed (%s) for user %s: %s", link.link, message.chat.id, exc)
+                            logger.warning("copy/forward link failed (%s) for user %s: %s", link.link, message.chat.id, exc)
                     if ok:
                         sent_files += 1
         except Exception as exc:
