@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     GROQ_API_KEYS: str = ""
 
     @property
+    def bot_token(self) -> str:
+        return self.BOT_TOKEN
+
+    @property
     def admin_ids(self) -> List[int]:
         return [int(x.strip()) for x in self.ADMIN_IDS.split(",") if x.strip()]
 

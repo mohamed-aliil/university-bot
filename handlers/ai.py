@@ -704,18 +704,48 @@ async def index_single_sheet_message(bot, msg_obj, folder_name: str, item_title:
     if not parts_extracted:
         return None
 
+    raw_combined = "\n\n".join(parts_extracted)
+    ai_summary = ""
+    if len(raw_combined) > 40:
+        try:
+            summary_prompt = (
+                f"المادة أو المجلد: {folder_name}\n"
+                f"عنوان الشيت أو الملف: {item_title}\n\n"
+                f"النص المستخرج من الشيت:\n{raw_combined[:6000]}\n\n"
+                "المطلوب: اكتب مقالة تعليمية ونبذة شاملة ومرتبة للطالب الجامعي باللغة العربية (بدون رموز Markdown مثل ** أو #) تتضمن:\n"
+                "1. نبذة عامة عن المادة والشيت: عمّ تتحدث هذه المادة وهذا الشيت بالضبط؟\n"
+                "2. المحاور والمواضيع الرئيسية التي يغطيها الشيت.\n"
+                "3. شرح مبسط لأهم المفاهيم والتعريفات والقوانين أو الأسئلة الواردة في الشيت."
+            )
+            ai_summary = await call_gemini(
+                summary_prompt,
+                system_prompt="أنت أستاذ جامعي ومساعد أكاديمي في منصة نافذة. اكتب مقالة تعليمية ونبذة وافية وواضحة عن المادة والشيت بالعربية بدون رموز Markdown.",
+                max_tokens=900,
+            ) or ""
+        except Exception as sum_err:
+            logger.warning("AI summary generation for sheet failed: %s", sum_err)
+
     art_title = f"📘 شيت: {folder_name} / {item_title}"
-    body = f"المادة أو المجلد: {folder_name}\nاسم الشيت: {item_title}\n\n" + "\n\n".join(parts_extracted)
+    summary_block = f"📖 نبذة ومقالة تحليلية عن المادة والشيت:\n{ai_summary.strip()}\n\n" if ai_summary.strip() else ""
+    body = (
+        f"المادة أو المجلد: {folder_name}\n"
+        f"اسم الشيت: {item_title}\n\n"
+        f"{summary_block}"
+        f"📄 المحتوى التفصيلي المستخرج من الشيت:\n{raw_combined}"
+    )
     all_arts = await get_all_articles()
     existing = next((a for a in all_arts if a.title == art_title), None)
     if existing:
         merged = existing.content
+        if summary_block and "📖 نبذة ومقالة تحليلية" not in merged:
+            merged = summary_block + merged
         for p_ext in parts_extracted:
             if p_ext[:120] not in merged:
                 merged = (merged + "\n\n" + p_ext)[:15000]
-        await update_article(existing.id, content=merged)
+        await update_article(existing.id, content=merged[:15000])
     else:
         await add_article(art_title, body[:15000])
+    clear_ai_context()
     return art_title
 
 
@@ -1147,6 +1177,70 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
     # Build static context and prioritize items relevant to the student's question
     try:
+        # On-demand auto-indexing: if the student asks about a course whose sheets haven't been analyzed into Articles yet,
+        # automatically analyze up to 2 sheets of that course right now so the AI knows what the course talks about!
+        if settings.admin_ids:
+            try:
+                mats_check = await get_all_materials()
+                arts_check = await get_all_articles()
+                existing_art_titles = {a.title for a in arts_check}
+                folders_map = {f.id: f for f in mats_check["folders"]}
+                q_norm_check = _normalize_ar(q + " " + " ".join((t.get("user") or "") for t in history[-2:]))
+
+                def _fpath_for_check(fid: int | None) -> str:
+                    ns = []
+                    c = fid
+                    d = 0
+                    while c is not None and d < 10:
+                        fo = folders_map.get(c)
+                        if not fo:
+                            break
+                        ns.append(fo.name)
+                        c = fo.parent_id
+                        d += 1
+                    return " / ".join(reversed(ns)) if ns else "عام"
+
+                lazy_indexed = 0
+                for it_chk in mats_check["items"]:
+                    if lazy_indexed >= 2:
+                        break
+                    fp_chk = _fpath_for_check(it_chk.folder_id)
+                    it_title_chk = (it_chk.title or "محتوى").strip()
+                    art_t_chk = f"📘 شيت: {fp_chk} / {it_title_chk}"
+                    if art_t_chk in existing_art_titles:
+                        continue
+                    fp_words = [w for w in re.findall(r"[\w\u0600-\u06FF]{3,}", _normalize_ar(fp_chk + " " + it_title_chk))]
+                    if fp_words and any(w in q_norm_check for w in fp_words):
+                        it_lnks = [l for l in mats_check["links"] if l.content_item_id == it_chk.id]
+                        for lnk_chk in it_lnks[:1]:
+                            fid_c = None
+                            mid_c = None
+                            if lnk_chk.channel_username and lnk_chk.channel_message_id:
+                                fid_c = _resolve_channel_chat_id(lnk_chk.channel_username)
+                                mid_c = int(lnk_chk.channel_message_id)
+                            elif lnk_chk.link:
+                                m_c = LINK_REGEX.search(lnk_chk.link)
+                                if m_c:
+                                    fid_c = _resolve_channel_chat_id(m_c.group(2), is_private_c=bool(m_c.group(1)))
+                                    mid_c = int(m_c.group(3))
+                            if fid_c and mid_c:
+                                try:
+                                    fwd_c = await message.bot.forward_message(
+                                        chat_id=settings.admin_ids[0],
+                                        from_chat_id=fid_c,
+                                        message_id=mid_c,
+                                    )
+                                    await index_single_sheet_message(message.bot, fwd_c, fp_chk, it_title_chk)
+                                    try:
+                                        await fwd_c.delete()
+                                    except Exception:
+                                        pass
+                                    lazy_indexed += 1
+                                except Exception:
+                                    pass
+            except Exception as lazy_err:
+                logger.warning("Lazy course sheet indexing skipped: %s", lazy_err)
+
         raw_ctx = await get_static_context()
         ctx = _select_relevant_context(q, history, raw_ctx, max_articles_chars=32000)
         qa_context = ctx["qa"]
@@ -1176,7 +1270,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             "شخصيتك: سلس جداً، ودود، قريب من الطالب، تفهم جميع اللهجات العربية (وخاصة اللهجة الليبية الدارجة ومصطلحات الطلبة مثل: قداش، امتى، شن يفتح، شن يحتاج، سيمستر، تنزيل، تصفية، شيتات، نصفي، فاينل، وأسماء المواد المكتوبة بالعربي أو الإنجليزي مثل كالكولس، سي بلس، ديسكريت، فيزيا) وترد بأسلوب واضح، مرتب، ومريح، وفي نفس الوقت أنت على قدر عالٍ من المسؤولية والأمانة العلمية.\n\n"
             "📂 البيانات الرسمية المعتمدة في «نَافِذَة»:\n"
             f"{c['aliases']}\n"
-            f"📰 أولاً: المقالات والمنشورات الرسمية:\n{c['articles']}\n\n"
+            f"📰 أولاً: المقالات والمنشورات الرسمية وتحليل الشيتات:\n{c['articles']}\n\n"
             f"📚 ثانياً: الأسئلة الشائعة:\n{c['qa']}\n\n"
             f"📁 ثالثاً: شجرة المواد الدراسية والشيتات:\n{c['materials']}\n\n"
             f"🔗 رابعاً: شجرة المتطلبات الدراسية:\n{c['prereqs']}\n\n"
@@ -1188,21 +1282,23 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             "2. الفهم الذكي للهجات والسلاسة في الحوار:\n"
             "   - افهم قصد الطالب مهما كانت لهجته أو أخطاؤه الإملائية، ورتّب إجابتك بشكل منظم وواضح باستخدام النقاط (•) عند الحاجة بدون تعقيد.\n"
             "   - في التحية أو الشكر (السلام عليكم، شن الجو، صحيت، بارك الله فيك، منور)، رد بلطف وروح طيبة وعرّف بنفسك كمساعد منصة «نَافِذَة».\n"
-            "3. الأمانة التامة والمسؤولية (ممنوع الفتوى أو التخمين):\n"
+            "3. إعطاء نبذة ومقالة تعليمية شاملة عن المواد والشيتات:\n"
+            "   - إذا سأل الطالب عن مادة دراسية أو شيت (مثل: «شن تتكلم مادة كذا؟»، «اعطيني نبذة عن المادة»، «اشرحلي الشيت الأول»، أو سأل عن درس داخل الشيتات)، اعتمد على مقالات الشيتات المحللة أعلاه (`📘 شيت: ...`) لتقدم له مقالة مرتبة وشاملة تشرح له: نبذة وافية عمّ تتحدث المادة، أهم المواضيع والمحاور التي تغطيها شيتاتها، وشرح مبسط وواضح للمفاهيم الموجودة فيها.\n"
+            "4. الأمانة التامة والمسؤولية (ممنوع الفتوى أو التخمين):\n"
             "   - مصدرك الوحيد للحقائق والأرقام والدرجات والتواريخ واللوائح والمتطلبات هو البيانات المرفقة أعلاه فقط.\n"
             "   - إياك أن تعطي الطالب معلومة غير متأكد منها أو غير موجودة في البيانات أعلاه!\n"
-            "4. عند عدم توفر المعلومة في بيانات «نَافِذَة»:\n"
+            "5. عند عدم توفر المعلومة في بيانات «نَافِذَة»:\n"
             "   - إذا سأل الطالب سؤالاً جامعياً لا يوجد جوابه في البيانات أعلاه، اعتذر بصدق ومسؤولية وقل:\n"
             "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n"
-            "5. النطاق الحصري للجامعة و«نَافِذَة»:\n"
+            "6. النطاق الحصري للجامعة و«نَافِذَة»:\n"
             "   - يُمنع الإجابة على أي مواضيع خارج الدراسة والجامعة ومنصة «نَافِذَة» (مثل: طبخ، رياضة، سياسة، ترفيه، أو أسئلة عامة). اعتذر بلطف:\n"
             "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
-            "6. إرسال الشيتات والملفات الدراسية آلياً بدقة تامة (ممنوع إرسال شيتات مواد أخرى):\n"
+            "7. إرسال الشيتات والملفات الدراسية آلياً بدقة تامة (ممنوع إرسال شيتات مواد أخرى):\n"
             "   - إذا قال الطالب 'نبي شيتات' أو 'ابعتلي شيتات' دون أن يحدد اسم المادة (لا في رسالته الحالية ولا في الرسائل السابقة)، لا ترسل أي شيت عشوائي! بل اسأله بلطف: «أي مادة تبي شيتاتها بالضبط؟» واذكر له المواد المتوفرة.\n"
             "   - أما إذا حدد الطالب اسم المادة، فاذكر له الشيتات الخاصة بهذه المادة فقط، واكتب في سطر منفصل في نهاية ردك رقم الـ ID الدقيق لكل شيت مطلوب من هذه المادة حصراً كما يظهر في شجرة المواد أعلاه بهذا الشكل:\n"
             "     [FORWARD] ID:15 | ID:16\n"
             "   - إياك أن تضع في [FORWARD] شيتات تابعة لمادة أخرى غير التي طلبها الطالب! ولا تكتب أي رابط في ردك.\n"
-            "7. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
+            "8. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
         )
 
     user_prompt = q

@@ -26,7 +26,7 @@ from keyboards.reply import main_keyboard
 
 logger = logging.getLogger(__name__)
 BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://university-bot-8vxq.onrender.com")
-_WEBHOOK_SECRET = hashlib.sha256(f"nafedha-wh-{settings.bot_token}".encode()).hexdigest()[:48]
+_WEBHOOK_SECRET = hashlib.sha256(f"nafedha-wh-{settings.BOT_TOKEN}".encode()).hexdigest()[:48]
 
 
 async def on_startup(app: web.Application) -> None:
