@@ -470,7 +470,7 @@ def ai_admin_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         keyboard=[
             [KeyboardButton(text="📚 الأسئلة"), KeyboardButton(text="📰 المقالات")],
-            [KeyboardButton(text="🧠 تحليل ذكي")],
+            [KeyboardButton(text="🧠 تحليل ذكي"), KeyboardButton(text="🔍 تحليل شيتات القناة للـ AI")],
             [KeyboardButton(text="🔙 رجوع")],
         ],
         resize_keyboard=True,

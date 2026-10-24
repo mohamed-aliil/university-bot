@@ -121,8 +121,8 @@ async def render_admin(message: Message, folder_id: int = None) -> None:
             [InlineKeyboardButton(text="✏️ تعديل الاسم", callback_data=f"rename_folder:{folder_id}"),
              InlineKeyboardButton(text="📝 تعديل الرد", callback_data=f"edit_folder_reply:{folder_id}")],
         ])
-        await message.answer(msg, reply_markup=rename_kb)
-        await message.answer("─" * 5, reply_markup=build_kb(folders, items))
+        await message.answer(msg, reply_markup=rename_kb, parse_mode=None)
+        await message.answer("─" * 5, reply_markup=build_kb(folders, items), parse_mode=None)
     else:
         await message.answer("📚 المواد:", reply_markup=build_kb(folders, []))
 
@@ -579,6 +579,15 @@ async def _add_one_link(message: Message, item_id: int, url: str) -> bool:
                 from_chat_id=chat_id,
                 message_id=msg_id,
             )
+            try:
+                from handlers.ai import index_single_sheet_message
+                item_obj = await get_content_item(item_id)
+                folder_obj = await get_folder(item_obj.folder_id) if item_obj else None
+                fname = folder_obj.name if folder_obj else "مادة"
+                ititle = (item_obj.title if item_obj else None) or "شيت"
+                await index_single_sheet_message(message.bot, fwd, fname, ititle)
+            except Exception as idx_err:
+                logger.warning("Auto-index sheet on add_link failed: %s", idx_err)
             if not (fwd.photo or fwd.video or fwd.document or fwd.audio or fwd.voice or fwd.animation):
                 await fwd.delete()
         except Exception:

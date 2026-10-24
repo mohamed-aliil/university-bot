@@ -474,14 +474,17 @@ async def delete_channel_confirm(message: Message, state: FSMContext) -> None:
 # ─── Auto-monitoring: channel posts (hashtag system) ───
 
 HASHTAG_RE = re.compile(r"#(\w+)")
+_MEDIA_GROUP_CACHE: dict[str, tuple[int, str, int, str]] = {}
 
-async def _resolve_folder(hashtag: str) -> int | None:
+
+async def _resolve_folder(hashtag: str) -> tuple[int, str]:
+    clean_name = hashtag.replace("_", " ").strip()
     roots = await get_folders(None)
     for f in roots:
-        if f.name == hashtag:
-            return f.id
-    f = await add_folder(name=hashtag, parent_id=None)
-    return f.id
+        if f.name == clean_name or f.name == hashtag:
+            return f.id, f.name
+    f = await add_folder(name=clean_name, parent_id=None)
+    return f.id, f.name
 
 
 @channel_router.channel_post()
@@ -492,29 +495,55 @@ async def auto_forward_channel_post(message: Message) -> None:
         return
 
     msg_id = message.message_id
-    if message.media_group_id:
-        return
+    mg_id = message.media_group_id
 
     text = message.text or message.caption or ""
     tags = HASHTAG_RE.findall(text)
 
-    if not tags:
+    folder_id = None
+    folder_name = ""
+    item_id = None
+    title = ""
+
+    if not tags and mg_id and mg_id in _MEDIA_GROUP_CACHE:
+        folder_id, folder_name, item_id, title = _MEDIA_GROUP_CACHE[mg_id]
+    elif tags:
+        folder_id, folder_name = await _resolve_folder(tags[0])
+        if len(tags) >= 2:
+            title = tags[1].replace("_", " ").strip()
+        else:
+            title = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    else:
         return
 
-    folder_id = await _resolve_folder(tags[0])
-
-    if len(tags) >= 2:
-        title = tags[1]
-    else:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        title = today
-
     try:
-        ci = await add_content_item(folder_id=folder_id, title=title)
+        from database.crud import get_content_items
+        if item_id is None:
+            existing_items = await get_content_items(folder_id)
+            matched_item = next(
+                (it for it in existing_items if (it.title or "").strip().lower() == title.lower()),
+                None,
+            )
+            if matched_item:
+                ci = matched_item
+            else:
+                ci = await add_content_item(folder_id=folder_id, title=title)
+            item_id = ci.id
+            if mg_id:
+                if len(_MEDIA_GROUP_CACHE) > 200:
+                    _MEDIA_GROUP_CACHE.clear()
+                _MEDIA_GROUP_CACHE[mg_id] = (folder_id, folder_name, item_id, title)
+
         link = f"https://t.me/{ch_id.replace('-100', 'c/').replace('@', '') if ch_id.startswith('-') else ch_id.replace('@', '')}/{msg_id}"
         uname = ch_id
-        await add_content_link(ci.id, link, str(uname), msg_id)
+        await add_content_link(item_id, link, str(uname), msg_id)
         logger.info(f"Auto-saved from {ch_id} -> folder {folder_id} title={title}")
+
+        try:
+            from handlers.ai import index_single_sheet_message
+            await index_single_sheet_message(message.bot, message, folder_name, title)
+        except Exception as idx_err:
+            logger.warning("Channel auto-index sheet failed: %s", idx_err)
     except Exception as e:
         logger.error(f"Auto-forward failed from {ch_id}: {e}")
 

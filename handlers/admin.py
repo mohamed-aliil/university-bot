@@ -144,7 +144,7 @@ async def admin_panel(message: Message) -> None:
     )
 
 
-@router.callback_query(SuperAdminFilter(), F.data.startswith("panel:"))
+@router.callback_query(SuperAdminFilter(), F.data.in_(["panel:admins", "panel:replies", "panel:bans", "panel:users"]))
 async def panel_actions(callback: CallbackQuery) -> None:
     action = callback.data.split(":", 1)[1]
 

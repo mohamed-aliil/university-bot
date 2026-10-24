@@ -314,16 +314,17 @@ async def _build_static_context() -> dict:
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
 
-    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0, folders=None) -> str:
+    async def build_tree(parent_id: int | None, indent: int = 0, depth: int = 0, folders=None, parent_path: str = "") -> str:
         if depth > 10:
             return ""
         prefix = "  " * indent + "• "
         lines = []
         children = [f for f in folders if (f.parent_id == parent_id if parent_id is not None else f.parent_id is None)]
         for f in children:
+            cur_path = f"{parent_path} / {f.name}" if parent_path else f.name
             folder_note = f" ({f.reply_text[:120]})" if getattr(f, "reply_text", None) else ""
             lines.append(f"{prefix}📁 {f.name}{folder_note}")
-            child = await build_tree(f.id, indent + 1, depth + 1, folders)
+            child = await build_tree(f.id, indent + 1, depth + 1, folders, cur_path)
             if child:
                 lines.append(child)
             items = [i for i in item_list if i.folder_id == f.id]
@@ -331,7 +332,7 @@ async def _build_static_context() -> dict:
                 links = [l for l in link_list if l.content_item_id == item.id]
                 title = item.title or "محتوى"
                 status_str = f" ({len(links)} ملف مرفق)" if links else " (بدون ملفات مرفقة حالياً)"
-                lines.append(f"{'  ' * (indent+1)}• 📄 {title}{status_str}")
+                lines.append(f"{'  ' * (indent+1)}• 📄 [ID:{item.id}] {cur_path} / {title}{status_str}")
         return "\n".join(lines)
 
     try:
@@ -626,10 +627,181 @@ async def ai_upload_pdf_file(message: Message, state: FSMContext) -> None:
     file_bytes = await message.bot.download_file(file_info.file_path)
     with open(dest, "wb") as f:
         f.write(file_bytes.read())
-    _extract_pdf_text(dest)
+    extracted = _extract_pdf_text(dest)
     pdf = await save_pdf_context(name, dest)
+    if extracted:
+        try:
+            art_title = f"📄 ملف سياقي: {name}"
+            arts = await get_all_articles()
+            ex_art = next((a for a in arts if a.title == art_title), None)
+            if ex_art:
+                await update_article(ex_art.id, content=extracted[:15000])
+            else:
+                await add_article(art_title, extracted[:15000])
+        except Exception:
+            pass
     await state.clear()
-    await message.answer(f"✅ تم رفع {name} واستخراج النص بنجاح.", reply_markup=ai_admin_keyboard())
+    await message.answer(f"✅ تم رفع {name} واستخراج النص وحفظه في ذاكرة الـ AI بنجاح.", reply_markup=ai_admin_keyboard())
+
+
+async def index_single_sheet_message(bot, msg_obj, folder_name: str, item_title: str) -> str | None:
+    """Extract text/PDF/image content from a channel sheet post and save/update it as an AI Article."""
+    if not msg_obj:
+        return None
+    parts_extracted: list[str] = []
+    txt = (getattr(msg_obj, "text", None) or getattr(msg_obj, "caption", None) or "").strip()
+    if txt:
+        parts_extracted.append(f"وصف المنشور:\n{txt}")
+
+    doc = getattr(msg_obj, "document", None)
+    if doc and (doc.file_name or "").lower().endswith(".pdf") and (doc.file_size or 0) < 18_000_000:
+        try:
+            import fitz
+            finfo = await bot.get_file(doc.file_id)
+            fbytes_io = await bot.download_file(finfo.file_path)
+            raw_pdf = fbytes_io.read()
+            pages = []
+            with fitz.open(stream=raw_pdf, filetype="pdf") as pdf_doc:
+                for p in pdf_doc:
+                    pt = p.get_text()
+                    if pt and pt.strip():
+                        pages.append(pt.strip())
+            pdf_str = "\n".join(pages).strip()
+            if pdf_str:
+                parts_extracted.append(f"محتوى ملف PDF ({doc.file_name}):\n{pdf_str[:8000]}")
+        except Exception as e:
+            logger.warning("index_single_sheet_message PDF extract failed for %s/%s: %s", folder_name, item_title, e)
+
+    photo_list = getattr(msg_obj, "photo", None)
+    if photo_list and not parts_extracted:
+        try:
+            import base64
+            ph = photo_list[-2] if len(photo_list) >= 2 else photo_list[-1]
+            finfo = await bot.get_file(ph.file_id)
+            fbytes_io = await bot.download_file(finfo.file_path)
+            b64 = base64.b64encode(fbytes_io.read()).decode()
+            if len(b64) < 15_000_000:
+                vis_text = await call_groq_vision("استخرج كل النصوص والعناوين والأسئلة الموجودة في صورة هذا الشيت الدراسي بالعربية بدقة:", b64)
+                if vis_text:
+                    parts_extracted.append(f"محتوى صورة الشيت:\n{vis_text[:4000]}")
+        except Exception as e:
+            logger.warning("index_single_sheet_message photo extract failed: %s", e)
+
+    if not parts_extracted:
+        return None
+
+    art_title = f"📘 شيت: {folder_name} / {item_title}"
+    body = f"المادة أو المجلد: {folder_name}\nاسم الشيت: {item_title}\n\n" + "\n\n".join(parts_extracted)
+    all_arts = await get_all_articles()
+    existing = next((a for a in all_arts if a.title == art_title), None)
+    if existing:
+        merged = existing.content
+        for p_ext in parts_extracted:
+            if p_ext[:120] not in merged:
+                merged = (merged + "\n\n" + p_ext)[:15000]
+        await update_article(existing.id, content=merged)
+    else:
+        await add_article(art_title, body[:15000])
+    return art_title
+
+
+@router.message(AdminFilter(), F.text == "🔍 تحليل شيتات القناة للـ AI")
+async def ai_analyze_channel_sheets(message: Message) -> None:
+    status_msg = await message.answer("⏳ جاري فحص وتحليل الشيتات والملفات المربوطة من القنوات وتحويلها إلى مقالات معرفية للـ AI...")
+    try:
+        mats = await get_all_materials()
+        folders_by_id = {f.id: f for f in mats["folders"]}
+
+        def _get_fpath(fid: int | None) -> str:
+            names = []
+            cur = fid
+            depth = 0
+            while cur is not None and depth < 10:
+                fo = folders_by_id.get(cur)
+                if not fo:
+                    break
+                names.append(fo.name)
+                cur = fo.parent_id
+                depth += 1
+            return " / ".join(reversed(names)) if names else "عام"
+
+        all_arts = await get_all_articles()
+        existing_titles = {a.title for a in all_arts}
+
+        analyzed_count = 0
+        skipped_existing = 0
+        failed_count = 0
+        catalog_lines: list[str] = []
+
+        for item in mats["items"]:
+            fpath = _get_fpath(item.folder_id)
+            ititle = (item.title or "محتوى").strip()
+            item_links = [l for l in mats["links"] if l.content_item_id == item.id]
+            if not item_links:
+                continue
+            catalog_lines.append(f"• المادة/المجلد: {fpath} — الشيت: {ititle} [ID:{item.id}] (عدد الملفات: {len(item_links)})")
+            art_title = f"📘 شيت: {fpath} / {ititle}"
+            if art_title in existing_titles:
+                skipped_existing += 1
+                continue
+            # Analyze the first 2 links of this sheet item
+            item_indexed = False
+            for lnk in item_links[:2]:
+                fid = None
+                mid = None
+                if lnk.channel_username and lnk.channel_message_id:
+                    fid = _resolve_channel_chat_id(lnk.channel_username)
+                    mid = int(lnk.channel_message_id)
+                elif lnk.link:
+                    m = LINK_REGEX.search(lnk.link)
+                    if m:
+                        fid = _resolve_channel_chat_id(m.group(2), is_private_c=bool(m.group(1)))
+                        mid = int(m.group(3))
+                if not fid or not mid:
+                    continue
+                try:
+                    fwd = await message.bot.forward_message(
+                        chat_id=message.chat.id,
+                        from_chat_id=fid,
+                        message_id=mid,
+                    )
+                    res_title = await index_single_sheet_message(message.bot, fwd, fpath, ititle)
+                    try:
+                        await fwd.delete()
+                    except Exception:
+                        pass
+                    if res_title:
+                        item_indexed = True
+                except Exception as exc:
+                    logger.warning("Sheet analyze forward failed (%s/%s): %s", fid, mid, exc)
+                await asyncio.sleep(0.25)
+            if item_indexed:
+                analyzed_count += 1
+            else:
+                failed_count += 1
+
+        # Also save/update a master catalog article of all sheets so AI always knows every sheet by course
+        if catalog_lines:
+            cat_title = "📚 الفهرس الشامل لشيتات وملفات المواد في القنوات"
+            cat_body = "قائمة بجميع الشيتات والملفات المتوفرة حالياً في البوت حسب المادة والمجلد:\n\n" + "\n".join(catalog_lines)
+            all_arts_now = await get_all_articles()
+            ex_cat = next((a for a in all_arts_now if a.title == cat_title), None)
+            if ex_cat:
+                await update_article(ex_cat.id, content=cat_body[:15000])
+            else:
+                await add_article(cat_title, cat_body[:15000])
+
+        await status_msg.edit_text(
+            f"✅ اكتمل تحليل شيتات القناة وحفظها في ذاكرة المقالات للـ AI!\n\n"
+            f"📘 شيتات جديدة تم استخراج محتواها (PDF/نص/صور): {analyzed_count}\n"
+            f"✔️ شيتات محللة مسبقاً: {skipped_existing}\n"
+            f"📚 إجمالي الشيتات المفهرسة في الفهرس الشامل: {len(catalog_lines)}\n\n"
+            f"الآن عندما يسأل أي طالب عن موضوع داخل هذه الشيتات، سيجيب الـ AI من محتواها مباشرة!",
+            parse_mode=None,
+        )
+    except Exception as e:
+        logger.exception("ai_analyze_channel_sheets error")
+        await status_msg.edit_text(f"⚠️ حدث خطأ أثناء التحليل: {str(e)[:200]}", parse_mode=None)
 
 
 @router.message(AdminFilter(), F.text == "🔙 رجوع")
@@ -1011,10 +1183,11 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             "5. النطاق الحصري للجامعة و«نَافِذَة»:\n"
             "   - يُمنع الإجابة على أي مواضيع خارج الدراسة والجامعة ومنصة «نَافِذَة» (مثل: طبخ، رياضة، سياسة، ترفيه، أو أسئلة عامة). اعتذر بلطف:\n"
             "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
-            "6. إرسال الشيتات والملفات الدراسية آلياً:\n"
-            "   - إذا طلب الطالب شيتات أو ملفات لمادة موجودة في شجرة المواد أعلاه (ومرفق بها ملفات)، اذكر اسم المحتوى في ردك، واكتب في سطر منفصل في نهاية ردك:\n"
-            "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
-            "   - لا تكتب أي رابط في ردك ولا تقل إليك الروابط.\n"
+            "6. إرسال الشيتات والملفات الدراسية آلياً بدقة تامة (ممنوع إرسال شيتات مواد أخرى):\n"
+            "   - إذا قال الطالب 'نبي شيتات' أو 'ابعتلي شيتات' دون أن يحدد اسم المادة (لا في رسالته الحالية ولا في الرسائل السابقة)، لا ترسل أي شيت عشوائي! بل اسأله بلطف: «أي مادة تبي شيتاتها بالضبط؟» واذكر له المواد المتوفرة.\n"
+            "   - أما إذا حدد الطالب اسم المادة، فاذكر له الشيتات الخاصة بهذه المادة فقط، واكتب في سطر منفصل في نهاية ردك رقم الـ ID الدقيق لكل شيت مطلوب من هذه المادة حصراً كما يظهر في شجرة المواد أعلاه بهذا الشكل:\n"
+            "     [FORWARD] ID:15 | ID:16\n"
+            "   - إياك أن تضع في [FORWARD] شيتات تابعة لمادة أخرى غير التي طلبها الطالب! ولا تكتب أي رابط في ردك.\n"
             "7. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
         )
 
@@ -1036,40 +1209,92 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         groq_system_prompt = _compose_system_prompt(groq_ctx, hist_turns=5)
         answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=800, use_groq=True, history=history[-5:])
     if answer:
-        # Forward actual files: only items the AI explicitly requested via
-        # [FORWARD] title | title (exact names from the material tree)
+        # Forward actual files: strictly only items belonging to the requested course/ID!
         forwarded = set()
         sent_files = 0
         requested_items = []
         try:
             from database.crud import get_all_materials
             materials_data = await get_all_materials()
-            wanted_titles: list[str] = []
+            folders_by_id = {f.id: f for f in materials_data["folders"]}
+
+            def _item_folder_path(fid: int | None) -> str:
+                names = []
+                cur = fid
+                d = 0
+                while cur is not None and d < 10:
+                    fo = folders_by_id.get(cur)
+                    if not fo:
+                        break
+                    names.append(fo.name)
+                    cur = fo.parent_id
+                    d += 1
+                return " / ".join(reversed(names))
+
+            wanted_ids: set[int] = set()
+            wanted_paths: set[str] = set()
+            wanted_bare_titles: set[str] = set()
+
             for m in re.finditer(r"\[FORWARD\]\s*([^\n]+)", answer, re.IGNORECASE):
                 for part in re.split(r"\||,|؛|;", m.group(1)):
                     t = part.strip().lstrip("•📄").strip()
-                    if t:
-                        wanted_titles.append(t)
-            wanted = {t.strip() for t in wanted_titles}
-            if not wanted:
-                # Fallback: if user explicitly asked for sheets/files and named an exact item in q
-                asked_for_sheet = any(w in (q or "") for w in ["شيت", "شيتات", "ملف", "ملفات", "سلايدات", "محاضرات", "امتحانات"])
-                if asked_for_sheet:
-                    q_lower = (q or "").lower()
-                    for item in materials_data["items"]:
-                        title = (item.title or "").strip()
-                        if title and len(title) >= 3 and title.lower() in q_lower:
-                            wanted.add(title)
+                    if not t:
+                        continue
+                    # Extract [ID:15] or ID:15
+                    id_matches = re.findall(r"(?:\[?ID\s*:\s*|\bID\s*)(\d+)\]?", t, re.IGNORECASE)
+                    if id_matches:
+                        for id_str in id_matches:
+                            wanted_ids.add(int(id_str))
+                        continue
+                    if t.isdigit():
+                        wanted_ids.add(int(t))
+                        continue
+                    # Clean out any parenthetical status text like (1 ملف مرفق)
+                    t_clean = re.sub(r"\(\d+\s*ملف.*?\)", "", t).strip()
+                    if "/" in t_clean:
+                        wanted_paths.add(_normalize_ar(t_clean))
+                    else:
+                        wanted_bare_titles.add(_normalize_ar(t_clean))
+
+            # Extract course/folder keywords from student's current query + last 2 turns
+            recent_q_context = _normalize_ar(
+                q + " " + " ".join((turn.get("user") or "") + " " + (turn.get("assistant") or "")[:150] for turn in history[-2:])
+            )
+            matched_items_to_send = []
+
             for item in materials_data["items"]:
                 title = (item.title or "").strip()
                 if not title:
                     continue
-                lo = title.lower()
-                if lo not in {w.lower() for w in wanted}:
-                    continue
+                fpath = _item_folder_path(item.folder_id)
+                norm_title = _normalize_ar(title)
+                norm_fpath = _normalize_ar(fpath)
+                norm_full = _normalize_ar(f"{fpath} / {title}")
+
+                is_match = False
+                if item.id in wanted_ids:
+                    is_match = True
+                elif norm_full in wanted_paths:
+                    is_match = True
+                elif any(wp in norm_full or norm_full in wp for wp in wanted_paths if len(wp) > 5):
+                    is_match = True
+                elif norm_title in wanted_bare_titles:
+                    # CRITICAL GUARD: If AI only output a generic title like "شيت 1",
+                    # ONLY match this item if its parent folder name matches the student's conversation!
+                    folder_words = [w for w in re.findall(r"[\w\u0600-\u06FF]{2,}", norm_fpath) if len(w) >= 2]
+                    if folder_words and any(fw in recent_q_context for fw in folder_words):
+                        is_match = True
+                    elif sum(1 for it2 in materials_data["items"] if _normalize_ar(it2.title or "") == norm_title) == 1:
+                        # Unique title across the entire bot
+                        is_match = True
+
+                if is_match:
+                    matched_items_to_send.append((item, f"{fpath} / {title}" if fpath else title))
+
+            for item, display_name in matched_items_to_send:
                 item_links = [l for l in materials_data["links"] if l.content_item_id == item.id]
                 if not item_links:
-                    requested_items.append(title)
+                    requested_items.append(display_name)
                     continue
                 for link in item_links:
                     ch = link.channel_username
@@ -1247,7 +1472,18 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
 
     await message.answer(f"✅ تم حفظ {name}. جاري استخراج النص وتحليله...")
     pdf_text = _extract_pdf_text(dest)
-    if not pdf_text.strip():
+    if pdf_text.strip():
+        try:
+            art_title = f"📄 ملف سياقي: {name}"
+            arts = await get_all_articles()
+            ex_art = next((a for a in arts if a.title == art_title), None)
+            if ex_art:
+                await update_article(ex_art.id, content=pdf_text[:15000])
+            else:
+                await add_article(art_title, pdf_text[:15000])
+        except Exception:
+            pass
+    else:
         pdf_text = "لم يتم استخراج نص من هذا PDF."
 
     # Store PDF text in state for conversation
@@ -1456,6 +1692,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نصاً عربياً واضحاً فقط، وبدون أي تفكير داخلي بالإنجليزية.\n\n"
         "⚡ الأوامر البرمجية المتاحة (اكتب كل أمر في سطر مستقل يبدأ بالكود، ويمكنك تنفيذ عدة أوامر معاً في نفس الرد):\n"
         "- [ADD_SHEET] اسم_المجلد_أو_رقمه | اسم_الشيت | الرابط1 الرابط2 ... ← (أسهل طريقة!) إضافة شيت مع روابطه مباشرة داخل مجلد موجود أو جديد\n"
+        "- [ANALYZE_SHEETS] ← تحليل واستخراج محتوى جميع شيتات القنوات وحفظها كمقالات معرفية للـ AI\n"
         "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للرئيسي)\n"
         "- [ADD_ITEM] ID_المجلد | عنوان المادة\n"
         "- [ADD_LINK] ID_العنصر | رابط t.me/...\n"
@@ -1515,7 +1752,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     await state.update_data(admin_history=admin_history)
 
     cmd_pattern = re.compile(
-        r"^\[(ADD_SHEET|ADD_QA|EDIT_QA|DEL_QA|LIST_QA|ADD_ARTICLE|EDIT_ARTICLE|DEL_ARTICLE|LIST_ARTICLES|"
+        r"^\[(ADD_SHEET|ANALYZE_SHEETS|ADD_QA|EDIT_QA|DEL_QA|LIST_QA|ADD_ARTICLE|EDIT_ARTICLE|DEL_ARTICLE|LIST_ARTICLES|"
         r"CLEAR_PREREQS|ADD_PREREQ|ADD_FOLDER|ADD_ITEM|ADD_LINK|DEL_FOLDER|DEL_ITEM|DEL_LINK|"
         r"RENAME_FOLDER|RENAME_ITEM|UPDATE_LINK|LIST_FOLDERS|BAN|UNBAN|VIEW_MESSAGES|"
         r"STATS|SEARCH_USER|USER_LOGS|AI_TOGGLE|ADD_ALIAS|ADD_REPLY|DEL_REPLY|LIST_REPLIES|"
@@ -1616,6 +1853,19 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                     full_url = "https://" + full_url
                 await add_content_link(item_obj.id, full_url, str(resolved_chat), msg_id_part)
                 added_links += 1
+                try:
+                    fwd = await message.bot.forward_message(
+                        chat_id=message.chat.id,
+                        from_chat_id=resolved_chat,
+                        message_id=msg_id_part,
+                    )
+                    await index_single_sheet_message(message.bot, fwd, target_folder.name, item_obj.title or sheet_title)
+                    try:
+                        await fwd.delete()
+                    except Exception:
+                        pass
+                except Exception:
+                    pass
 
             await save_admin_action(
                 uid,
@@ -1624,13 +1874,16 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 f"📄 عبر AI: {sheet_title} في مجلد {target_folder.name} ({added_links} رابط)",
             )
             await message.answer(
-                f"✅ تم حفظ الشيت بنجاح!\n"
+                f"✅ تم حفظ الشيت وتحليل محتواه للـ AI بنجاح!\n"
                 f"📂 المجلد: {target_folder.name} (ID: {target_folder.id})\n"
                 f"📄 الشيت: {item_obj.title} (ID: {item_obj.id})\n"
                 f"🔗 الروابط المرفقة الآن: {added_links}",
                 reply_markup=_rm,
                 parse_mode=None,
             )
+
+        elif cmd == "ANALYZE_SHEETS":
+            await ai_analyze_channel_sheets(message)
 
         elif cmd == "ADD_QA":
             parts = arg.split("|")
