@@ -58,12 +58,13 @@ class SubscriptionMiddleware(BaseMiddleware):
         for ch in channels:
             try:
                 member = await event.bot.get_chat_member(ch.chat_id, user.id)
-                if member.status in ("member", "creator", "administrator"):
+                if member.status in ("member", "creator", "administrator", "restricted"):
                     continue
-            except Exception:
-                pass
-            pending_channel = ch
-            break
+                pending_channel = ch
+                break
+            except Exception as exc:
+                logger.warning("Subscription check failed for channel %s (skipping to avoid lockout): %s", ch.chat_id, exc)
+                continue
 
         if pending_channel is None:
             # Member of all — mark verified

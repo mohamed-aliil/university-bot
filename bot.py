@@ -1,4 +1,5 @@
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -25,12 +26,13 @@ from keyboards.reply import main_keyboard
 
 logger = logging.getLogger(__name__)
 BASE_URL = os.environ.get("RENDER_EXTERNAL_URL", "https://university-bot-8vxq.onrender.com")
+_WEBHOOK_SECRET = hashlib.sha256(f"nafedha-wh-{settings.bot_token}".encode()).hexdigest()[:48]
 
 
 async def on_startup(app: web.Application) -> None:
     bot = app["bot"]
     await init_db()
-    await bot.set_webhook(f"{BASE_URL}/webhook", drop_pending_updates=True)
+    await bot.set_webhook(f"{BASE_URL}/webhook", secret_token=_WEBHOOK_SECRET, drop_pending_updates=True)
     set_bot_active(True)
     set_materials_active(True)
     for aid in settings.admin_ids:
@@ -54,6 +56,10 @@ async def health(request: web.Request) -> web.Response:
 
 
 async def webhook_handler(request: web.Request) -> web.Response:
+    token_hdr = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
+    if token_hdr != _WEBHOOK_SECRET:
+        logger.warning("Rejected unauthorized webhook request from %s", request.remote)
+        return web.Response(status=403, text="Forbidden")
     _t0 = _time.perf_counter()
     bot = request.app["bot"]
     dp = request.app["dp"]
@@ -160,6 +166,10 @@ def _get_chat_lock(update: Update) -> asyncio.Lock:
         chat_id = update.callback_query.message.chat.id
     if chat_id is None:
         return None
+    if len(_chat_locks) > 2000:
+        stale = [cid for cid, lk in list(_chat_locks.items())[:500] if not lk.locked()]
+        for cid in stale:
+            _chat_locks.pop(cid, None)
     if chat_id not in _chat_locks:
         _chat_locks[chat_id] = asyncio.Lock()
     return _chat_locks[chat_id]

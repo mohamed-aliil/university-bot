@@ -624,6 +624,8 @@ async def set_admin(user_id: int, is_admin: bool = True, rank: str = "moderator"
         kwargs["can_reply"] = False
         kwargs["can_ban"] = False
         kwargs["can_manage"] = False
+        kwargs["can_view_logs"] = False
+        kwargs["can_control_bot"] = False
     user = await update_user(user_id, **kwargs)
     return user is not None
 
@@ -635,9 +637,10 @@ async def set_permission(user_id: int, perm: str, value: bool) -> bool:
 
 async def get_admin_permissions(user_id: int) -> dict | None:
     user = await get_user(user_id)
-    if not user:
+    if not user or not user.is_admin:
         return None
     return {
+        "is_admin": True,
         "can_reply": user.can_reply,
         "can_ban": user.can_ban,
         "can_manage": user.can_manage,

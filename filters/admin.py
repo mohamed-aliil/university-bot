@@ -16,7 +16,7 @@ class SuperAdminFilter(BaseFilter):
         if obj.from_user.id in settings.admin_ids:
             return True
         perms = await get_admin_permissions(obj.from_user.id)
-        return perms is not None and perms.get("rank") == "super_admin"
+        return perms is not None and perms.get("is_admin", False) and perms.get("rank") == "super_admin"
 
 
 class PermissionFilter(BaseFilter):
@@ -27,4 +27,4 @@ class PermissionFilter(BaseFilter):
         if obj.from_user.id in settings.admin_ids:
             return True
         perms = await get_admin_permissions(obj.from_user.id)
-        return perms is not None and perms.get(self.permission, False)
+        return perms is not None and perms.get("is_admin", False) and perms.get(self.permission, False)

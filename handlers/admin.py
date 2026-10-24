@@ -436,7 +436,9 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
         await message.answer("✏️ اكتب ردك المخصص الآن:", reply_markup=cancel_keyboard())
         return
 
-    if message.text == "❌ إلغاء":
+    if message.text in ("❌ إلغاء", "🔙 رجوع", "/start") or (
+        message.text and message.text.startswith(("📩 الطلبات المرسلة", "📚 نَافِذَةُ المَوَادَ", "👥 الإدارة", "💬 التواصل", "⚙️ الإعدادات", "🤖 نَافِذَة الـ AI", "🔄 تحديث"))
+    ):
         # Release lock and re-notify other admins
         data2 = await state.get_data()
         rmid = data2.get("reply_msg_id")
@@ -444,7 +446,7 @@ async def send_reply_to_user(message: Message, state: FSMContext) -> None:
             from handlers.messages import _release_message_lock
             await _release_message_lock(rmid)
         kb = await admin_main_keyboard(message.from_user.id)
-        await message.answer("✅ تم الإلغاء.", reply_markup=kb)
+        await message.answer("✅ تم إلغاء وضع الرد.", reply_markup=kb)
         await state.clear()
         return
 
@@ -1536,7 +1538,7 @@ async def cleanup_db_prompt(message: Message) -> None:
     await message.answer("\n".join(msg_parts), reply_markup=confirm_cleanup_keyboard())
 
 
-@router.callback_query(F.data == "confirm_cleanup")
+@router.callback_query(SuperAdminFilter(), F.data == "confirm_cleanup")
 async def confirm_cleanup_cb(callback: CallbackQuery) -> None:
     await callback.answer()
     await callback.message.edit_text("🧹 جاري تنظيف قاعدة البيانات...")
@@ -1557,7 +1559,7 @@ async def confirm_cleanup_cb(callback: CallbackQuery) -> None:
     )
 
 
-@router.callback_query(F.data == "cancel_cleanup")
+@router.callback_query(SuperAdminFilter(), F.data == "cancel_cleanup")
 async def cancel_cleanup_cb(callback: CallbackQuery) -> None:
     await callback.answer()
     await callback.message.edit_text("❌ تم إلغاء التنظيف.")
@@ -1566,9 +1568,12 @@ async def cancel_cleanup_cb(callback: CallbackQuery) -> None:
 @router.message(SuperAdminFilter(), F.text == "🔄 تحديث البوت")
 async def restart_bot_kb(message: Message) -> None:
     await message.answer("♻️ جاري إعادة تشغيل البوت...")
-    import subprocess, sys
-    subprocess.Popen(["systemctl", "--user", "restart", "botkey"])
-    sys.exit(0)
+    import subprocess, sys, os
+    try:
+        subprocess.Popen(["systemctl", "--user", "restart", "botkey"])
+    except Exception:
+        pass
+    os._exit(0)
 
 
 @router.message(SuperAdminFilter(), F.text == "➕ إضافة مشرف")

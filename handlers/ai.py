@@ -18,7 +18,7 @@ from database.crud import (add_qa, update_qa, delete_qa, get_all_qa, save_pdf_co
                              ban_user, unban_user, get_user, add_alias,
                              get_all_aliases, has_agreed_ai, set_agreed_ai, log_ai_action,
                              add_autoreply, remove_autoreply, get_all_autoreplies, get_all_users, get_all_materials,
-                             get_stats, get_all_user_messages)
+                             get_stats, get_all_user_messages, get_admin_permissions, save_admin_action)
 from keyboards.reply import ai_admin_keyboard, ai_qa_keyboard, ai_articles_keyboard, ai_user_keyboard, main_keyboard, cancel_keyboard, smart_mode_keyboard, agreement_keyboard
 from services.gemini import call_gemini, call_groq_vision
 from services.ai_context import get_cached_context, clear_ai_context
@@ -143,10 +143,11 @@ _DIALECT_SYNONYMS: dict[str, list[str]] = {
 
 
 def _extract_query_keywords(q: str, history: list[dict], alias_items: list[tuple[str, str, str]]) -> set[str]:
-    """Extract normalized keywords from user question, recent turns, dialect synonyms, and matched course aliases."""
+    """Extract normalized keywords from user question, recent 5 turns (user + assistant), dialect synonyms, and matched course aliases."""
     combined = q or ""
-    for turn in (history or [])[-2:]:
+    for turn in (history or [])[-5:]:
         combined += " " + (turn.get("user") or "")
+        combined += " " + (turn.get("assistant") or "")[:250]
     norm = _normalize_ar(combined)
     words = {w for w in re.findall(r"[\w\u0600-\u06FF]{2,}", norm) if len(w) >= 2}
     stop_words = {
@@ -154,6 +155,7 @@ def _extract_query_keywords(q: str, history: list[dict], alias_items: list[tuple
         "اللي", "هذا", "هذه", "ان", "كان", "لو", "او", "ام", "كل", "بس",
         "فيه", "فيها", "عندي", "نبي", "ابغي", "اريد", "ممكن", "سؤال", "يا",
         "نافذه", "بوت", "الجامعه", "الكليه", "طالب", "طلبه", "شن", "شنو", "شني",
+        "مساعد", "الذكي", "حاليا", "بيانات", "معلومه", "استفسار", "تتوفر", "لدي",
     }
     keywords = words - stop_words
     expanded = set(keywords)
@@ -296,6 +298,9 @@ def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_article
 _user_busy: set[int] = set()
 # Duplicate-question guard: reply only once for the same text within 20s
 _last_question: dict[tuple[int, str], float] = {}
+# Persistent per-user and per-admin conversation memory (keeps last 8 turns even if user navigates away)
+_USER_CHAT_HISTORY: dict[int, list[dict]] = {}
+_ADMIN_CHAT_HISTORY: dict[int, list[dict]] = {}
 
 
 async def _build_static_context() -> dict:
@@ -647,11 +652,13 @@ async def ai_user_start(message: Message, state: FSMContext) -> None:
         return
     if await has_agreed_ai(message.from_user.id):
         await state.set_state(AIState.waiting_for_question)
-        await state.update_data(history=[])
+        prev_hist = _USER_CHAT_HISTORY.get(message.from_user.id, [])
+        await state.update_data(history=prev_hist)
         await message.answer(
             "مرحباً بك في نَافِذَة الـ AI!\n"
-            "أنا نموذج ذكاء اصطناعي مُطوّر لبوت نَافِذَة، أعمل على معالجة أسئلتك ومساعدتك في كافة استفساراتك الجامعية خطوة بخطوة.\n"
+            "أنا نموذج ذكاء اصطناعي مُطوّر لبوت نَافِذَة، أعمل على معالجة أسئلتك ومساعدتك في كافة استفساراتك الجامعية خطوة بخطوة (وأتذكر سياق محادثتك الجارية).\n"
             "تفضل بكتابة سؤالك وسأجيبك فوراً!\n\n"
+            "💡 للبدء في موضوع جديد تماماً أرسل: محادثة جديدة\n"
             "أو استخدم 🔙 رجوع للعودة.",
             reply_markup=ai_user_keyboard(),
         )
@@ -925,8 +932,14 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await message.answer("🛑 المساعد الذكي متوقف حالياً.", reply_markup=main_keyboard())
         return
 
+    if q in ("محادثة جديدة", "موضوع جديد", "امسح المحادثة", "مسح المحادثة"):
+        _USER_CHAT_HISTORY.pop(message.from_user.id, None)
+        await state.update_data(history=[], pending_admin_notify=False, pending_notify_q=None)
+        await message.answer("🔄 تم بدء محادثة جديدة تماماً! تفضل بكتابة سؤالك.", reply_markup=ai_user_keyboard())
+        return
+
     data = await state.get_data()
-    history: list[dict] = data.get("history", [])
+    history: list[dict] = data.get("history") or list(_USER_CHAT_HISTORY.get(message.from_user.id, []))
 
     try:
         uname = message.from_user.full_name or message.from_user.username or str(message.from_user.id)
@@ -984,23 +997,25 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             f"{c['pdf']}\n"
             f"{h_note}\n"
             "🚫 قواعد المسؤولية والانضباط الصارمة (إلزامية 100%):\n"
-            "1. الفهم الذكي للهجات والسلاسة في الحوار:\n"
+            "1. الترابط السياقي وفهم المحادثة المستمرة (آخر 3 إلى 6 رسائل):\n"
+            "   - انتبه جيداً لرسائل الطالب السابقة وردودك عليها! إذا أرسل الطالب سؤالاً قصيراً أو مكملاً لنفس الموضوع (مثل: باهي، وكم وحداتها؟، وعندها شيتات؟، شن تفتح؟، ابعتهم ليا، قصدي الثانية)، اربطه مباشرة بنفس المادة أو الموضوع الذي كنتم تتحدثون عنه في الرسائل السابقة.\n"
+            "2. الفهم الذكي للهجات والسلاسة في الحوار:\n"
             "   - افهم قصد الطالب مهما كانت لهجته أو أخطاؤه الإملائية، ورتّب إجابتك بشكل منظم وواضح باستخدام النقاط (•) عند الحاجة بدون تعقيد.\n"
             "   - في التحية أو الشكر (السلام عليكم، شن الجو، صحيت، بارك الله فيك، منور)، رد بلطف وروح طيبة وعرّف بنفسك كمساعد منصة «نَافِذَة».\n"
-            "2. الأمانة التامة والمسؤولية (ممنوع الفتوى أو التخمين):\n"
+            "3. الأمانة التامة والمسؤولية (ممنوع الفتوى أو التخمين):\n"
             "   - مصدرك الوحيد للحقائق والأرقام والدرجات والتواريخ واللوائح والمتطلبات هو البيانات المرفقة أعلاه فقط.\n"
             "   - إياك أن تعطي الطالب معلومة غير متأكد منها أو غير موجودة في البيانات أعلاه!\n"
-            "3. عند عدم توفر المعلومة في بيانات «نَافِذَة»:\n"
+            "4. عند عدم توفر المعلومة في بيانات «نَافِذَة»:\n"
             "   - إذا سأل الطالب سؤالاً جامعياً لا يوجد جوابه في البيانات أعلاه، اعتذر بصدق ومسؤولية وقل:\n"
             "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n"
-            "4. النطاق الحصري للجامعة و«نَافِذَة»:\n"
+            "5. النطاق الحصري للجامعة و«نَافِذَة»:\n"
             "   - يُمنع الإجابة على أي مواضيع خارج الدراسة والجامعة ومنصة «نَافِذَة» (مثل: طبخ، رياضة، سياسة، ترفيه، أو أسئلة عامة). اعتذر بلطف:\n"
             "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
-            "5. إرسال الشيتات والملفات الدراسية آلياً:\n"
+            "6. إرسال الشيتات والملفات الدراسية آلياً:\n"
             "   - إذا طلب الطالب شيتات أو ملفات لمادة موجودة في شجرة المواد أعلاه (ومرفق بها ملفات)، اذكر اسم المحتوى في ردك، واكتب في سطر منفصل في نهاية ردك:\n"
             "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
             "   - لا تكتب أي رابط في ردك ولا تقل إليك الروابط.\n"
-            "6. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
+            "7. اكتب بالعربية مباشرة بدون رموز Markdown (** أو * أو #) وبدون كتابة أي تفكير داخلي.\n"
         )
 
     user_prompt = q
@@ -1013,13 +1028,13 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
     answer = None
     if settings.gemini_keys:
         system_prompt = _compose_system_prompt(ctx, hist_turns=8)
-        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=False)
+        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=False, history=history[-6:])
     if not answer:
         groq_ctx = _select_relevant_context(
-            q, history, raw_ctx if "raw_ctx" in locals() else {}, max_articles_chars=2200, compact=True
+            q, history, raw_ctx if "raw_ctx" in locals() else {}, max_articles_chars=2100, compact=True
         )
-        groq_system_prompt = _compose_system_prompt(groq_ctx, hist_turns=3)
-        answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=800, use_groq=True)
+        groq_system_prompt = _compose_system_prompt(groq_ctx, hist_turns=5)
+        answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=800, use_groq=True, history=history[-5:])
     if answer:
         # Forward actual files: only items the AI explicitly requested via
         # [FORWARD] title | title (exact names from the material tree)
@@ -1146,8 +1161,9 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
         # Save to history (keep clean answer without internal tags)
         history.append({"user": q, "assistant": clean_answer or answer})
-        if len(history) > 16:
-            history = history[-16:]
+        if len(history) > 12:
+            history = history[-12:]
+        _USER_CHAT_HISTORY[message.from_user.id] = list(history[-8:])
         await state.update_data(history=history)
 
         if clean_answer:
@@ -1320,6 +1336,50 @@ async def ai_admin_chat_message(message: Message, state: FSMContext) -> None:
                 pass
 
 
+async def _get_admin_role_info(uid: int) -> dict:
+    """Return role and granular permissions for an admin user."""
+    if uid in settings.admin_ids:
+        return {
+            "is_super": True,
+            "rank": "super_admin",
+            "rank_label": "🚀 سوبر أدمن (صلاحيات كاملة)",
+            "can_reply": True,
+            "can_ban": True,
+            "can_manage": True,
+            "can_view_logs": True,
+            "can_control_bot": True,
+        }
+    perms = await get_admin_permissions(uid)
+    if not perms:
+        return {
+            "is_super": False,
+            "rank": "moderator",
+            "rank_label": "🔰 مراقب",
+            "can_reply": True,
+            "can_ban": False,
+            "can_manage": False,
+            "can_view_logs": False,
+            "can_control_bot": False,
+        }
+    rank = perms.get("rank", "admin")
+    is_super = rank == "super_admin" or bool(perms.get("can_control_bot", False))
+    labels = {
+        "super_admin": "🚀 سوبر أدمن (صلاحيات كاملة)",
+        "admin": "👑 مشرف",
+        "moderator": "🔰 مراقب",
+    }
+    return {
+        "is_super": is_super,
+        "rank": rank,
+        "rank_label": labels.get(rank, "👑 مشرف"),
+        "can_reply": bool(perms.get("can_reply", True)),
+        "can_ban": bool(perms.get("can_ban", False)) or is_super,
+        "can_manage": bool(perms.get("can_manage", False)) or is_super,
+        "can_view_logs": bool(perms.get("can_view_logs", False)) or is_super,
+        "can_control_bot": is_super,
+    }
+
+
 async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     q = message.text or message.caption or ""
     if not q:
@@ -1330,8 +1390,11 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
     except Exception:
         pass
 
+    uid = message.from_user.id
+    role_info = await _get_admin_role_info(uid)
+
     data = await state.get_data()
-    admin_history: list[dict] = data.get("admin_history", [])
+    admin_history: list[dict] = data.get("admin_history") or list(_ADMIN_CHAT_HISTORY.get(uid, []))
 
     current_state = await state.get_state()
     _in_smart = current_state == AIAdminState.smart_mode.state
@@ -1381,29 +1444,18 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
     # Build conversation history
     history_lines = []
-    for turn in admin_history:
-        history_lines.append(f"المستخدم: {turn['user']}")
-        history_lines.append(f"المساعد: {turn['assistant']}")
+    for turn in admin_history[-5:]:
+        history_lines.append(f"المشرف: {turn['user'][:200]}")
+        history_lines.append(f"المساعد: {turn['assistant'][:300]}")
     history_context = "\n".join(history_lines)
-    history_note = ""
-    if history_context:
-        history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
+    history_note = f"\nسجل المحادثة الجارية مع المشرف:\n{history_context}\n" if history_context else ""
 
     admin_system_prompt = (
-        "أنت المساعد الإداري الذكي والمطور لمشرفي منصة «نَافِذَة».\n"
-        "تفهم اللهجة الليبية والفصحى بطلاقة، وتساعد المشرف في إدارة البوت بالكامل، تنظيم البيانات، صياغة الإعلانات، وتنفيذ الأوامر.\n"
+        f"أنت المساعد الإداري الذكي لمنصة «نَافِذَة». تتحدث الآن مع: {role_info['rank_label']}.\n"
+        "تفهم اللهجة الليبية والفصحى بطلاقة، وتربط كلام المشرف بآخر 3-5 رسائل في المحادثة الجارية.\n"
         "ممنوع استخدام ** أو * أو أي تنسيق Markdown في ردك — اكتب نصاً عربياً واضحاً فقط، وبدون أي تفكير داخلي بالإنجليزية.\n\n"
-        "⚡ الأوامر البرمجية المتاحة (اكتب كل أمر في سطر مستقل يبدأ بالكود، ويمكنك تنفيذ عدة أوامر معاً في نفس الرد إذا طلب المشرف أكثر من شيء):\n"
-        "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
-        "- [EDIT_QA] الرقم | السؤال_الجديد | الجواب_الجديد ← تعديل سؤال/جواب موجود\n"
-        "- [DEL_QA] الرقم1 الرقم2 ... ← حذف أسئلة بأرقامها\n"
-        "- [LIST_QA] ← عرض كل الأسئلة\n"
-        "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال أو إعلان\n"
-        "- [EDIT_ARTICLE] الرقم | العنوان_الجديد | المحتوى_الجديد ← تعديل مقال موجود\n"
-        "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
-        "- [LIST_ARTICLES] ← عرض كل المقالات\n"
-        "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية\n"
-        "- [ADD_PREREQ] كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب\n"
+        "⚡ الأوامر البرمجية المتاحة (اكتب كل أمر في سطر مستقل يبدأ بالكود، ويمكنك تنفيذ عدة أوامر معاً في نفس الرد):\n"
+        "- [ADD_SHEET] اسم_المجلد_أو_رقمه | اسم_الشيت | الرابط1 الرابط2 ... ← (أسهل طريقة!) إضافة شيت مع روابطه مباشرة داخل مجلد موجود أو جديد\n"
         "- [ADD_FOLDER] اسم المجلد | ID_المجلد_الأب (0 للرئيسي)\n"
         "- [ADD_ITEM] ID_المجلد | عنوان المادة\n"
         "- [ADD_LINK] ID_العنصر | رابط t.me/...\n"
@@ -1414,44 +1466,56 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         "- [DEL_ITEM] ID\n"
         "- [DEL_LINK] ID\n"
         "- [LIST_FOLDERS] ← عرض شجرة المجلدات والمواد\n"
-        "- [BAN] user_id ← حظر مستخدم\n"
-        "- [UNBAN] user_id ← إلغاء حظر\n"
-        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة غير المقروءة\n"
-        "- [STATS] ← عرض إحصائيات البوت الشاملة\n"
-        "- [SEARCH_USER] نص_البحث ← البحث عن مستخدم بالاسم أو المعرف أو اليوزر\n"
-        "- [USER_LOGS] user_id_أو_0_للكل ← عرض آخر سجلات نشاط المستخدمين (أو مستخدم معين)\n"
-        "- [AI_TOGGLE] on_أو_off ← تشغيل أو إيقاف المساعد الذكي للطلاب\n"
+        "- [ADD_QA] السؤال | الجواب ← إضافة سؤال/جواب\n"
+        "- [EDIT_QA] الرقم | السؤال_الجديد | الجواب_الجديد ← تعديل سؤال/جواب موجود\n"
+        "- [DEL_QA] الرقم1 الرقم2 ... ← حذف أسئلة بأرقامها\n"
+        "- [LIST_QA] ← عرض كل الأسئلة\n"
+        "- [ADD_ARTICLE] العنوان | المحتوى ← إضافة مقال أو إعلان\n"
+        "- [EDIT_ARTICLE] الرقم | العنوان_الجديد | المحتوى_الجديد ← تعديل مقال موجود\n"
+        "- [DEL_ARTICLE] الرقم ← حذف مقال برقمه\n"
+        "- [LIST_ARTICLES] ← عرض كل المقالات\n"
+        "- [ADD_PREREQ] كود_المادة | اسم_المادة | كود_المتطلب | اسم_المتطلب\n"
         "- [ADD_ALIAS] الاسم_البديل | كود_المادة | اسم_المادة ← حفظ اسم بديل لمادة\n"
+        "- [VIEW_MESSAGES] ← عرض رسائل التواصل الواردة غير المقروءة\n"
+        "- [SEND_MSG] معرف_أو_يوزر_أو_اسم_الطالب | الرسالة ← إرسال رسالة لمستخدم معين (مع زر تأكيد)\n"
+        "- [SEND_TO_ALL] الرسالة ← إرسال إذاعة لكل المستخدمين (مع زر تأكيد)\n"
         "- [ADD_REPLY] الكلمة | الرد ← إضافة رد تلقائي سريع\n"
         "- [DEL_REPLY] الرقم ← حذف رد سريع\n"
         "- [LIST_REPLIES] ← عرض كل الردود السريعة\n"
-        "- [SEND_TO_ALL] الرسالة ← إرسال إذاعة لكل المستخدمين (مع زر تأكيد)\n"
-        "- [SEND_MSG] user_id | الرسالة ← إرسال رسالة لمستخدم معين (مع زر تأكيد)\n\n"
-        "💡 ملاحظة مهمة: إذا طلب المشرف صياغة مقال أو عدة أسئلة وإضافتها، قم بصياغتها باحترافية وضع أوامر [ADD_ARTICLE] أو [ADD_QA] مباشرة في سطور مستقلة ليتم حفظها فوراً!\n\n"
+        "- [BAN] user_id ← حظر مستخدم\n"
+        "- [UNBAN] user_id ← إلغاء حظر\n"
+        "- [SEARCH_USER] نص_البحث ← البحث عن مستخدم بالاسم أو المعرف أو اليوزر\n"
+        "- [STATS] ← عرض إحصائيات البوت الشاملة\n"
+        "- [USER_LOGS] user_id_أو_0_للكل ← عرض آخر سجلات نشاط المستخدمين\n"
+        "- [AI_TOGGLE] on_أو_off ← تشغيل أو إيقاف المساعد الذكي للطلاب (للسوبر أدمن فقط)\n"
+        "- [CLEAR_PREREQS] ← مسح المتطلبات الدراسية بالكامل (للسوبر أدمن فقط)\n\n"
+        f"🔐 صلاحيات هذا المشرف الحالية: سوبر={role_info['is_super']} | إدارة_محتوى={role_info['can_manage']} | رد_تواصل={role_info['can_reply']} | حظر={role_info['can_ban']} | سجلات={role_info['can_view_logs']}.\n"
+        "إذا طلب المشرف أمراً خارج صلاحيات رتبته، اعتذر له بلطف ووضّح أن هذا الأمر مخصص للسوبر أدمن أو يحتاج صلاحية إضافية.\n\n"
         f"الأسئلة المحفوظة: {qa_context}\n"
         f"المقالات: {art_context}\n"
         f"المتطلبات الدراسية: {prereq_count} علاقة\n"
         f"الأسماء البديلة:\n{aliases_str}\n"
-        f"المجلدات:\n{folders_tree[:3200]}"
+        f"المجلدات:\n{folders_tree[:3000]}"
         f"{history_note}"
     )
 
-    answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=False)
+    answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=False, history=admin_history[-5:])
     if not answer:
-        answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=True)
+        answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=True, history=admin_history[-5:])
     if not answer:
         await message.answer("⚠️ فشل الحصول على رد من الذكاء الاصطناعي.", reply_markup=_rm)
         return
 
     clean_full = _strip_cot(answer)
 
-    # Save to history (keep last 5)
+    # Save to history (keep last 6)
     admin_history.append({"user": q, "assistant": clean_full or answer})
-    admin_history = admin_history[-5:]
+    admin_history = admin_history[-6:]
+    _ADMIN_CHAT_HISTORY[uid] = list(admin_history)
     await state.update_data(admin_history=admin_history)
 
     cmd_pattern = re.compile(
-        r"^\[(ADD_QA|EDIT_QA|DEL_QA|LIST_QA|ADD_ARTICLE|EDIT_ARTICLE|DEL_ARTICLE|LIST_ARTICLES|"
+        r"^\[(ADD_SHEET|ADD_QA|EDIT_QA|DEL_QA|LIST_QA|ADD_ARTICLE|EDIT_ARTICLE|DEL_ARTICLE|LIST_ARTICLES|"
         r"CLEAR_PREREQS|ADD_PREREQ|ADD_FOLDER|ADD_ITEM|ADD_LINK|DEL_FOLDER|DEL_ITEM|DEL_LINK|"
         r"RENAME_FOLDER|RENAME_ITEM|UPDATE_LINK|LIST_FOLDERS|BAN|UNBAN|VIEW_MESSAGES|"
         r"STATS|SEARCH_USER|USER_LOGS|AI_TOGGLE|ADD_ALIAS|ADD_REPLY|DEL_REPLY|LIST_REPLIES|"
@@ -1473,13 +1537,102 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         await safe_send(message, clean_full or answer, reply_markup=_rm)
         return
 
+    # Permission enforcement per command category
+    super_only_cmds = {"AI_TOGGLE", "CLEAR_PREREQS"}
+    manage_cmds = {
+        "ADD_SHEET", "ADD_FOLDER", "ADD_ITEM", "ADD_LINK", "RENAME_FOLDER", "RENAME_ITEM",
+        "UPDATE_LINK", "DEL_FOLDER", "DEL_ITEM", "DEL_LINK",
+        "ADD_QA", "EDIT_QA", "DEL_QA", "ADD_ARTICLE", "EDIT_ARTICLE", "DEL_ARTICLE",
+        "ADD_PREREQ", "ADD_ALIAS", "DEL_REPLY", "SEND_TO_ALL",
+    }
+    moderator_blocked_cmds = {
+        "DEL_FOLDER", "DEL_ITEM", "DEL_LINK", "DEL_QA", "DEL_ARTICLE", "SEND_TO_ALL",
+        "CLEAR_PREREQS", "AI_TOGGLE",
+    }
+    ban_cmds = {"BAN", "UNBAN", "SEARCH_USER"}
+    logs_cmds = {"STATS", "USER_LOGS"}
+    reply_cmds = {"VIEW_MESSAGES", "SEND_MSG", "ADD_REPLY", "LIST_REPLIES"}
+
     # If the AI also included a helpful note alongside the commands, send it first
     note_text = "\n".join(chat_lines).strip()
     if note_text and len(note_text) > 3:
         await safe_send(message, note_text, reply_markup=_rm)
 
     for cmd, arg in commands_to_run:
-        if cmd == "ADD_QA":
+        if cmd in super_only_cmds and not role_info["is_super"]:
+            await message.answer(f"⛔ عذراً، الأمر [{cmd}] مخصص للسوبر أدمن فقط.", reply_markup=_rm)
+            continue
+        if role_info["rank"] == "moderator" and cmd in moderator_blocked_cmds and not role_info["is_super"]:
+            await message.answer(f"⛔ عذراً، الأمر [{cmd}] غير متاح لرتبة مراقب.", reply_markup=_rm)
+            continue
+        if cmd in manage_cmds and not role_info["can_manage"]:
+            await message.answer(f"⛔ عذراً، ليس لديك صلاحية إدارة المحتوى لتنفيذ [{cmd}].", reply_markup=_rm)
+            continue
+        if cmd in ban_cmds and not role_info["can_ban"]:
+            await message.answer(f"⛔ عذراً، ليس لديك صلاحية الحظر وإدارة المستخدمين لتنفيذ [{cmd}].", reply_markup=_rm)
+            continue
+        if cmd in logs_cmds and not role_info["can_view_logs"]:
+            await message.answer(f"⛔ عذراً، ليس لديك صلاحية عرض السجلات والإحصائيات لتنفيذ [{cmd}].", reply_markup=_rm)
+            continue
+        if cmd in reply_cmds and not (role_info["can_reply"] or role_info["can_manage"]):
+            await message.answer(f"⛔ عذراً، ليس لديك صلاحية الرد والتواصل لتنفيذ [{cmd}].", reply_markup=_rm)
+            continue
+
+        if cmd == "ADD_SHEET":
+            parts = [p.strip() for p in arg.split("|")]
+            if len(parts) < 2:
+                await message.answer("❌ التنسيق: [ADD_SHEET] اسم_المجلد | اسم_الشيت | الرابط", reply_markup=_rm)
+                continue
+            folder_ref = parts[0]
+            sheet_title = parts[1]
+            links_raw = " ".join(parts[2:]) if len(parts) >= 3 else ""
+
+            mats = await get_all_materials()
+            target_folder = None
+            if folder_ref.isdigit():
+                target_folder = next((f for f in mats["folders"] if f.id == int(folder_ref)), None)
+            if not target_folder:
+                nf = _normalize_ar(folder_ref)
+                target_folder = next((f for f in mats["folders"] if _normalize_ar(f.name) == nf), None)
+            if not target_folder:
+                nf = _normalize_ar(folder_ref)
+                target_folder = next((f for f in mats["folders"] if nf in _normalize_ar(f.name) or _normalize_ar(f.name) in nf), None)
+            if not target_folder:
+                target_folder = await add_folder(folder_ref, None)
+
+            existing_item = next(
+                (it for it in mats["items"] if it.folder_id == target_folder.id and _normalize_ar(it.title or "") == _normalize_ar(sheet_title)),
+                None,
+            )
+            item_obj = existing_item or await add_content_item(target_folder.id, sheet_title)
+
+            added_links = 0
+            for m_lnk in LINK_REGEX.finditer(links_raw):
+                is_priv = bool(m_lnk.group(1))
+                ch_part, msg_id_part = m_lnk.group(2), int(m_lnk.group(3))
+                resolved_chat = _resolve_channel_chat_id(ch_part, is_private_c=is_priv)
+                full_url = m_lnk.group(0)
+                if not full_url.startswith("http"):
+                    full_url = "https://" + full_url
+                await add_content_link(item_obj.id, full_url, str(resolved_chat), msg_id_part)
+                added_links += 1
+
+            await save_admin_action(
+                uid,
+                message.from_user.full_name or "مشرف",
+                "add_content",
+                f"📄 عبر AI: {sheet_title} في مجلد {target_folder.name} ({added_links} رابط)",
+            )
+            await message.answer(
+                f"✅ تم حفظ الشيت بنجاح!\n"
+                f"📂 المجلد: {target_folder.name} (ID: {target_folder.id})\n"
+                f"📄 الشيت: {item_obj.title} (ID: {item_obj.id})\n"
+                f"🔗 الروابط المرفقة الآن: {added_links}",
+                reply_markup=_rm,
+                parse_mode=None,
+            )
+
+        elif cmd == "ADD_QA":
             parts = arg.split("|")
             if len(parts) >= 2:
                 qq, aa = parts[0].strip(), "|".join(parts[1:]).strip()
@@ -1799,24 +1952,40 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
 
         elif cmd == "SEND_MSG":
             parts = arg.split("|")
-            if len(parts) >= 2 and parts[0].strip().isdigit():
-                uid = int(parts[0].strip())
+            if len(parts) >= 2:
+                target_ref = parts[0].strip()
                 msg = "|".join(parts[1:]).strip()
-                user = await get_user(uid)
-                uname = user.full_name if user else str(uid)
-                from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
-                kb = InlineKeyboardMarkup(inline_keyboard=[
-                    [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data=f"sendmsg:confirm:{uid}"),
-                     InlineKeyboardButton(text="❌ إلغاء", callback_data="sendmsg:cancel")]
-                ])
-                await state.update_data(sendmsg_text=msg)
-                await message.answer(
-                    f"📩 رسالة إلى {uname} ({uid}):\n\n{msg[:300]}\n\nهل أنت متأكد؟",
-                    reply_markup=kb,
-                    parse_mode=None,
-                )
+                target_user = None
+                target_uid = None
+                if target_ref.isdigit():
+                    target_uid = int(target_ref)
+                    target_user = await get_user(target_uid)
+                else:
+                    q_ref = target_ref.lstrip("@").lower()
+                    all_u = await get_all_users()
+                    target_user = next(
+                        (u for u in all_u if (u.username and u.username.lower() == q_ref) or (u.full_name and q_ref in u.full_name.lower())),
+                        None,
+                    )
+                    if target_user:
+                        target_uid = target_user.user_id
+                if target_uid:
+                    uname = target_user.full_name if target_user else str(target_uid)
+                    from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+                    kb = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text="✅ تأكيد الإرسال", callback_data=f"sendmsg:confirm:{target_uid}"),
+                         InlineKeyboardButton(text="❌ إلغاء", callback_data="sendmsg:cancel")]
+                    ])
+                    await state.update_data(sendmsg_text=msg)
+                    await message.answer(
+                        f"📩 رسالة إلى {uname} ({target_uid}):\n\n{msg[:300]}\n\nهل أنت متأكد؟",
+                        reply_markup=kb,
+                        parse_mode=None,
+                    )
+                else:
+                    await message.answer(f"❌ لم يتم العثور على المستخدم: {target_ref}", reply_markup=_rm, parse_mode=None)
             else:
-                await message.answer("❌ التنسيق: user_id | الرسالة", reply_markup=_rm)
+                await message.answer("❌ التنسيق: معرف_أو_اسم_المستخدم | الرسالة", reply_markup=_rm)
 
 
 # ─── Admin: إضافة مقال/إعلان ───
@@ -2017,10 +2186,10 @@ async def ai_sendmsg_confirm(callback: CallbackQuery, state: FSMContext) -> None
     text = data.get("sendmsg_text", "")
     await callback.message.edit_reply_markup(reply_markup=None)
     try:
-        await callback.bot.send_message(chat_id=uid, text=text)
+        await callback.bot.send_message(chat_id=uid, text=text, parse_mode=None)
         await callback.message.answer(f"✅ تم إرسال الرسالة إلى {uid}.")
     except Exception as e:
-        await callback.message.answer(f"⚠️ فشل الإرسال: {str(e)[:100]}")
+        await callback.message.answer(f"⚠️ فشل الإرسال: {str(e)[:100]}", parse_mode=None)
     await callback.answer()
 
 

@@ -48,7 +48,13 @@ async def _pick_best_key(groq_keys: list[str], exclude: set[str] | None = None) 
     return best
 
 
-async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 1024, use_groq: bool = True) -> str | None:
+async def call_gemini(
+    prompt: str,
+    system_prompt: str = "",
+    max_tokens: int = 1024,
+    use_groq: bool = True,
+    history: list[dict] | None = None,
+) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
     t0 = time.perf_counter()
     effective_system = system_prompt if system_prompt else _MINIMAL_SYSTEM_PROMPT
@@ -61,14 +67,14 @@ async def call_gemini(prompt: str, system_prompt: str = "", max_tokens: int = 10
                 if not key:
                     break
                 tried.add(key)
-                result = await _call_groq(prompt, effective_system, key, max_tokens=max_tokens)
+                result = await _call_groq(prompt, effective_system, key, max_tokens=max_tokens, history=history)
                 if result:
                     LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                     return result
 
         # Fallback to Gemini keys (always gets full system prompt)
         for key in settings.gemini_keys:
-            result = await _call_gemini(prompt, effective_system, key, max_tokens=max_tokens)
+            result = await _call_gemini(prompt, effective_system, key, max_tokens=max_tokens, history=history)
             if result:
                 LAST_AI_MS["ms"] = (time.perf_counter() - t0) * 1000
                 return result
@@ -117,9 +123,15 @@ def _compact_system_prompt(system_prompt: str, max_chars: int = 5500) -> str:
     )
 
 
-async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 800) -> str | None:
+async def _call_groq(
+    prompt: str,
+    system_prompt: str,
+    api_key: str,
+    max_tokens: int = 800,
+    history: list[dict] | None = None,
+) -> str | None:
     global LAST_GROQ_ERROR, LAST_GEMINI_ERROR, LAST_CALL_ERROR
-    compact_sys = _compact_system_prompt(system_prompt, max_chars=5500)
+    compact_sys = _compact_system_prompt(system_prompt, max_chars=5200)
     capped_max_tokens = min(max_tokens, 900)
 
     MODELS = [
@@ -145,6 +157,14 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
             messages = []
             if cur_sys:
                 messages.append({"role": "system", "content": cur_sys})
+            if history:
+                for turn in history[-5:]:
+                    u_msg = (turn.get("user") or "").strip()[:250]
+                    a_msg = (turn.get("assistant") or "").strip()[:350]
+                    if u_msg:
+                        messages.append({"role": "user", "content": u_msg})
+                    if a_msg:
+                        messages.append({"role": "assistant", "content": a_msg})
             messages.append({"role": "user", "content": prompt})
             payload = {
                 "model": model,
@@ -215,11 +235,27 @@ async def _call_groq(prompt: str, system_prompt: str, api_key: str, max_tokens: 
     return None
 
 
-async def _call_gemini(prompt: str, system_prompt: str, api_key: str, max_tokens: int = 1024) -> str | None:
+async def _call_gemini(
+    prompt: str,
+    system_prompt: str,
+    api_key: str,
+    max_tokens: int = 1024,
+    history: list[dict] | None = None,
+) -> str | None:
+    hist_block = ""
+    if history:
+        h_lines = []
+        for turn in history[-6:]:
+            if turn.get("user"):
+                h_lines.append(f"المستخدم: {turn['user'][:300]}")
+            if turn.get("assistant"):
+                h_lines.append(f"المساعد: {turn['assistant'][:400]}")
+        if h_lines:
+            hist_block = "\n\nسياق المحادثة الجارية:\n" + "\n".join(h_lines)
     if system_prompt:
-        full_prompt = f"{system_prompt}\n\nالرجاء الرد على ما يلي:\n{prompt}"
+        full_prompt = f"{system_prompt}{hist_block}\n\nالرجاء الرد على رسالة المستخدم الحالية (مع ربطها بسياق المحادثة الجارية إن كانت تكملة لنفس الموضوع):\n{prompt}"
     else:
-        full_prompt = prompt
+        full_prompt = f"{hist_block}\n\n{prompt}".strip()
 
     MODELS = ["gemini-2.0-flash", "gemini-2.0-flash-lite", "gemini-1.5-flash"]
 

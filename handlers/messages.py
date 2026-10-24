@@ -1,4 +1,5 @@
 import logging
+import html as html_mod
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -72,10 +73,10 @@ async def forward_to_admins(message: Message, msg_type: str, db_message_id: int)
 
     caption = (
         f"💬 محادثة جديدة\n"
-        f"👤 {user.full_name}\n"
-        f"🆔 {user.id}\n"
+        f"👤 {html_mod.escape(user.full_name or 'بدون اسم')}\n"
+        f"🆔 <code>{user.id}</code>\n"
         f"──────────\n"
-        f"{message.text or message.caption or ''}"
+        f"{html_mod.escape(message.text or message.caption or '')}"
     )
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)
@@ -310,7 +311,7 @@ async def handle_all_messages(message: Message, state: FSMContext) -> None:
 
     sent = await message.answer(
         f"📝 تأكيد الإرسال\n\n"
-        f"{preview}\n\n"
+        f"{html_mod.escape(preview)}\n\n"
         f"هل أنت متأكد من إرسال هذه الرسالة؟",
         reply_markup=confirm_send_keyboard(message.message_id),
     )
@@ -342,12 +343,12 @@ async def confirm_send_yes(callback: CallbackQuery, state: FSMContext) -> None:
 
     caption_text = (
         f"💬 رسالة جديدة\n"
-        f"👤 {user.full_name}\n"
-        f"🆔 {user.id}\n"
+        f"👤 {html_mod.escape(user.full_name or 'بدون اسم')}\n"
+        f"🆔 <code>{user.id}</code>\n"
     )
     msg_content = content_data.get("content") or content_data.get("caption")
     if msg_content:
-        caption_text += f"\n📝 {msg_content}"
+        caption_text += f"\n📝 {html_mod.escape(msg_content)}"
     caption_text += f"\n{'─' * 10}"
 
     reply_markup = admin_reply_keyboard(user.id, user.full_name)
