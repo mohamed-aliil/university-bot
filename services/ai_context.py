@@ -19,6 +19,10 @@ _ADMIN_CONTEXT_CACHES = (
     "get_all_articles",
     "get_all_prerequisites",
     "get_all_aliases",
+    "get_all_materials",
+    "get_folders",
+    "get_content_items",
+    "get_content_links",
 )
 
 
@@ -26,6 +30,7 @@ def clear_ai_context() -> None:
     """Force the static AI context to be rebuilt on the next question."""
     global _context_ts
     _context_ts = 0.0
+    _context_cache.clear()
     for cache_name in _ADMIN_CONTEXT_CACHES:
         invalidate_cache(cache_name)
 

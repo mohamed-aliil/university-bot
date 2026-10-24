@@ -1425,8 +1425,18 @@ async def get_courses_opened_by(prerequisite_code: str) -> list[CoursePrerequisi
 
 async def add_alias(alias: str, course_code: str, course_name: str) -> CourseAlias:
     clear_ai_context()
+    clean_alias = alias.strip()
     async with async_session() as session:
-        ca = CourseAlias(alias=alias.strip(), course_code=course_code, course_name=course_name)
+        existing = (
+            await session.execute(select(CourseAlias).where(CourseAlias.alias == clean_alias))
+        ).scalar_one_or_none()
+        if existing:
+            existing.course_code = course_code
+            existing.course_name = course_name
+            await session.commit()
+            await session.refresh(existing)
+            return existing
+        ca = CourseAlias(alias=clean_alias, course_code=course_code, course_name=course_name)
         session.add(ca)
         await session.commit()
         await session.refresh(ca)

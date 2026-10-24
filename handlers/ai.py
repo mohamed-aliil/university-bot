@@ -28,6 +28,182 @@ router = Router()
 
 MAX_MSG_LEN = 4000  # Leave room for safety
 
+LINK_REGEX = re.compile(r"(?:https?://)?t\.me/(c/)?([a-zA-Z_]\w+|\d+)/(\d+)")
+
+
+def _resolve_channel_chat_id(ch: str, is_private_c: bool = False) -> int | str:
+    """Convert stored channel_username or regex group into a valid Bot API chat_id."""
+    ch = (ch or "").strip()
+    if ch.startswith("-100") and ch[4:].isdigit():
+        return int(ch)
+    if ch.startswith("-") and ch[1:].isdigit():
+        return int(ch)
+    if ch.isdigit():
+        return int(f"-100{ch}")
+    if is_private_c and ch.lstrip("-").isdigit():
+        return int(f"-100{ch.lstrip('-')}")
+    return ch if ch.startswith("@") else f"@{ch}"
+
+
+def _extract_pdf_text(file_path: str) -> str:
+    """Extract readable text from a PDF file using PyMuPDF (fitz), with a .txt sidecar cache."""
+    import os
+    if not file_path:
+        return ""
+    txt_cache = f"{file_path}.txt"
+    if os.path.exists(txt_cache):
+        try:
+            with open(txt_cache, "r", encoding="utf-8", errors="ignore") as tf:
+                cached = tf.read().strip()
+            if cached:
+                return cached
+        except Exception:
+            pass
+    if not os.path.exists(file_path):
+        return ""
+    try:
+        import fitz
+        pages_text = []
+        with fitz.open(file_path) as doc_pdf:
+            for page in doc_pdf:
+                t = page.get_text()
+                if t:
+                    pages_text.append(t.strip())
+        full_text = "\n".join(pages_text).strip()
+        if full_text:
+            try:
+                with open(txt_cache, "w", encoding="utf-8") as tf:
+                    tf.write(full_text)
+            except Exception:
+                pass
+        return full_text
+    except Exception as e:
+        logger.warning("AI: fitz PDF extraction failed for %s: %s", file_path, e)
+        return ""
+
+
+def _normalize_ar(text: str) -> str:
+    """Normalize Arabic/English text for keyword matching."""
+    if not text:
+        return ""
+    t = text.lower()
+    t = re.sub(r"[\u064B-\u065F\u0640]", "", t)  # strip tashkeel & tatweel
+    t = re.sub(r"[أإآ]", "ا", t)
+    t = t.replace("ة", "ه").replace("ى", "ي")
+    return t
+
+
+def _extract_query_keywords(q: str, history: list[dict], alias_items: list[tuple[str, str, str]]) -> set[str]:
+    """Extract normalized keywords from user question, recent turns, and matched course aliases."""
+    combined = q or ""
+    for turn in (history or [])[-2:]:
+        combined += " " + (turn.get("user") or "")
+    norm = _normalize_ar(combined)
+    words = {w for w in re.findall(r"[\w\u0600-\u06FF]{2,}", norm) if len(w) >= 2}
+    stop_words = {
+        "من", "في", "على", "الى", "عن", "مع", "هل", "ما", "ماذا", "كيف", "متى",
+        "اين", "ليش", "شن", "شنو", "شني", "اللي", "هذا", "هذه", "ان", "كان",
+        "لو", "او", "ام", "كل", "بس", "فيه", "فيها", "عندي", "نبي", "ابغي",
+        "اريد", "ممكن", "سؤال", "يا", "نافذه", "بوت", "الجامعه", "الكليه",
+    }
+    keywords = words - stop_words
+    for alias, code, cname in (alias_items or []):
+        na = _normalize_ar(alias)
+        if na and na in norm:
+            for extra in re.findall(r"[\w\u0600-\u06FF]{2,}", _normalize_ar(f"{code} {cname}")):
+                keywords.add(extra)
+    return keywords
+
+
+def _select_relevant_context(q: str, history: list[dict], ctx: dict, max_articles_chars: int = 32000) -> dict:
+    """Prioritize articles, Q&A, and PDFs that match the student's question so relevant
+    articles are included in full at the top of the prompt without truncation."""
+    keywords = _extract_query_keywords(q, history, ctx.get("alias_items", []))
+
+    def _score_text(title_or_q: str, body: str) -> int:
+        if not keywords:
+            return 0
+        nt = _normalize_ar(title_or_q)
+        nb = _normalize_ar(body)
+        score = 0
+        for kw in keywords:
+            if kw in nt:
+                score += 4
+            if kw in nb:
+                score += 1
+        return score
+
+    # 1) Prioritize Q&A pairs
+    qa_items = ctx.get("qa_items") or []
+    if qa_items:
+        scored_qa = sorted(
+            enumerate(qa_items),
+            key=lambda pair: (_score_text(pair[1][0], pair[1][1]), -pair[0]),
+            reverse=True,
+        )
+        qa_lines = [f"س: {qq}\nج: {aa}" for _, (qq, aa) in scored_qa]
+        qa_context = "\n\n".join(qa_lines)
+        if len(qa_context) > 10000:
+            qa_context = qa_context[:10000] + "\n... (بقية الأسئلة الشائعة)"
+    else:
+        qa_context = ctx.get("qa", "لا توجد أسئلة مضافة بعد.")
+
+    # 2) Prioritize Articles (full content for matched articles first!)
+    article_items = ctx.get("article_items") or []
+    if article_items:
+        all_titles = "، ".join(f"[{aid}] {title}" for aid, title, _ in article_items)
+        scored_arts = sorted(
+            article_items,
+            key=lambda item: (_score_text(item[1], item[2]), item[0]),
+            reverse=True,
+        )
+        art_blocks = [f"📌 فهرس عناوين جميع المقالات المتوفرة في نافذة: {all_titles}\n"]
+        used_chars = len(art_blocks[0])
+        for aid, title, content in scored_arts:
+            clean_c = (content or "").strip()
+            block = f"---\n📰 مقال رقم ({aid}) — العنوان: {title}\nالمحتوى:\n{clean_c[:12000]}\n"
+            if used_chars + len(block) > max_articles_chars:
+                remaining = max_articles_chars - used_chars
+                if remaining > 400:
+                    art_blocks.append(block[:remaining] + "\n... (تم اختصار بقية المقال)")
+                break
+            art_blocks.append(block)
+            used_chars += len(block)
+        articles_context = "\n".join(art_blocks)
+    else:
+        articles_context = "لا توجد مقالات مضافة بعد."
+
+    # 3) Prioritize PDF texts
+    pdf_items = ctx.get("pdf_items") or []
+    if pdf_items:
+        scored_pdfs = sorted(
+            pdf_items,
+            key=lambda item: _score_text(item[0], item[1]),
+            reverse=True,
+        )
+        pdf_blocks = ["📚 الملفات السياقية (PDF):"]
+        used_pdf = 0
+        for pname, ptext in scored_pdfs:
+            snippet = (ptext or "").strip()[:6000]
+            block = f"\n📄 ملف ({pname}):\n{snippet}\n"
+            if used_pdf + len(block) > 12000:
+                break
+            pdf_blocks.append(block)
+            used_pdf += len(block)
+        pdf_context = "\n".join(pdf_blocks) + "\n"
+    else:
+        pdf_context = ctx.get("pdf", "")
+
+    return {
+        "qa": qa_context,
+        "materials": ctx.get("materials", "لا توجد مواد بعد."),
+        "articles": articles_context,
+        "pdf": pdf_context,
+        "prereqs": ctx.get("prereqs", "لا توجد متطلبات دراسية محفوظة."),
+        "aliases": ctx.get("aliases", ""),
+    }
+
+
 # In-memory guard: exactly ONE background AI answer per user at a time (no races)
 _user_busy: set[int] = set()
 # Duplicate-question guard: reply only once for the same text within 20s
@@ -40,6 +216,7 @@ async def _build_static_context() -> dict:
     except Exception as e:
         logger.error("AI: get_all_qa failed: %s", e)
         qa_list = []
+    qa_items = [(qa.question, qa.answer) for qa in qa_list]
     qa_context = "\n".join(
         f"س: {qa.question}\nج: {qa.answer}" for qa in qa_list
     ) if qa_list else "لا توجد أسئلة مضافة بعد."
@@ -51,20 +228,17 @@ async def _build_static_context() -> dict:
         lines = []
         children = [f for f in folders if (f.parent_id == parent_id if parent_id is not None else f.parent_id is None)]
         for f in children:
-            lines.append(f"{prefix}📁 {f.name}")
+            folder_note = f" ({f.reply_text[:120]})" if getattr(f, "reply_text", None) else ""
+            lines.append(f"{prefix}📁 {f.name}{folder_note}")
             child = await build_tree(f.id, indent + 1, depth + 1, folders)
             if child:
                 lines.append(child)
             items = [i for i in item_list if i.folder_id == f.id]
             for item in items:
                 links = [l for l in link_list if l.content_item_id == item.id]
-                link_str = ""
-                if links:
-                    link_str = " → ".join(l.link for l in links[:5])
-                    if len(links) > 5:
-                        link_str += f" (+{len(links)-5} رابط إضافي يُطلب بالسؤال عنها)"
                 title = item.title or "محتوى"
-                lines.append(f"{'  ' * (indent+1)}• 📄 {title}" + (f" — {link_str}" if link_str else ""))
+                status_str = f" ({len(links)} ملف مرفق)" if links else " (بدون ملفات مرفقة حالياً)"
+                lines.append(f"{'  ' * (indent+1)}• 📄 {title}{status_str}")
         return "\n".join(lines)
 
     try:
@@ -76,14 +250,15 @@ async def _build_static_context() -> dict:
     except Exception as e:
         logger.error("AI: build_tree failed: %s", e)
         materials_context = "حدث خطأ أثناء بناء شجرة المواد."
-    if len(materials_context) > 9000:
-        materials_context = materials_context[:9000] + "\n... (يوجد المزيد)"
+    if len(materials_context) > 12000:
+        materials_context = materials_context[:12000] + "\n... (يوجد المزيد)"
 
     try:
         articles_list = await get_all_articles()
     except Exception as e:
         logger.error("AI: get_all_articles failed: %s", e)
         articles_list = []
+    article_items = [(a.id, a.title, a.content) for a in articles_list]
     articles_context = ""
     for a in articles_list:
         c = a.content[:12000]
@@ -97,22 +272,22 @@ async def _build_static_context() -> dict:
         logger.error("AI: get_all_prerequisites failed: %s", e)
         prereqs_list = []
 
-    # Load PDF context files
+    # Load PDF context files using PyMuPDF (fitz) instead of raw binary decode
+    pdf_items: list[tuple[str, str]] = []
     try:
         pdfs = await get_all_pdfs()
         pdf_context = ""
         for p in pdfs:
-            pdf_context += f"\n📄 {p.name}: "
-            try:
-                with open(p.file_path, "rb") as pf:
-                    raw = pf.read()
-                text = raw.decode("utf-8", errors="ignore")[:1500]
-                pdf_context += text[:500] + "...\n"
-            except Exception:
-                pdf_context += "(تعذر قراءة الملف)\n"
+            extracted = _extract_pdf_text(p.file_path)
+            if extracted:
+                pdf_items.append((p.name, extracted))
+                pdf_context += f"\n📄 {p.name}:\n{extracted[:4000]}\n"
+            else:
+                pdf_context += f"\n📄 {p.name}: (لا يوجد نص مستخرج)\n"
         if pdfs:
             pdf_context = "📚 الملفات السياقية:\n" + pdf_context + "\n"
-    except Exception:
+    except Exception as e:
+        logger.warning("AI: get_all_pdfs failed: %s", e)
         pdf_context = ""
 
     # Build two views: forward (what a course opens) and backward (what a course needs)
@@ -149,6 +324,7 @@ async def _build_static_context() -> dict:
         aliases_list = await get_all_aliases()
     except Exception:
         aliases_list = []
+    alias_items = [(a.alias, a.course_code, a.course_name) for a in aliases_list]
     aliases_context = ""
     for a in aliases_list:
         aliases_context += f"- '{a.alias}' ← {a.course_name} ({a.course_code})\n"
@@ -157,11 +333,15 @@ async def _build_static_context() -> dict:
 
     return {
         "qa": qa_context,
+        "qa_items": qa_items,
         "materials": materials_context,
         "articles": articles_context,
+        "article_items": article_items,
         "pdf": pdf_context,
+        "pdf_items": pdf_items,
         "prereqs": prereqs_context,
         "aliases": aliases_context,
+        "alias_items": alias_items,
     }
 
 
@@ -353,9 +533,10 @@ async def ai_upload_pdf_file(message: Message, state: FSMContext) -> None:
     file_bytes = await message.bot.download_file(file_info.file_path)
     with open(dest, "wb") as f:
         f.write(file_bytes.read())
+    _extract_pdf_text(dest)
     pdf = await save_pdf_context(name, dest)
     await state.clear()
-    await message.answer(f"✅ تم رفع {name} بنجاح.", reply_markup=ai_admin_keyboard())
+    await message.answer(f"✅ تم رفع {name} واستخراج النص بنجاح.", reply_markup=ai_admin_keyboard())
 
 
 @router.message(AdminFilter(), F.text == "🔙 رجوع")
@@ -453,6 +634,10 @@ async def ai_user_question(message: Message, state: FSMContext) -> None:
     now = time.monotonic()
     # Duplicate guard: same question text within 20s is a resend/spam echo → ignore
     if q:
+        if len(_last_question) > 500:
+            stale = [k for k, ts in _last_question.items() if now - ts > 60.0]
+            for k in stale:
+                _last_question.pop(k, None)
         key = (uid, q)
         if key in _last_question and now - _last_question[key] < 20.0:
             logger.info("Dropping duplicate question from %s: %r", uid, q[:50])
@@ -573,14 +758,19 @@ _COT_MARKER_PATTERNS = (
 )
 
 
+_COT_ENG_PATTERNS = re.compile(
+    r"\b(the user|user is asking|let's think|i should|i need to|first,|step \d|in arabic|system prompt|final answer|wait,|looking at the context)\b",
+    re.IGNORECASE,
+)
+
+
 def _strip_cot(answer: str) -> str:
     """Remove internal chain-of-thought reasoning from an AI reply, keeping
-    only the final Arabic answer. Handles [Output Generation]/[Final], HTML
-    <thinking>, English "thinking-phase" paragraphs, and trailing markers.
-    Also removes duplicate repeated answer blocks within the same response."""
-    text = re.sub(r"<thinking>.*?</thinking>", "", answer, flags=re.DOTALL)
-    text = re.sub(r"<output>.*?</output>", "", text, flags=re.DOTALL)
-    text = re.sub(r"<[^>]+>", "", text)
+    the final answer intact (including course codes, numbers, and bullet lists)."""
+    text = re.sub(r"<think>.*?</think>", "", answer, flags=re.DOTALL)
+    text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL)
+    text = re.sub(r"<output>(.*?)</output>", r"\1", text, flags=re.DOTALL)
+    text = re.sub(r"</?[a-zA-Z][^>]*>", "", text)
     text = text.replace("**", "").strip()
 
     # 1) Cut at LAST explicit output marker (nested [Output Generation] blocks)
@@ -600,61 +790,40 @@ def _strip_cot(answer: str) -> str:
             text = text.split("->", 1)[-1].strip() if "->" in seg else seg
 
     # 2) Remove duplicate repeated answer blocks (model sometimes outputs same answer twice)
-    # Split by double newline, find near-identical paragraphs
     paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
     if len(paras) > 1:
-        # If first and last paragraph are very similar (>85% overlap), keep only last
         first = paras[0]
         last = paras[-1]
-        # Simple similarity: character set overlap
         if first and last:
             common = set(first) & set(last)
             similarity = len(common) / max(len(set(first)), len(set(last)))
             if similarity > 0.85:
                 text = last
-    else:
-        # Single paragraph - check for intra-paragraph duplicates (single newline separation)
-        single_lines = [ln.strip() for ln in text.split("\n") if ln.strip()]
-        if len(single_lines) > 1:
-            # Check if first and last single line are near-duplicates
-            first_s = single_lines[0]
-            last_s = single_lines[-1]
-            if first_s and last_s:
-                common_s = set(first_s) & set(last_s)
-                similarity_s = len(common_s) / max(len(set(first_s)), len(set(last_s)))
-                if similarity_s > 0.85:
-                    text = last_s
 
-    # 3) Drop English thinking lines; keep Arabic + numeric/bulleted content
+    # 3) Drop only English meta-thinking lines while keeping Arabic, course codes, and [FORWARD]
     lines = re.split(r"\n+", text)
     kept = []
     for line in lines:
         s = line.strip()
         if not s:
             continue
-        arabic = len(re.findall(r"[\u0600-\u06FF]", s))
-        total = len(s)
-        ratio = arabic / total if total else 0
-        # Keep Arabic lines + short numeric/bullet labels; drop English thinking
-        if ratio >= 0.35:
+        if s.upper().startswith("[FORWARD]"):
             kept.append(s)
-        elif ratio == 0 and total <= 40 and re.match(r"^[\d\s.\-•\)\*]+$", s):
+            continue
+        arabic = len(re.findall(r"[\u0600-\u06FF]", s))
+        latin = len(re.findall(r"[a-zA-Z]", s))
+        total = len(s)
+        if arabic > 0 and not _COT_ENG_PATTERNS.search(s):
+            kept.append(s)
+        elif arabic == 0 and _COT_ENG_PATTERNS.search(s):
+            continue
+        elif arabic == 0 and latin > 45 and total > 60:
+            # Long pure-English reasoning line
+            continue
+        else:
             kept.append(s)
     if kept:
         text = "\n".join(kept)
-    else:
-        # Fallback: keep the LAST paragraph (models usually put final answer last)
-        paras = [p.strip() for p in re.split(r"\n\s*\n", text) if p.strip()]
-        if paras:
-            last = paras[-1]
-            if "->" in last:
-                last = last.rsplit("->", 1)[-1].strip().strip('"')
-            last = re.sub(r"[\*\u200f]", "", last).strip()
-            if not last and len(paras) > 1:
-                last = paras[-2]
-            text = last if last else ""
-        else:
-            text = ""
     return re.sub(r"\n{3,}", "\n\n", re.sub(r"[ \t]{2,}", " ", text)).strip()
 
 
@@ -673,7 +842,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
     # Check if AI previously offered to notify admins and user is confirming
     if data.get("pending_admin_notify"):
-        confirm_words = ["نعم", "اي", "أي", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات", "ارسل", "ابعت"]
+        confirm_words = ["نعم", "اي", "أي", "ايه", "أيه", "تمام", "طيب", "ih", "is", "ok", "yes", "aye", "go ahead", "ابشر", "هات", "ارسل", "ابعت"]
         if any(w in q.lower() for w in confirm_words):
             await message.answer(
                 "حسناً، هل تريد مني إرسال طلبك إلى المشرفين الآن؟",
@@ -683,10 +852,10 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         await state.update_data(pending_admin_notify=False, pending_notify_q=None)
         # fall through to normal AI processing
 
-    # Build static context from Q&A, materials, articles, and prerequisites.
-    # This is cached (TTL) to avoid ~60+ sequential DB queries on every question.
+    # Build static context and prioritize items relevant to the student's question
     try:
-        ctx = await get_static_context()
+        raw_ctx = await get_static_context()
+        ctx = _select_relevant_context(q, history, raw_ctx, max_articles_chars=32000)
         qa_context = ctx["qa"]
         materials_context = ctx["materials"]
         articles_context = ctx["articles"]
@@ -697,56 +866,60 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         logger.error("AI: get_static_context failed: %s", e)
         qa_context = "لا توجد أسئلة مضافة بعد."
         materials_context = "لا توجد مواد بعد."
-        articles_context = ""
+        articles_context = "لا توجد مقالات مضافة بعد."
         pdf_context = ""
         prereqs_context = "لا توجد متطلبات دراسية محفوظة."
         aliases_context = ""
 
     # Build conversation history
     history_lines = []
-    for turn in history[-10:]:  # last 10 exchanges max
-        history_lines.append(f"المستخدم: {turn['user']}")
-        history_lines.append(f"المساعد: {turn['assistant']}")
+    for turn in history[-8:]:  # last 8 exchanges max
+        history_lines.append(f"الطالب: {turn['user']}")
+        history_lines.append(f"مساعد نافذة: {turn['assistant']}")
     history_context = "\n".join(history_lines)
 
     history_note = ""
     if history_context:
-        history_note = f"\nسجل المحادثة السابقة (للتذكير فقط):\n{history_context}\n"
+        history_note = f"\n💬 سجل المحادثة السابقة مع الطالب (للتذكير بالسياق فقط):\n{history_context}\n"
 
     system_prompt = (
-        "أنت مساعد ذكي خاص بـ\"نَافِذَة\" — منصة كلية. اسمك \"مساعد نافذة\".\n\n"
-        "تتحدث بالعربية بأسلوب ودود طبيعي.\n"
-        "ممنوع استخدام ** أو * أو أي تنسيق Markdown — اكتب نص فقط.\n"
-        "ممنوع تكتب تفكير داخلي أو تحليل — جاوب مباشرة بالعربية فقط.\n\n"
-        f"{history_note}"
-        f"{aliases_context}"
-        f"📚 قاعدة المعرفة:\n{qa_context}\n\n"
-        f"📁 المواد:\n{materials_context}\n\n"
-        f"📰 المقالات:\n{articles_context}\n\n"
-        f"{pdf_context}"
-        f"🔗 المتطلبات:\n{prereqs_context}\n\n"
-"📌 تعليمات بسيطة:\n"
-        "- رد بكلام طبيعي متنوع: أحياناً كلام متصل سلس، وأحياناً نقاط مرقمة أو سطور منفصلة إن كان ذلك أوضح — تنوّع في الأسلوب بحسب السؤال ولا تجعل الرد قالباً واحداً دائماً.\n"
-        "- ممنوع تماماً كتابة أي تفكير داخلي أو تحليل أو خطوات تمهيدية مثل (دعني أفكر، الخطوة الأولى، سأتحقق الآن، هيا نفكر) أو وصف كيف توصلت للرد — أجب بالمطلوب فقط.\n"
-        "- رُد بلغة المستخدم: لو كتب بالإنجليزية رد بالإنجليزية، ولو بالسؤال بالعربية أو عامية رد بالعربية — العربية هي اللغة الأساسية.\n"
-        "- لا تدّعي أبداً أنك أرسلت ملفات أو روابط أو شيتات أو 'إليك الروابط' — لا ترسل أي رابط ولا تذكره؛ فقط اذكر اسم المحتوى إن وُجد، والملفات تصل المستخدم تلقائياً من النظام بعيداً عنك. إن لم يكن عندك محتوى معلوم لهذا الطلب فقل بصدق أنه غير موجود عندك دون أن تقدم روابط خارجية أو تدّعي إرسال شيء.\n"
-        "- كن مرن وغير مقيد؛ جاوب مباشرة ولا تعقد الأمور.\n"
-        "- القاعدة الأولى: حُلّ المشكلة بنفسك وأجب مباشرة من معلوماتك ومن قاعدة المعرفة والمواد والمقالات — لا تفكر في إبلاغ المشرفين أبداً.\n"
-        "- في أسئلة الدراسة والمواد: افضل وأفضل إجابة دائماً هي من المقال أو المادة نفسها، اقرأها وافهمها وأجب منها باسلوبك.\n"
-        "- لمّا يطلب أحد الشيتات أو ملفات أو محتوى مادة: اذكر اسم المحتوى في جوابك، واكتب في سطر منفصل في نهاية الرد صيغة الطلب الآلية بحيث تبدأ بـ: [FORWARD] متبوعاً بالاسم الدقيق للمحتوى كما يظهر مكتوباً في شجرة المواد فوق، مثال: [FORWARD] شيت مادة السي الفصل الأول — ولا تضع أي رابط إطلاقاً؛ الملف سيُرسل للمستخدم تلقائياً. إذا كان طلب الشيت يخص مادة واحدة فقط: اذكر تلك المادة فقط ولا تذكر أي مادة أخرى في سطر [FORWARD].\n"
-        "- مصدرك الأساسي الوحيد هو المقالة الخاصة بالموضوع: اقرأها جيداً وأجب منها ومنها فقط، وانقل ما فيها دون أي تحريف أو إضافة أو تغيير في الأرقام أو المعاني — المقالة هي الحقيقة الوحيدة عندك.\n"
-        "- لمّا تكون المعلومة موجودة في المقالة: التزم بها حرفياً وانقل الأرقام كما هي (مثلاً 20 درجة وليس 20%) دون تحوير أبداً.\n"
-        "- لو سؤال يخص مادة أو كلية: أجب فقط مما ورد في المقالات — إن كان السؤال عن شيء غير مذكور في أي مقالة قل بصراحة وببساطة أن هذه المعلومة غير موجودة عندك، ولا تختلق أي رقم أو تفصيل من ذاكرتك إطلاقاً ولا تُكمل الصورة بتخمين.\n"
-        "- لا تجمع بين معلوماتك العامة والمقالات؛ على سؤال عن مادة أو الكلية جزء إجابة إلزامي يكون مما في المقالة حرفياً.\n"
-        "- لو السؤال عام أو أكاديمي خارج مواد الكلية (رياضيات عامة، لغة، ثقافة عامة...): جاوب عادي من معرفتك ولا تعقد الأمور.\n"
-        "- لا تبالغ أبداً ولا تزيد كلاماً غير مطلوب؛ أجب بالمطلوب فقط.\n"
-        "- لو السؤال عام أو خارج مواد الكلية، جاوب عادي وكأنك صاحب له لا تسأل عن إبلاغ.\n"
-        "- لا تعرض إبلاغ المشرفين إلا في أربع حالات منحصرة فقط: التسجيل/القبول، الحظر، شكوى رسمية، أو طلب إداري خاص. أي سؤال آخر: أجب مباشرة ولا تذكر المشرفين أبداً.\n"
-        "- أغلب الأسئلة (±95%) عادية وأجب فيها بشكل مباشر كامل بدون أي عرض إبلاغ. المعرض نادر جداً.\n"
-        "- وفي الحالات الأربع المنحصرة، جاوب بشكل طبيعي ثم في نهاية الرد فقط اسأل: "
-        "'هل تريدني أن أرسل هذا الطلب إلى المشافظين؟'\n"
-        "- إذا استخدم المستخدم اسم مادة غريب وانت عارفها، اسأله هل يقصدها. ولو قال نعم اكتب:\n"
-        "[SAVE_ALIAS] الاسم | كود_المادة | اسم_المادة\n"
+        "أنت «مساعد نَافِذَة الذكي» — المساعد الرسمي والوحيد المخصص لطلاب الجامعة عبر منصة «نَافِذَة».\n"
+        "مهمتك الوحيدة والحصرية هي خدمة طلاب الجامعة والإجابة على استفساراتهم اعتماداً فقط على البيانات الرسمية المرفقة أدناه.\n\n"
+        "══════════════════════════════════════\n"
+        "📂 البيانات الرسمية المعتمدة في «نَافِذَة»:\n"
+        "══════════════════════════════════════\n\n"
+        f"{aliases_context}\n"
+        f"📰 أولاً: المقالات والمنشورات الرسمية:\n{articles_context}\n\n"
+        f"📚 ثانياً: الأسئلة الشائعة (قاعدة المعرفة):\n{qa_context}\n\n"
+        f"📁 ثالثاً: شجرة المواد الدراسية والشيتات:\n{materials_context}\n\n"
+        f"🔗 رابعاً: شجرة المتطلبات الدراسية (المواد وما تفتحه وما تحتاجه):\n{prereqs_context}\n\n"
+        f"{pdf_context}\n"
+        f"{history_note}\n"
+        "══════════════════════════════════════\n"
+        "🚫 القواعد الصارمة والإلزامية (يُمنع مخالفتها منعاً باتاً):\n"
+        "══════════════════════════════════════\n"
+        "1. النطاق الحصري لـ «نَافِذَة» والجامعة فقط:\n"
+        "   - يُمنع منعاً باتاً الإجابة على أي سؤال خارج نطاق الجامعة والكلية ومنصة «نَافِذَة» (مثل: أسئلة ثقافية عامة، طبخ، رياضة، سياسة، ترفيه، برمجة عامة أو مسائل خارج المقررات المذكورة، أو دردشة عامة لا علاقة لها بالدراسة بالكلية).\n"
+        "   - إذا سأل المستخدم سؤالاً خارج نطاق الجامعة أو «نَافِذَة»، اعتذر فوراً وبلطف بهذا الرد فقط:\n"
+        "     «عذراً، أنا المساعد الذكي الخاص بمنصة نَافِذَة، ومهمتي الإجابة فقط على الاستفسارات المتعلقة بالجامعة والمواد الدراسية والمنشورات المعتمدة في البوت.»\n"
+        "   - في حالة التحية (مثل: السلام عليكم، مرحبا، من أنت؟)، رحّب بالطالب بلطف وعرّف بنفسك كمساعد منصة «نَافِذَة» الجاهز للإجابة عن استفسارات الكلية والمواد والمنشورات.\n\n"
+        "2. الالتزام الحرفي بالمقالات والبيانات المرفقة (ممنوع التأليف أو التخمين):\n"
+        "   - مصدرك الوحيد للحقائق هو البيانات المرفقة أعلاه (المقالات، الأسئلة الشائعة، شجرة المواد، المتطلبات، وملفات السياق).\n"
+        "   - اقرأ المقالات والأسئلة الشائعة والمتطلبات بعناية فائقة، وأجب منها حصرياً، وانقل الأرقام والدرجات والتواريخ والأسماء والشروط كما وردت بالضبط دون أي تحريف أو زيادة من عندك.\n"
+        "   - يُمنع منعاً باتاً أن تخلط بين معلوماتك العامة ومعلومات المقالات، أو أن تخترع سياسات أو مواعيد أو أسماء دكاترة أو درجات غير مكتوبة في السياق أعلاه.\n\n"
+        "3. ماذا تفعل إذا سأل الطالب سؤالاً يخص الجامعة لكن جوابه غير موجود في البيانات أعلاه؟\n"
+        "   - إذا كان السؤال يخص الكلية أو مادة دراسية أو إجراء جامعي، وبحثت في كل المقالات والأسئلة الشائعة والمتطلبات والمواد أعلاه ولم تجد له إجابة صريحة:\n"
+        "     لا تخمن ولا تؤلف إجابة من عندك إطلاقاً! بل قل بصدق ووضوح:\n"
+        "     «لا تتوفر لدي معلومة مؤكدة حول هذا الاستفسار في بيانات نَافِذَة حالياً. هل تريدني أن أبلغ المشرفين بهذا الطلب؟»\n\n"
+        "4. إرسال الشيتات والملفات الدراسية آلياً:\n"
+        "   - عندما يطلب الطالب شيتات أو ملفات أو محاضرات أو امتحانات لمادة موجودة في «شجرة المواد الدراسية والشيتات» أعلاه (وكان أمامها ملفات مرفقة):\n"
+        "     اذكر اسم المحتوى في ردك، ثم اكتب في سطر منفصل في نهاية ردك الأمر الآلي التالي بالضبط:\n"
+        "     [FORWARD] الاسم الدقيق للمحتوى كما يظهر في شجرة المواد\n"
+        "   - لا تكتب أي رابط في ردك، ولا تقل «إليك الروابط»، فالنظام سيرسل الملفات تلقائياً للطالب بمجرد كتابتك لسطر [FORWARD].\n"
+        "   - إذا طلب شيتات لمادة غير موجودة في شجرة المواد أو مكتوب أمامها (بدون ملفات مرفقة حالياً)، أخبره بصدق أنها غير مرفقة حالياً في البوت.\n\n"
+        "5. أسلوب الرد والتنسيق:\n"
+        "   - تحدث باللغة العربية بأسلوب محترم، واضح، ومباشر.\n"
+        "   - ممنوع استخدام رموز Markdown مثل ** أو * أو #، وممنوع كتابة أي تفكير داخلي أو مسودة تحليلية — اكتب الجواب النهائي للطالب مباشرة.\n"
     )
 
     user_prompt = q
@@ -757,52 +930,37 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
         pass
     answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=False)
     if not answer:
-        # Transient failure: retry once with Groq allowed (fallback)
+        # Transient failure or Gemini quota: retry with Groq using a compact context so it never overflows
         logger.warning("AI first attempt (Gemini only) returned nothing — retrying with Groq")
-        await asyncio.sleep(2)
-        answer = await call_gemini(user_prompt, system_prompt=system_prompt, max_tokens=2048, use_groq=True)
+        await asyncio.sleep(1)
+        groq_ctx = _select_relevant_context(q, history, raw_ctx if 'raw_ctx' in locals() else {}, max_articles_chars=10000)
+        groq_system_prompt = system_prompt.replace(articles_context, groq_ctx["articles"])
+        answer = await call_gemini(user_prompt, system_prompt=groq_system_prompt, max_tokens=1536, use_groq=True)
     if answer:
-        # Process [SAVE_ALIAS] command from AI response
-        save_match = re.search(r"\[SAVE_ALIAS\]\s*(.+?)\s*\|\s*(.+?)\s*\|\s*(.+)", answer, re.DOTALL)
-        if save_match:
-            alias_name = save_match.group(1).strip().lower()
-            course_code = save_match.group(2).strip()
-            course_name = save_match.group(3).strip()
-            try:
-                from database.crud import add_alias
-                await add_alias(alias_name, course_code, course_name)
-                # Also send confirmation to user
-                try:
-                    await message.answer(f"✅ تم حفظ الاسم البديل '{alias_name}' ← {course_name}")
-                except Exception:
-                    pass
-            except Exception:
-                pass
         # Forward actual files: only items the AI explicitly requested via
-        # [FORWARD] title | title (exact names from the material tree — never
-        # fuzzy-match titles appearing anywhere in the answer text, which
-        # forwarded sheets from the wrong course).
+        # [FORWARD] title | title (exact names from the material tree)
         forwarded = set()
         sent_files = 0
         requested_items = []
         try:
             from database.crud import get_all_materials
             materials_data = await get_all_materials()
-            # Exact titles emitted by the model in [FORWARD] ... lines
             wanted_titles: list[str] = []
             for m in re.finditer(r"\[FORWARD\]\s*([^\n]+)", answer, re.IGNORECASE):
                 for part in re.split(r"\||,|؛|;", m.group(1)):
-                    t = part.strip()
+                    t = part.strip().lstrip("•📄").strip()
                     if t:
                         wanted_titles.append(t)
             wanted = {t.strip() for t in wanted_titles}
             if not wanted:
-                # Fallback: user's own words only (q), never from the answer text
-                q_lower = (q or "").lower()
-                for item in materials_data["items"]:
-                    title = (item.title or "").strip()
-                    if title and title.lower() in q_lower:
-                        wanted.add(title)
+                # Fallback: if user explicitly asked for sheets/files and named an exact item in q
+                asked_for_sheet = any(w in (q or "") for w in ["شيت", "شيتات", "ملف", "ملفات", "سلايدات", "محاضرات", "امتحانات"])
+                if asked_for_sheet:
+                    q_lower = (q or "").lower()
+                    for item in materials_data["items"]:
+                        title = (item.title or "").strip()
+                        if title and len(title) >= 3 and title.lower() in q_lower:
+                            wanted.add(title)
             for item in materials_data["items"]:
                 title = (item.title or "").strip()
                 if not title:
@@ -817,28 +975,29 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 for link in item_links:
                     ch = link.channel_username
                     mid = link.channel_message_id
-                    key = f"{ch}/{mid}"
+                    key = f"{ch}/{mid}/{link.link}"
                     if key in forwarded:
                         continue
                     forwarded.add(key)
                     ok = False
                     if ch and mid:
                         try:
-                            fid = int(ch) if ch.lstrip("-").isdigit() else ch
+                            fid = _resolve_channel_chat_id(ch)
                             await message.bot.copy_message(
                                 chat_id=message.chat.id,
                                 from_chat_id=fid,
-                                message_id=mid,
+                                message_id=int(mid),
                             )
                             ok = True
                         except Exception as exc:
                             logger.warning("copy_message channel failed (%s/%s) for user %s: %s", ch, mid, message.chat.id, exc)
-                    if not ok:
+                    if not ok and link.link:
                         try:
                             m = LINK_REGEX.search(link.link)
                             if m:
-                                ch2, mid2 = m.group(1), int(m.group(2))
-                                fid2 = int(ch2) if ch2.lstrip("-").isdigit() else f"@{ch2}"
+                                is_priv = bool(m.group(1))
+                                ch2, mid2 = m.group(2), int(m.group(3))
+                                fid2 = _resolve_channel_chat_id(ch2, is_private_c=is_priv)
                                 await message.bot.copy_message(
                                     chat_id=message.chat.id,
                                     from_chat_id=fid2,
@@ -851,9 +1010,9 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                         sent_files += 1
         except Exception as exc:
             logger.warning("forward_items_from_answer failed: %s", exc)
-        # Strip Telegram links from displayed text (files already forwarded)
+
+        # Strip CoT and internal markers
         clean_answer = _strip_cot(answer)
-        # Extra guard: remove consecutive duplicate paragraphs in final answer
         lines = clean_answer.splitlines()
         deduped = []
         prev = None
@@ -864,52 +1023,56 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
             deduped.append(line)
             prev = s
         clean_answer = "\n".join(deduped)
-        # Remove the internal [FORWARD] ... instruction line from the user reply
+        # Remove the internal [FORWARD] ... or [SAVE_ALIAS] ... instruction lines from the user reply
         clean_answer = re.sub(r"\[FORWARD\][^\n]*\n?", "", clean_answer, flags=re.IGNORECASE)
-        # Remove t.me links one more time after filtering (e.g. pasted full links)
+        clean_answer = re.sub(r"\[SAVE_ALIAS\][^\n]*\n?", "", clean_answer, flags=re.IGNORECASE)
+        # Remove t.me links one more time after filtering
         clean_answer = re.sub(r"https?://t\.me/\S+", "", clean_answer).strip()
-        # Clean up double spaces / empty lines
         clean_answer = re.sub(r"[ \t]{2,}", " ", clean_answer)
         clean_answer = re.sub(r"\n{3,}", "\n\n", clean_answer)
 
-        # Honesty guard: if the user asked for sheets/files but nothing was forwarded,
-        # strip any "I sent you links/files" claims from the answer and say it plainly.
+        # Honesty guard: if the user asked for sheets/files but nothing was forwarded
         asked_files = any(w in (q or "") for w in ["شيت", "شيتات", "شوية ملفات", "ملف", "ملفات", "سلایدات", "سلايدات", "محاضرات", "امتحانات", "pdf", "PDF", "روابط", "رابط"])
         if asked_files and sent_files == 0:
             for phrase in ["أرسلت لك الروابط", "أرسلت لك الملفات", "إليك الروابط", "إليك الملفات", "هذه الروابط", "المصادر اللي فوق", "الروابط التالية", "الروابط اللي بعتلك", "أقدم لك الروابط", "أرسلت لك بعض الروابط", "ستجد الروابط"]:
                 clean_answer = clean_answer.replace(phrase, "")
             if requested_items:
                 names = "، ".join(requested_items[:3])
-                clean_answer = (clean_answer + f"\n\nملاحظة: ملفات {names} غير مرفقة حالياً في البوت، لكن بإمكانك البحث عنها في اليوتيوب أو مجموعات الفرقة.").strip()
+                clean_answer = (clean_answer + f"\n\nملاحظة: ملفات ({names}) غير مرفقة حالياً في البوت.").strip()
             else:
                 clean_answer = clean_answer.strip()
         elif sent_files > 0:
             clean_answer = clean_answer.strip()
 
-        # Force the "ask permission" flow even if model ignores instructions
+        # Normalize admin notification offer phrases
         had_notify_offer = False
-        for phrase in ["سأبلغ المشرفين", "سأخبر المشرفين", "سأبلغ الإدارة", "سأخبر الإدارة"]:
+        for phrase in ["سأبلغ المشرفين", "سأخبر المشرفين", "سأبلغ الإدارة", "سأخبر الإدارة", "إلى المشافظين"]:
             if phrase in clean_answer:
                 clean_answer = clean_answer.replace(phrase, "هل تريدني أن أبلغ المشرفين بهذا الطلب؟")
                 had_notify_offer = True
         if "📢" in clean_answer:
             clean_answer = clean_answer.replace("📢", "").strip()
-        if had_notify_offer or (re.search(r"سأبلغ", clean_answer) and re.search(r"المشرفين|الإدارة", clean_answer)):
-            await state.update_data(pending_admin_notify=True, pending_notify_q=q)
-            clean_answer = clean_answer.replace("📢", "").strip()
+        if (
+            had_notify_offer
+            or ("هل تريد" in clean_answer and ("المشرفين" in clean_answer or "الإدارة" in clean_answer))
+            or (re.search(r"أبلغ|إبلاغ|تحويل", clean_answer) and re.search(r"المشرفين|الإدارة", clean_answer))
+        ):
+            had_notify_offer = True
             await state.update_data(pending_admin_notify=True, pending_notify_q=q)
 
-        if clean_answer:
-            await safe_send(message, clean_answer, reply_markup=ai_user_keyboard())
-        # Save to history
-        history.append({"user": q, "assistant": answer})
+        # Save to history (keep clean answer without internal tags)
+        history.append({"user": q, "assistant": clean_answer or answer})
+        if len(history) > 16:
+            history = history[-16:]
         await state.update_data(history=history)
 
-        # Check if AI offered to notify admins (after forced replacement above)
-        if "هل تريد" in clean_answer and "أبلغ المشرفين" in clean_answer:
-            if not (await state.get_data()).get("pending_admin_notify"):
-                await state.update_data(pending_admin_notify=True, pending_notify_q=q)
-        elif any(w in q for w in ["قول للمشرف", "بلغ المشرف", "كلم المشرف", "ابلغ المشرف"]):
+        if clean_answer:
+            if had_notify_offer:
+                await safe_send(message, clean_answer, reply_markup=_ai_notify_keyboard())
+            else:
+                await safe_send(message, clean_answer, reply_markup=ai_user_keyboard())
+
+        if not had_notify_offer and any(w in q for w in ["قول للمشرف", "بلغ المشرف", "كلم المشرف", "ابلغ المشرف", "حول للمشرف"]):
             await state.update_data(pending_admin_notify=True, pending_notify_q=q)
             await message.answer(
                 "حسناً، هل تريد مني إرسال طلبك إلى المشرفين الآن؟",
@@ -983,20 +1146,10 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
     pdf = await save_pdf_context(name, dest)
 
     await message.answer(f"✅ تم حفظ {name}. جاري استخراج النص وتحليله...")
-    try:
-        import fitz
-        pdf_text = ""
-        with fitz.open(dest) as doc_pdf:
-            for page in doc_pdf:
-                pdf_text += page.get_text()
-        if not pdf_text.strip():
-            pdf_text = "لم يتم استخراج نص من هذا PDF."
-    except Exception as e:
-        logger.warning("PDF text extraction failed: %s", e)
-        pdf_text = "تعذر استخراج النص من هذا PDF."
+    pdf_text = _extract_pdf_text(dest)
+    if not pdf_text.strip():
+        pdf_text = "لم يتم استخراج نص من هذا PDF."
 
-    # Save full text as context
-    await save_pdf_context(name, dest)
     # Store PDF text in state for conversation
     data = await state.get_data()
     admin_history: list = data.get("admin_history", [])
@@ -1200,7 +1353,9 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
         f"{history_note}"
     )
 
-    answer = await call_gemini(q, system_prompt=admin_system_prompt)
+    answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=False)
+    if not answer:
+        answer = await call_gemini(q, system_prompt=admin_system_prompt, use_groq=True)
     if not answer:
         await message.answer("⚠️ فشل.", reply_markup=_rm)
         return
@@ -1372,7 +1527,7 @@ async def _ai_admin_chat_message(message: Message, state: FSMContext) -> None:
             await message.answer("❌ التنسيق: ID | الرابط_الجديد", reply_markup=cancel_keyboard())
 
     elif answer.startswith("[LIST_FOLDERS]"):
-        ft = await _tf()
+        ft = folders_tree
         if ft:
             for i in range(0, len(ft), 3500):
                 await message.answer(f"📂 المجلدات:\n{ft[i:i+3500]}", reply_markup=cancel_keyboard())

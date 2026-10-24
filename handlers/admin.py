@@ -1841,7 +1841,8 @@ async def broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     data = await state.get_data()
     from_chat = data.get("broadcast_from_chat")
     msg_id = data.get("broadcast_message_id")
-    if not from_chat or not msg_id:
+    bc_content = data.get("broadcast_content")
+    if (not from_chat or not msg_id) and not bc_content:
         await callback.answer("❌ لا توجد رسالة للإرسال.", show_alert=True)
         await state.clear()
         return
@@ -1853,11 +1854,18 @@ async def broadcast_confirm(callback: CallbackQuery, state: FSMContext) -> None:
     status_msg = await callback.message.answer("📢 جاري الإرسال...")
     for u in users:
         try:
-            await callback.bot.copy_message(
-                chat_id=u.user_id,
-                from_chat_id=from_chat,
-                message_id=msg_id,
-            )
+            if from_chat and msg_id:
+                await callback.bot.copy_message(
+                    chat_id=u.user_id,
+                    from_chat_id=from_chat,
+                    message_id=msg_id,
+                )
+            elif bc_content and bc_content.get("text"):
+                await callback.bot.send_message(
+                    chat_id=u.user_id,
+                    text=bc_content["text"],
+                    parse_mode=None,
+                )
             sent += 1
         except Exception:
             failed += 1
