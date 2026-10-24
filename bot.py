@@ -52,14 +52,15 @@ async def on_shutdown(app: web.Application) -> None:
 
 
 async def health(request: web.Request) -> web.Response:
-    return web.Response(text="OK")
+    return web.Response(status=200, text="OK")
 
 
 async def webhook_handler(request: web.Request) -> web.Response:
     token_hdr = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if token_hdr != _WEBHOOK_SECRET:
-        logger.warning("Rejected unauthorized webhook request from %s", request.remote)
-        return web.Response(status=403, text="Forbidden")
+        # Allow keep-alive / ping services to receive 200 OK so they keep Render awake,
+        # while still blocking any non-Telegram request from reaching the bot dispatcher.
+        return web.Response(status=200, text="OK")
     _t0 = _time.perf_counter()
     bot = request.app["bot"]
     dp = request.app["dp"]
@@ -323,7 +324,9 @@ async def main() -> None:
     app.on_startup.append(on_startup)
     app.on_shutdown.append(on_shutdown)
     app.router.add_post("/webhook", webhook_handler)
+    app.router.add_get("/webhook", health)
     app.router.add_get("/healthz", health)
+    app.router.add_get("/", health)
 
     port = int(os.environ.get("PORT", 10000))
     logger.info(f"Starting webhook server on port {port} …")
