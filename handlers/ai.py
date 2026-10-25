@@ -449,6 +449,53 @@ async def get_static_context() -> dict:
     return await get_cached_context(_build_static_context)
 
 
+_AI_USER_FOOTER_HTML = (
+    "\n\n━━━━━━━━━━━━━━\n"
+    "#بوت_نافذة\n"
+    "#نافذتك_التعاونية\n"
+    "<b>⚠️ نافذة هو نموذج ذكاء اصطناعي وقد يعرض معلومات خاطئة، لذلك لا تعتمد عليه اعتماداً كلياً.</b>"
+)
+
+
+async def safe_send_user_ai(message: Message, text: str, reply_markup=None) -> None:
+    """Send AI answer to student with bold HTML disclaimer & hashtags at the very bottom."""
+    import html as _html
+    if not text:
+        return
+    max_body = MAX_MSG_LEN - 250
+    parts = []
+    rem = text.strip()
+    while rem:
+        if len(rem) <= max_body:
+            parts.append(rem)
+            break
+        split_at = rem.rfind("\n", 0, max_body)
+        if split_at == -1:
+            split_at = rem.rfind(" ", 0, max_body)
+        if split_at == -1:
+            split_at = max_body
+        parts.append(rem[:split_at])
+        rem = rem[split_at:].strip()
+
+    for i, part in enumerate(parts):
+        is_last = i == len(parts) - 1
+        markup = reply_markup if is_last else None
+        escaped_body = _html.escape(part)
+        final_html = (escaped_body + _AI_USER_FOOTER_HTML) if is_last else escaped_body
+        try:
+            await message.answer(final_html, reply_markup=markup, parse_mode="HTML")
+        except Exception:
+            plain_footer = (
+                "\n\n━━━━━━━━━━━━━━\n"
+                "#بوت_نافذة\n"
+                "#نافذتك_التعاونية\n"
+                "⚠️ نافذة هو نموذج ذكاء اصطناعي وقد يعرض معلومات خاطئة، لذلك لا تعتمد عليه اعتماداً كلياً."
+            )
+            await message.answer((part + plain_footer) if is_last else part, reply_markup=markup, parse_mode=None)
+        if not is_last:
+            await asyncio.sleep(0.3)
+
+
 async def safe_send(message: Message, text: str, reply_markup=None) -> None:
     """Split long text and send in chunks to avoid message_too_long."""
     if not text:
@@ -1601,9 +1648,9 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
 
         if clean_answer:
             if had_notify_offer:
-                await safe_send(message, clean_answer, reply_markup=_ai_notify_keyboard())
+                await safe_send_user_ai(message, clean_answer, reply_markup=_ai_notify_keyboard())
             else:
-                await safe_send(message, clean_answer, reply_markup=ai_user_keyboard())
+                await safe_send_user_ai(message, clean_answer, reply_markup=ai_user_keyboard())
 
         if not had_notify_offer and any(w in q for w in ["قول للمشرف", "بلغ المشرف", "كلم المشرف", "ابلغ المشرف", "حول للمشرف"]):
             await state.update_data(pending_admin_notify=True, pending_notify_q=q)
