@@ -751,7 +751,7 @@ async def index_single_sheet_message(bot, msg_obj, folder_name: str, item_title:
 
 @router.message(AdminFilter(), F.text == "🔍 تحليل شيتات القناة للـ AI")
 async def ai_analyze_channel_sheets(message: Message) -> None:
-    status_msg = await message.answer("⏳ جاري فحص وتحليل الشيتات والملفات المربوطة من القنوات وتحويلها إلى مقالات معرفية للـ AI...")
+    status_msg = await message.answer("⏳ جاري فحص وتحليل الشيتات والملفات المربوطة من القنوات (وحذف مقالات الشيتات المحذوفة)...")
     try:
         mats = await get_all_materials()
         folders_by_id = {f.id: f for f in mats["folders"]}
@@ -770,26 +770,61 @@ async def ai_analyze_channel_sheets(message: Message) -> None:
             return " / ".join(reversed(names)) if names else "عام"
 
         all_arts = await get_all_articles()
-        existing_titles = {a.title for a in all_arts}
+        arts_by_title = {a.title: a for a in all_arts}
 
         analyzed_count = 0
         skipped_existing = 0
+        cleaned_deleted = 0
         failed_count = 0
         catalog_lines: list[str] = []
+        valid_sheet_art_titles: set[str] = set()
 
-        for item in mats["items"]:
+        for item in list(mats["items"]):
             fpath = _get_fpath(item.folder_id)
             ititle = (item.title or "محتوى").strip()
             item_links = [l for l in mats["links"] if l.content_item_id == item.id]
+            art_title = f"📘 شيت: {fpath} / {ititle}"
             if not item_links:
                 continue
-            catalog_lines.append(f"• المادة/المجلد: {fpath} — الشيت: {ititle} [ID:{item.id}] (عدد الملفات: {len(item_links)})")
-            art_title = f"📘 شيت: {fpath} / {ititle}"
-            if art_title in existing_titles:
+
+            # If already analyzed, verify that at least the first link still exists in the channel
+            if art_title in arts_by_title:
+                first_lnk = item_links[0]
+                fid_chk = None
+                mid_chk = None
+                if first_lnk.channel_username and first_lnk.channel_message_id:
+                    fid_chk = _resolve_channel_chat_id(first_lnk.channel_username)
+                    mid_chk = int(first_lnk.channel_message_id)
+                elif first_lnk.link:
+                    m_chk = LINK_REGEX.search(first_lnk.link)
+                    if m_chk:
+                        fid_chk = _resolve_channel_chat_id(m_chk.group(2), is_private_c=bool(m_chk.group(1)))
+                        mid_chk = int(m_chk.group(3))
+                if fid_chk and mid_chk:
+                    try:
+                        fwd_chk = await message.bot.forward_message(
+                            chat_id=message.chat.id,
+                            from_chat_id=fid_chk,
+                            message_id=mid_chk,
+                        )
+                        try:
+                            await fwd_chk.delete()
+                        except Exception:
+                            pass
+                    except Exception as chk_exc:
+                        err_s = str(chk_exc).lower()
+                        if any(k in err_s for k in ("message to forward not found", "message_id_invalid", "message not found")):
+                            await remove_content_item(item.id)
+                            cleaned_deleted += 1
+                            continue
+                valid_sheet_art_titles.add(art_title)
+                catalog_lines.append(f"• المادة/المجلد: {fpath} — الشيت: {ititle} [ID:{item.id}] (عدد الملفات: {len(item_links)})")
                 skipped_existing += 1
                 continue
-            # Analyze the first 2 links of this sheet item
+
+            # Analyze up to 2 links of this new sheet item
             item_indexed = False
+            dead_links_in_item = 0
             for lnk in item_links[:2]:
                 fid = None
                 mid = None
@@ -817,30 +852,57 @@ async def ai_analyze_channel_sheets(message: Message) -> None:
                     if res_title:
                         item_indexed = True
                 except Exception as exc:
+                    err_s = str(exc).lower()
+                    if any(k in err_s for k in ("message to forward not found", "message_id_invalid", "message not found")):
+                        dead_links_in_item += 1
+                        try:
+                            await remove_content_link(lnk.id)
+                        except Exception:
+                            pass
                     logger.warning("Sheet analyze forward failed (%s/%s): %s", fid, mid, exc)
                 await asyncio.sleep(0.25)
+
+            if dead_links_in_item >= len(item_links[:2]) and not item_indexed:
+                try:
+                    await remove_content_item(item.id)
+                except Exception:
+                    pass
+                cleaned_deleted += 1
+                continue
+
             if item_indexed:
+                valid_sheet_art_titles.add(art_title)
+                catalog_lines.append(f"• المادة/المجلد: {fpath} — الشيت: {ititle} [ID:{item.id}] (عدد الملفات: {len(item_links)})")
                 analyzed_count += 1
             else:
                 failed_count += 1
 
+        # Clean up any orphan "📘 شيت: ..." articles whose sheet item was deleted
+        all_arts_after = await get_all_articles()
+        for a_obj in all_arts_after:
+            if (a_obj.title or "").startswith("📘 شيت:") and a_obj.title not in valid_sheet_art_titles:
+                await delete_article(a_obj.id)
+                cleaned_deleted += 1
+
         # Also save/update a master catalog article of all sheets so AI always knows every sheet by course
+        cat_title = "📚 الفهرس الشامل لشيتات وملفات المواد في القنوات"
+        all_arts_now = await get_all_articles()
+        ex_cat = next((a for a in all_arts_now if a.title == cat_title), None)
         if catalog_lines:
-            cat_title = "📚 الفهرس الشامل لشيتات وملفات المواد في القنوات"
             cat_body = "قائمة بجميع الشيتات والملفات المتوفرة حالياً في البوت حسب المادة والمجلد:\n\n" + "\n".join(catalog_lines)
-            all_arts_now = await get_all_articles()
-            ex_cat = next((a for a in all_arts_now if a.title == cat_title), None)
             if ex_cat:
                 await update_article(ex_cat.id, cat_title, cat_body[:15000])
             else:
                 await add_article(cat_title, cat_body[:15000])
+        elif ex_cat:
+            await delete_article(ex_cat.id)
 
         await status_msg.edit_text(
-            f"✅ اكتمل تحليل شيتات القناة وحفظها في ذاكرة المقالات للـ AI!\n\n"
-            f"📘 شيتات جديدة تم استخراج محتواها (PDF/نص/صور): {analyzed_count}\n"
-            f"✔️ شيتات محللة مسبقاً: {skipped_existing}\n"
-            f"📚 إجمالي الشيتات المفهرسة في الفهرس الشامل: {len(catalog_lines)}\n\n"
-            f"الآن عندما يسأل أي طالب عن موضوع داخل هذه الشيتات، سيجيب الـ AI من محتواها مباشرة!",
+            f"✅ اكتمل تحليل ومزامنة شيتات القناة مع المقالات بنجاح!\n\n"
+            f"📘 شيتات جديدة تم تحليلها وحفظ مقالتها: {analyzed_count}\n"
+            f"✔️ شيتات ومقالات نشطة ومحللة مسبقاً: {skipped_existing}\n"
+            f"🗑 شيتات/مقالات محذوفة من القناة تم تنظيفها: {cleaned_deleted}\n"
+            f"📚 إجمالي الشيتات الفعالة في الفهرس: {len(catalog_lines)}",
             parse_mode=None,
         )
     except Exception as e:
@@ -1406,6 +1468,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                 if not item_links:
                     requested_items.append(display_name)
                     continue
+                dead_for_item = 0
+                sent_for_item = 0
                 for link in item_links:
                     ch = link.channel_username
                     mid = link.channel_message_id
@@ -1414,6 +1478,7 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                         continue
                     forwarded.add(key)
                     ok = False
+                    was_del = False
                     if ch and mid:
                         try:
                             fid = _resolve_channel_chat_id(ch)
@@ -1433,6 +1498,8 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                                 )
                                 ok = True
                         except Exception as exc:
+                            if any(k in str(exc).lower() for k in ("message to copy not found", "message to forward not found", "message_id_invalid", "message not found")):
+                                was_del = True
                             logger.warning("copy/forward channel failed (%s/%s) for user %s: %s", ch, mid, message.chat.id, exc)
                     if not ok and link.link:
                         try:
@@ -1456,9 +1523,23 @@ async def _ai_user_question(message: Message, state: FSMContext) -> None:
                                     )
                                     ok = True
                         except Exception as exc:
+                            if any(k in str(exc).lower() for k in ("message to copy not found", "message to forward not found", "message_id_invalid", "message not found")):
+                                was_del = True
                             logger.warning("copy/forward link failed (%s) for user %s: %s", link.link, message.chat.id, exc)
                     if ok:
                         sent_files += 1
+                        sent_for_item += 1
+                    elif was_del:
+                        dead_for_item += 1
+                        try:
+                            await remove_content_link(link.id)
+                        except Exception:
+                            pass
+                if dead_for_item > 0 and sent_for_item == 0:
+                    try:
+                        await remove_content_item(item.id)
+                    except Exception:
+                        pass
         except Exception as exc:
             logger.warning("forward_items_from_answer failed: %s", exc)
 

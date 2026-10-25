@@ -416,21 +416,26 @@ def _resolve_chat_id(ch: str) -> int | str:
     return ch if ch.startswith("@") else f"@{ch}"
 
 
-async def _copy_or_forward(bot, user_id: int, fid: int | str, mid: int) -> bool:
-    """Copy a message to user_id, falling back to forward_message (required for Polls/Quizzes)."""
+async def _copy_or_forward(bot, user_id: int, fid: int | str, mid: int) -> tuple[bool, bool]:
+    """Return (sent_ok, deleted_in_channel)."""
     try:
         await bot.copy_message(chat_id=user_id, from_chat_id=fid, message_id=int(mid))
-        return True
+        return True, False
     except Exception as copy_exc:
         try:
             await bot.forward_message(chat_id=user_id, from_chat_id=fid, message_id=int(mid))
-            return True
+            return True, False
         except Exception as fwd_exc:
-            logger.warning(
-                "copy_message & forward_message failed (%s/%s) for user %s: copy=%s | fwd=%s",
-                fid, mid, user_id, copy_exc, fwd_exc,
+            err_s = f"{copy_exc} {fwd_exc}".lower()
+            is_deleted = any(
+                k in err_s
+                for k in ("message to copy not found", "message to forward not found", "message_id_invalid", "message not found")
             )
-            return False
+            logger.warning(
+                "copy_message & forward_message failed (%s/%s) for user %s (deleted=%s): copy=%s | fwd=%s",
+                fid, mid, user_id, is_deleted, copy_exc, fwd_exc,
+            )
+            return False, is_deleted
 
 
 async def forward_item(user_id: int, item_id: int, bot) -> None:
@@ -448,29 +453,56 @@ async def forward_item(user_id: int, item_id: int, bot) -> None:
     if not links:
         await bot.send_message(chat_id=user_id, text="❌ لا توجد روابط لهذا المحتوى.")
         return
+    deleted_links_count = 0
+    sent_count = 0
+
     async def forward_one(link):
+        nonlocal deleted_links_count, sent_count
+        was_deleted = False
         try:
             ch = link.channel_username
             mid = link.channel_message_id
             if ch and mid:
                 fid = _resolve_chat_id(ch)
-                if await _copy_or_forward(bot, user_id, fid, int(mid)):
+                ok, is_del = await _copy_or_forward(bot, user_id, fid, int(mid))
+                if ok:
+                    sent_count += 1
                     return
+                if is_del:
+                    was_deleted = True
             m = LINK_REGEX.search(link.link or "")
             if m:
                 ch2, mid2 = m.group(1), int(m.group(2))
                 fid2 = _resolve_chat_id(ch2)
-                if await _copy_or_forward(bot, user_id, fid2, mid2):
+                ok2, is_del2 = await _copy_or_forward(bot, user_id, fid2, mid2)
+                if ok2:
+                    sent_count += 1
                     return
+                if is_del2:
+                    was_deleted = True
         except Exception as exc:
             logger.warning("forward_one link failed (%s) for user %s: %s", link.link, user_id, exc)
+        if was_deleted:
+            deleted_links_count += 1
+            try:
+                await remove_content_link(link.id)
+            except Exception:
+                pass
+            return
         if link.link and link.link.startswith("http"):
             await bot.send_message(chat_id=user_id, text=f"🔗 {link.link}", disable_web_page_preview=False)
+            sent_count += 1
 
     await bot.send_chat_action(chat_id=user_id, action="typing")
     for link in links:
         await forward_one(link)
-    logger.info("Forwarded %d links for content item %s to user %s in order", len(links), item_id, user_id)
+    if deleted_links_count > 0 and sent_count == 0:
+        try:
+            await remove_content_item(item_id)
+        except Exception:
+            pass
+        await bot.send_message(chat_id=user_id, text="⚠️ عذراً، هذا الشيت تم حذفه من القناة.")
+    logger.info("Forwarded %d links for content item %s to user %s in order", sent_count, item_id, user_id)
 
 
 # ─── Edit content (ReplyKeyboard with inline cancel) ───

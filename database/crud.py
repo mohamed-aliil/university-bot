@@ -901,10 +901,17 @@ async def add_folder(name: str, parent_id: int = None) -> Folder:
 
 async def remove_folder(folder_id: int) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         obj = await session.get(Folder, folder_id)
         if not obj:
             return False
+        folder_name = (obj.name or "").strip()
+        if folder_name:
+            arts = (await session.execute(select(Article).where(Article.title.like("📘 شيت:%")))).scalars().all()
+            for a in arts:
+                if folder_name in (a.title or ""):
+                    await session.delete(a)
         await session.delete(obj)
         await session.commit()
     tree = _materials_tree()
@@ -1008,10 +1015,20 @@ async def add_content_item(folder_id: int, title: str = None) -> ContentItem:
 
 async def remove_content_item(item_id: int) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         obj = await session.get(ContentItem, item_id)
         if not obj:
             return False
+        ititle = (obj.title or "").strip()
+        fobj = await session.get(Folder, obj.folder_id) if obj.folder_id else None
+        fname = (fobj.name or "").strip() if fobj else ""
+        if ititle:
+            arts = (await session.execute(select(Article).where(Article.title.like("📘 شيت:%")))).scalars().all()
+            for a in arts:
+                at = (a.title or "").strip()
+                if at.endswith(f"/ {ititle}") and (not fname or fname in at):
+                    await session.delete(a)
         await session.delete(obj)
         await session.commit()
     tree = _materials_tree()
@@ -1069,11 +1086,28 @@ async def _get_content_links_cached(content_item_id: int) -> list[ContentLink]:
 
 async def remove_content_link(link_id: int) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         obj = await session.get(ContentLink, link_id)
         if not obj:
             return False
+        item_id = obj.content_item_id
         await session.delete(obj)
+        await session.flush()
+        remaining = (
+            await session.execute(select(ContentLink).where(ContentLink.content_item_id == item_id))
+        ).scalars().all()
+        if not remaining and item_id:
+            it_obj = await session.get(ContentItem, item_id)
+            if it_obj and it_obj.title:
+                ititle = it_obj.title.strip()
+                fobj = await session.get(Folder, it_obj.folder_id) if it_obj.folder_id else None
+                fname = (fobj.name or "").strip() if fobj else ""
+                arts = (await session.execute(select(Article).where(Article.title.like("📘 شيت:%")))).scalars().all()
+                for a in arts:
+                    at = (a.title or "").strip()
+                    if at.endswith(f"/ {ititle}") and (not fname or fname in at):
+                        await session.delete(a)
         await session.commit()
     tree = _materials_tree()
     if tree is not None:
