@@ -637,7 +637,7 @@ async def ai_upload_pdf_file(message: Message, state: FSMContext) -> None:
             arts = await get_all_articles()
             ex_art = next((a for a in arts if a.title == art_title), None)
             if ex_art:
-                await update_article(ex_art.id, content=extracted[:15000])
+                await update_article(ex_art.id, art_title, extracted[:15000])
             else:
                 await add_article(art_title, extracted[:15000])
         except Exception:
@@ -742,7 +742,7 @@ async def index_single_sheet_message(bot, msg_obj, folder_name: str, item_title:
         for p_ext in parts_extracted:
             if p_ext[:120] not in merged:
                 merged = (merged + "\n\n" + p_ext)[:15000]
-        await update_article(existing.id, content=merged[:15000])
+        await update_article(existing.id, art_title, merged[:15000])
     else:
         await add_article(art_title, body[:15000])
     clear_ai_context()
@@ -831,7 +831,7 @@ async def ai_analyze_channel_sheets(message: Message) -> None:
             all_arts_now = await get_all_articles()
             ex_cat = next((a for a in all_arts_now if a.title == cat_title), None)
             if ex_cat:
-                await update_article(ex_cat.id, content=cat_body[:15000])
+                await update_article(ex_cat.id, cat_title, cat_body[:15000])
             else:
                 await add_article(cat_title, cat_body[:15000])
 
@@ -1605,7 +1605,7 @@ async def ai_smart_document(message: Message, state: FSMContext) -> None:
             arts = await get_all_articles()
             ex_art = next((a for a in arts if a.title == art_title), None)
             if ex_art:
-                await update_article(ex_art.id, content=pdf_text[:15000])
+                await update_article(ex_art.id, art_title, pdf_text[:15000])
             else:
                 await add_article(art_title, pdf_text[:15000])
         except Exception:

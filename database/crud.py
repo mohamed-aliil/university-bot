@@ -1296,6 +1296,7 @@ def _fmt_size(bytes_val: int) -> str:
 
 async def add_qa(question: str, answer: str) -> QAPair:
     clear_ai_context()
+    invalidate_cache("get_all_qa")
     async with async_session() as session:
         qa = QAPair(question=question, answer=answer)
         session.add(qa)
@@ -1306,6 +1307,7 @@ async def add_qa(question: str, answer: str) -> QAPair:
 
 async def delete_qa(qa_id: int) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_qa")
     async with async_session() as session:
         result = await session.execute(select(QAPair).where(QAPair.id == qa_id))
         qa = result.scalar_one_or_none()
@@ -1318,6 +1320,7 @@ async def delete_qa(qa_id: int) -> bool:
 
 async def update_qa(qa_id: int, question: str, answer: str) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_qa")
     async with async_session() as session:
         qa = await session.get(QAPair, qa_id)
         if not qa:
@@ -1371,6 +1374,7 @@ async def get_all_pdfs() -> list[PDFContext]:
 
 async def add_article(title: str, content: str) -> Article:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         article = Article(title=title, content=content)
         session.add(article)
@@ -1381,6 +1385,7 @@ async def add_article(title: str, content: str) -> Article:
 
 async def delete_article(article_id: int) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         result = await session.execute(select(Article).where(Article.id == article_id))
         article = result.scalar_one_or_none()
@@ -1391,14 +1396,17 @@ async def delete_article(article_id: int) -> bool:
         return False
 
 
-async def update_article(article_id: int, title: str, content: str) -> bool:
+async def update_article(article_id: int, title: str | None = None, content: str | None = None) -> bool:
     clear_ai_context()
+    invalidate_cache("get_all_articles")
     async with async_session() as session:
         article = await session.get(Article, article_id)
         if not article:
             return False
-        article.title = title
-        article.content = content
+        if title is not None:
+            article.title = title
+        if content is not None:
+            article.content = content
         await session.commit()
         return True
 
